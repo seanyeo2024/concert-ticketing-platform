@@ -1,0 +1,272 @@
+# infrastructure/docker/docker-compose.dev.yml
+# Full local development stack
+# Usage: docker-compose -f infrastructure/docker/docker-compose.dev.yml up
+
+version: "3.9"
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  env_file: .env
+  networks:
+    - ticketing-net
+
+services:
+  # ── Infrastructure ─────────────────────────────────────────
+
+  rabbitmq:
+    <<: *service-defaults
+    image: rabbitmq:3.12-management
+    ports:
+      - "5672:5672"
+      - "15672:15672" # management UI: http://localhost:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    <<: *service-defaults
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: redis-cli ping
+      interval: 5s
+
+  kong:
+    <<: *service-defaults
+    image: kong:3.6
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+    volumes:
+      - ./kong.yml:/etc/kong/kong.yml
+    ports:
+      - "8000:8000" # public proxy
+      - "8001:8001" # admin API
+    depends_on:
+      - queue-service
+      - event-catalog
+      - ticket-inventory
+      - purchase-window
+
+  # ── Databases ──────────────────────────────────────────────
+
+  event-catalog-db:
+    <<: *service-defaults
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: event_catalog
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - event-catalog-data:/var/lib/postgresql/data
+
+  inventory-db:
+    <<: *service-defaults
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ticket_inventory
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - inventory-data:/var/lib/postgresql/data
+
+  payment-db:
+    <<: *service-defaults
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: payments
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - payment-data:/var/lib/postgresql/data
+
+  qr-db:
+    <<: *service-defaults
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: qr_service
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - qr-data:/var/lib/postgresql/data
+
+  pricing-db:
+    <<: *service-defaults
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: pricing
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pricing-data:/var/lib/postgresql/data
+
+  # ── Microservices ──────────────────────────────────────────
+
+  queue-service:
+    <<: *service-defaults
+    build:
+      context: ../../services/queue-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3001
+      REDIS_HOST: redis
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672
+    deploy:
+      replicas: 3
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  event-catalog:
+    <<: *service-defaults
+    build:
+      context: ../../services/event-catalog
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3002
+      DATABASE_URL: postgres://postgres:postgres@event-catalog-db:5432/event_catalog
+    deploy:
+      replicas: 2
+    depends_on:
+      - event-catalog-db
+
+  ticket-inventory:
+    <<: *service-defaults
+    build:
+      context: ../../services/ticket-inventory
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3003
+      DATABASE_URL: postgres://postgres:postgres@inventory-db:5432/ticket_inventory
+    deploy:
+      replicas: 2
+    depends_on:
+      - inventory-db
+
+  purchase-window:
+    <<: *service-defaults
+    build:
+      context: ../../services/purchase-window
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3004
+      INVENTORY_URL: http://ticket-inventory:3003
+      PAYMENT_URL: http://payment-service:3005
+      QR_URL: http://qr-service:3007
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      - ticket-inventory
+      - payment-service
+
+  payment-service:
+    <<: *service-defaults
+    build:
+      context: ../../services/payment-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3005
+      DATABASE_URL: postgres://postgres:postgres@payment-db:5432/payments
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672
+    deploy:
+      replicas: 2
+    depends_on:
+      - payment-db
+      - rabbitmq
+
+  notification-service:
+    <<: *service-defaults
+    build:
+      context: ../../services/notification-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3006
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672
+      SMTP_HOST: ${SMTP_HOST:-smtp.sendgrid.net}
+      SMTP_USER: ${SMTP_USER:-apikey}
+      SMTP_PASS: ${SMTP_PASS:-placeholder}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-ACplaceholder}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-placeholder}
+    deploy:
+      replicas: 2
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  qr-service:
+    <<: *service-defaults
+    build:
+      context: ../../services/qr-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3007
+      DATABASE_URL: postgres://postgres:postgres@qr-db:5432/qr_service
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      - qr-db
+      - rabbitmq
+
+  pricing-service:
+    <<: *service-defaults
+    build:
+      context: ../../services/pricing-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3008
+      DATABASE_URL: postgres://postgres:postgres@pricing-db:5432/pricing
+    deploy:
+      replicas: 2
+    depends_on:
+      - pricing-db
+
+  resale-ticket-service:
+    <<: *service-defaults
+    build:
+      context: ../../services/resale-ticket-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 3009
+      INVENTORY_URL: http://ticket-inventory:3003
+      PRICING_URL: http://pricing-service:3008
+      PAYMENT_URL: http://payment-service:3005
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      - ticket-inventory
+      - pricing-service
+      - payment-service
+
+  # ── Frontend ───────────────────────────────────────────────
+  frontend:
+    <<: *service-defaults
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    depends_on:
+      - kong
+
+volumes:
+  event-catalog-data:
+  inventory-data:
+  payment-data:
+  qr-data:
+  pricing-data:
+
+networks:
+  ticketing-net:
+    driver: bridge
