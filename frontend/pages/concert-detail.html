@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Concert — CTMS</title>
+<link rel="stylesheet" href="../assets/css/global.css">
+<style>
+/* ── Banner ─────────────────────────────── */
+.concert-banner {
+  background: var(--black);
+  padding: calc(var(--nav-h) + 56px) 0 0;
+  position: relative; overflow: hidden;
+}
+.banner-blob-1 {
+  position: absolute; width: 500px; height: 500px;
+  background: var(--blue); opacity: 0.08;
+  border-radius: 60% 40% 70% 30% / 40% 60% 30% 70%;
+  top: -120px; right: -80px;
+  animation: blobFloat 10s ease-in-out infinite;
+}
+.banner-blob-2 {
+  position: absolute; width: 300px; height: 300px;
+  background: var(--teal); opacity: 0.07;
+  border-radius: 40% 60% 30% 70% / 60% 40% 70% 30%;
+  bottom: 0; left: 10%;
+  animation: blobFloat 13s ease-in-out infinite reverse;
+}
+.banner-star {
+  position: absolute; color: rgba(255,255,255,0.06);
+  font-size: 8rem; top: 20px; right: 20%;
+  animation: starSpin 20s linear infinite;
+  pointer-events: none;
+}
+.banner-inner {
+  display: grid; grid-template-columns: 1fr 380px; gap: 0;
+  position: relative; z-index: 2;
+}
+.banner-main { padding: 0 56px 56px 0; border-right: 1.5px solid rgba(255,255,255,0.08); }
+.banner-eyebrow {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--teal); margin-bottom: 16px;
+  display: flex; align-items: center; gap: 10px;
+}
+.banner-eyebrow::before { content: ''; width: 20px; height: 2px; background: var(--teal); border-radius: 2px; }
+.banner-title {
+  font-family: var(--font-display); color: var(--cream);
+  font-size: clamp(3rem, 7vw, 6rem); line-height: 0.95;
+  font-weight: 900; letter-spacing: -0.03em; margin-bottom: 16px;
+  font-style: italic;
+}
+.banner-subtitle { color: #888; font-size: 0.9rem; margin-bottom: 36px; }
+.banner-meta-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; margin-top: 36px;
+}
+.banner-meta-item {
+  padding: 18px 24px 18px 0; margin-right: 24px;
+  border-top: 1.5px solid rgba(255,255,255,0.08);
+  border-right: 1.5px solid rgba(255,255,255,0.08);
+}
+.banner-meta-item:last-child { border-right: none; margin-right: 0; padding-right: 0; }
+.banner-meta-label { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #555; margin-bottom: 6px; }
+.banner-meta-value { font-family: var(--font-body); font-size: 0.9rem; font-weight: 700; color: var(--cream); }
+
+/* Banner sidebar */
+.banner-sidebar {
+  padding: 0 0 56px 40px;
+  display: flex; flex-direction: column; gap: 0;
+}
+.sidebar-section {
+  padding-bottom: 24px; margin-bottom: 24px;
+  border-bottom: 1.5px solid rgba(255,255,255,0.08);
+}
+.sidebar-section:last-child { border-bottom: none; }
+.sidebar-label {
+  font-size: 0.65rem; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: #555; margin-bottom: 10px;
+}
+.sidebar-big {
+  font-family: var(--font-display); font-size: 2.5rem; font-weight: 900;
+  color: var(--cream); letter-spacing: -0.02em;
+}
+.sidebar-big.yellow { color: var(--yellow); }
+.avail-bar { height: 5px; background: rgba(255,255,255,0.08); margin-top: 10px; border-radius: 3px; }
+.avail-fill { height: 100%; background: var(--teal); border-radius: 3px; transition: width 0.5s; }
+.avail-sub { font-size: 0.7rem; color: #555; margin-top: 6px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* ── Main content ───────────────────────── */
+.main-content { padding: 64px 0 80px; }
+.content-grid { display: grid; grid-template-columns: 1fr 380px; gap: 48px; }
+
+/* Category selector */
+.cat-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 24px; border: 2px solid rgba(17,17,17,0.1);
+  border-radius: var(--radius-lg); margin-bottom: 10px;
+  background: var(--white); cursor: none;
+  transition: all 0.18s var(--ease); position: relative;
+}
+.cat-row:hover { border-color: var(--blue); transform: translateX(4px); box-shadow: 0 8px 24px rgba(58,180,242,0.12); }
+.cat-row.selected {
+  background: var(--black); color: var(--cream);
+  border-color: var(--black);
+  transform: translateX(4px);
+  box-shadow: 0 12px 32px rgba(17,17,17,0.15);
+}
+.cat-row.selected .cat-row-avail { color: #888; }
+.cat-row.selected .cat-row-price { color: var(--yellow); }
+.cat-row-name { font-family: var(--font-display); font-size: 1.3rem; font-weight: 900; letter-spacing: -0.02em; }
+.cat-row-avail { font-size: 0.75rem; color: #888; margin-top: 3px; }
+.cat-row-price { font-family: var(--font-display); font-size: 2rem; font-weight: 900; text-align: right; letter-spacing: -0.02em; }
+.cat-row-ceiling { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; color: #888; text-align: right; margin-top: 2px; }
+.cat-selected-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--teal); position: absolute; left: -5px; top: 50%; transform: translateY(-50%);
+  display: none;
+}
+.cat-row.selected .cat-selected-dot { display: block; }
+
+/* Resale CTA */
+.resale-cta-box {
+  background: linear-gradient(135deg, rgba(240,62,138,0.08) 0%, rgba(124,77,255,0.08) 100%);
+  border: 2px solid rgba(240,62,138,0.2);
+  border-radius: var(--radius-xl); padding: 32px;
+  position: relative; overflow: hidden;
+}
+.resale-cta-box::before {
+  content: '';
+  position: absolute; width: 200px; height: 200px;
+  background: var(--pink); opacity: 0.06; border-radius: 50%;
+  top: -50px; right: -50px;
+}
+
+/* Order sidebar */
+.order-box {
+  background: var(--black); color: var(--cream);
+  border-radius: var(--radius-xl); padding: 32px;
+  position: sticky; top: calc(var(--nav-h) + 24px);
+  box-shadow: 0 24px 60px rgba(17,17,17,0.15);
+  overflow: hidden;
+}
+.order-box::before {
+  content: '';
+  position: absolute; width: 250px; height: 250px;
+  background: var(--teal); opacity: 0.05; border-radius: 50%;
+  bottom: -80px; right: -80px;
+}
+.order-title {
+  font-family: var(--font-display); font-size: 1.6rem; font-weight: 900;
+  color: var(--cream); margin-bottom: 24px; letter-spacing: -0.02em;
+  font-style: italic; position: relative; z-index: 1;
+}
+.order-empty {
+  text-align: center; padding: 32px 0; color: #555;
+  position: relative; z-index: 1;
+}
+.order-line {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.82rem; position: relative; z-index: 1;
+}
+.order-line:last-of-type { border-bottom: none; }
+.order-line-label { color: #666; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.order-line-val { text-align: right; max-width: 180px; font-weight: 600; }
+.order-total-val {
+  font-family: var(--font-display); font-size: 2.2rem; font-weight: 900;
+  color: var(--yellow); letter-spacing: -0.02em;
+}
+.order-actions { margin-top: 24px; position: relative; z-index: 1; }
+.order-note {
+  font-size: 0.72rem; color: #555; line-height: 1.6; margin-top: 14px;
+  text-align: center;
+}
+
+@media(max-width:900px){
+  .banner-inner,.content-grid { grid-template-columns:1fr; }
+  .banner-main { border-right:none; padding-right:0; }
+  .banner-meta-grid { grid-template-columns:1fr 1fr; }
+  .order-box { position: static; }
+}
+</style>
+</head>
+<body>
+<div class="noise-overlay"></div>
+<nav class="navbar" id="navbar"></nav>
+<div id="toast-container"></div>
+
+<!-- Banner -->
+<div class="concert-banner" id="concert-banner">
+  <div class="banner-blob-1"></div>
+  <div class="banner-blob-2"></div>
+  <span class="banner-star">✦</span>
+  <div class="container">
+    <div class="banner-inner">
+      <div class="banner-main">
+        <div class="banner-eyebrow" id="b-eyebrow">Loading…</div>
+        <h1 class="banner-title" id="b-title">
+          <span class="skel" style="display:inline-block;width:400px;height:80px;border-radius:12px"></span>
+        </h1>
+        <p class="banner-subtitle" id="b-desc">Loading concert details…</p>
+        <div class="banner-meta-grid" id="b-meta"></div>
+      </div>
+      <div class="banner-sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-label">Status</div>
+          <div id="b-status"></div>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-label">Availability</div>
+          <div class="sidebar-big" id="b-avail">—</div>
+          <div class="avail-bar"><div class="avail-fill" id="b-avail-bar" style="width:0%"></div></div>
+          <div class="avail-sub" id="b-avail-sub"></div>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-label">Prices From</div>
+          <div class="sidebar-big yellow" id="b-price-from">SGD —</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Main content -->
+<div class="main-content">
+  <div class="container">
+    <div class="content-grid">
+      <!-- Categories -->
+      <div>
+        <div class="section-label mb-16">Select Category</div>
+        <div id="cat-list">
+          <div class="skel" style="height:80px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
+          <div class="skel" style="height:80px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
+          <div class="skel" style="height:80px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
+          <div class="skel" style="height:80px;border-radius:var(--radius-lg)"></div>
+        </div>
+
+        <div class="divider mt-40"></div>
+        <div class="section-label mb-16">About This Event</div>
+        <p id="b-about" style="max-width:560px;color:#555;font-size:0.95rem">Loading…</p>
+
+        <div id="resale-cta" class="hidden mt-40 resale-cta-box">
+          <div style="font-family:var(--font-display);font-size:1.8rem;font-weight:900;letter-spacing:-0.02em;margin-bottom:8px">Sold Out?</div>
+          <p class="text-sm text-muted mb-16">Check the resale marketplace — fans resell tickets at capped prices.</p>
+          <a id="resale-link" href="resale.html" class="btn btn-pink">Browse Resale →</a>
+        </div>
+      </div>
+
+      <!-- Order sidebar -->
+      <div>
+        <div class="order-box" id="order-box">
+          <div class="order-title">Your Order</div>
+          <div class="order-empty" id="order-empty">
+            <div style="font-size:2.5rem;margin-bottom:12px">🎫</div>
+            <div style="font-size:0.8rem;letter-spacing:0.08em;text-transform:uppercase;color:#555">Select a category</div>
+          </div>
+          <div id="order-detail" class="hidden">
+            <div class="order-line">
+              <span class="order-line-label">Concert</span>
+              <span class="order-line-val" id="o-concert"></span>
+            </div>
+            <div class="order-line">
+              <span class="order-line-label">Category</span>
+              <span class="order-line-val" id="o-cat" style="color:var(--teal);font-weight:700"></span>
+            </div>
+            <div class="order-line">
+              <span class="order-line-label">Seat</span>
+              <span class="order-line-val" style="color:#888">Assigned at purchase</span>
+            </div>
+            <div class="order-line" style="border-top:1px solid rgba(255,255,255,0.1);padding-top:16px;margin-top:4px">
+              <span class="order-line-label">Total</span>
+              <span class="order-total-val" id="o-price">—</span>
+            </div>
+          </div>
+          <div id="order-actions" class="hidden order-actions">
+            <button class="btn btn-yellow w-full btn-lg" id="join-btn" onclick="joinQueue()" style="border-radius:var(--radius)">Join Queue →</button>
+            <p class="order-note">You'll be placed in a virtual queue. When it's your turn you have 10 minutes to complete your purchase.</p>
+          </div>
+          <div id="order-blocked" class="hidden mt-16">
+            <div class="alert alert-danger">This concert is not currently available for purchase.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+let concertId, concert, categories=[], prices=[], selectedCat=null;
+renderNav('concerts');
+
+async function init(){
+  concertId=Util.getParam('id');
+  if(!concertId){window.location.href='index.html';return;}
+  try{
+    concert=await API.concerts.get(concertId);
+    if(!concert){window.location.href='index.html';return;}
+    document.title=`${concert.name} — CTMS`;
+    renderBanner();
+    const [catRes,priceRes]=await Promise.all([API.concerts.seats(concertId),API.pricing.list(concertId)]);
+    categories=catRes.categories||[];
+    prices=priceRes.prices||[];
+    renderCats();
+    const minPrice=Math.min(...prices.map(p=>p.basePrice).filter(Boolean));
+    if(isFinite(minPrice)) document.getElementById('b-price-from').textContent=`SGD ${minPrice}`;
+  }catch(e){toast('Could not load concert','error');}
+}
+
+function renderBanner(){
+  document.getElementById('b-eyebrow').textContent=concert.artistName?.toUpperCase()||'ARTIST';
+  document.getElementById('b-title').textContent=concert.name;
+  document.getElementById('b-status').innerHTML=Util.tag(concert.status);
+  document.getElementById('b-about').textContent=`Experience ${concert.artistName} live at ${concert.venue}. An unmissable event on Singapore's concert calendar — don't miss your chance.`;
+  const pct=concert.totalSeats?Math.round((concert.totalSeats-concert.availableSeats)/concert.totalSeats*100):0;
+  document.getElementById('b-avail').textContent=concert.availableSeats?.toLocaleString()||'—';
+  document.getElementById('b-avail-bar').style.width=`${pct}%`;
+  document.getElementById('b-avail-sub').textContent=`${pct}% of ${concert.totalSeats?.toLocaleString()} seats sold`;
+  document.getElementById('b-meta').innerHTML=`
+    <div class="banner-meta-item"><div class="banner-meta-label">Date</div><div class="banner-meta-value">${Util.formatDate(concert.eventDate)}</div></div>
+    <div class="banner-meta-item"><div class="banner-meta-label">Venue</div><div class="banner-meta-value">${concert.venue}</div></div>
+    <div class="banner-meta-item"><div class="banner-meta-label">Currency</div><div class="banner-meta-value">${concert.currency||'SGD'}</div></div>`;
+  document.getElementById('b-desc').textContent=`${concert.artistName} · ${concert.venue?.split(',')[0]} · ${new Date(concert.eventDate).getFullYear()}`;
+  if(concert.status==='SOLD_OUT'||concert.status==='CANCELLED'){
+    document.getElementById('resale-cta').classList.remove('hidden');
+    document.getElementById('resale-link').href=`resale.html?id=${concertId}`;
+  }
+  if(concert.status!=='ACTIVE') document.getElementById('order-blocked').classList.remove('hidden');
+}
+
+function renderCats(){
+  const list=document.getElementById('cat-list');
+  list.innerHTML=categories.map(cat=>{
+    const price=prices.find(p=>p.categoryId===cat.categoryId);
+    const soldOut=cat.availableSeats===0;
+    return `<div class="cat-row ${soldOut?'opacity-50':''}" id="cr-${cat.categoryId}" onclick="selectCat('${cat.categoryId}')">
+      <div class="cat-selected-dot"></div>
+      <div>
+        <div class="cat-row-name">${cat.categoryName}</div>
+        <div class="cat-row-avail">${soldOut?'Sold out':`${cat.availableSeats?.toLocaleString()} seats left`}</div>
+      </div>
+      <div>
+        <div class="cat-row-price">${price?`SGD ${price.basePrice}`:'—'}</div>
+        ${price?.resaleCeiling?`<div class="cat-row-ceiling">Resale cap: SGD ${price.resaleCeiling}</div>`:''}
+        ${soldOut?`<span class="tag tag-sold-out" style="margin-top:6px">Sold Out</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function selectCat(catId){
+  if(concert?.status!=='ACTIVE') return;
+  document.querySelectorAll('.cat-row').forEach(r=>r.classList.remove('selected'));
+  document.getElementById(`cr-${catId}`)?.classList.add('selected');
+  selectedCat=categories.find(c=>c.categoryId===catId);
+  if(!selectedCat||selectedCat.availableSeats===0) return;
+  const price=prices.find(p=>p.categoryId===catId);
+  document.getElementById('order-empty').classList.add('hidden');
+  document.getElementById('order-detail').classList.remove('hidden');
+  document.getElementById('order-actions').classList.remove('hidden');
+  document.getElementById('o-concert').textContent=concert.name;
+  document.getElementById('o-cat').textContent=selectedCat.categoryName;
+  document.getElementById('o-price').textContent=price?`SGD ${price.basePrice}`:'—';
+}
+
+async function joinQueue(){
+  const user=Auth.require();if(!user)return;
+  if(!selectedCat){toast('Select a category first','warning');return;}
+  const btn=document.getElementById('join-btn');
+  btn.disabled=true;btn.textContent='Joining…';
+  try{
+    await API.queue.join(concertId,{userId:user.userId});
+    toast('You\'re in the queue!','success');
+    setTimeout(()=>window.location.href=`queue.html?id=${concertId}&cat=${selectedCat.categoryId}`,700);
+  }catch(e){
+    if(e.code==='ALREADY_IN_QUEUE'||e.status===400){
+      toast('Already in queue — redirecting','info');
+      setTimeout(()=>window.location.href=`queue.html?id=${concertId}&cat=${selectedCat.categoryId}`,500);
+    }else{toast(e.message||'Could not join queue','error');btn.disabled=false;btn.textContent='Join Queue →';}
+  }
+}
+init();
+</script>
+</body>
+</html>

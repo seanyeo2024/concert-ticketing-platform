@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Select Seat — CTMS</title>
+<link rel="stylesheet" href="../assets/css/global.css">
+<style>
+/* ── Progress steps ─────────────────────── */
+.steps {
+  display: flex; background: var(--white);
+  border-bottom: 1.5px solid rgba(17,17,17,0.08);
+  padding: 0 40px;
+}
+.step {
+  flex: 1; padding: 18px 20px;
+  border-right: 1.5px solid rgba(17,17,17,0.08);
+  font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
+  color: #bbb; letter-spacing: 0.02em; position: relative;
+}
+.step:last-child { border-right: none; }
+.step.done { color: var(--teal); }
+.step.active { color: var(--black); }
+.step-num {
+  font-size: 0.62rem; display: block; letter-spacing: 0.12em;
+  margin-bottom: 3px; text-transform: uppercase; opacity: 0.6;
+}
+.step.active .step-num { opacity: 1; color: var(--blue); }
+.step-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: currentColor; margin-right: 6px; vertical-align: middle;
+}
+.step.done .step-dot { background: var(--teal); }
+.step.active .step-dot { background: var(--blue); }
+
+/* ── Checkout grid ──────────────────────── */
+.checkout-grid { display: grid; grid-template-columns: 1fr 400px; gap: 48px; padding: 48px 0 80px; }
+
+/* Stage label */
+.stage-label {
+  text-align: center;
+  background: linear-gradient(90deg, transparent, rgba(58,180,242,0.1), transparent);
+  padding: 10px; font-family: var(--font-body); font-size: 0.78rem; font-weight: 700;
+  letter-spacing: 0.18em; text-transform: uppercase; color: #888;
+  margin: 0 40px 28px; border-radius: 100px;
+  border: 1.5px solid rgba(58,180,242,0.2);
+}
+
+/* Category toggle */
+.cat-toggle {
+  display: flex; gap: 8px; margin-bottom: 28px; flex-wrap: wrap;
+}
+.cat-btn {
+  flex: 1; padding: 10px 16px; font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
+  border: 2px solid rgba(17,17,17,0.12); border-radius: 100px;
+  background: var(--white); color: #666; cursor: none; transition: all 0.15s;
+  white-space: nowrap; min-width: 80px;
+}
+.cat-btn.active { background: var(--black); color: var(--cream); border-color: var(--black); }
+.cat-btn:hover:not(.active) { border-color: var(--black); color: var(--black); }
+
+/* Order panel */
+.order-panel {
+  background: var(--white); border: 2px solid rgba(17,17,17,0.1);
+  border-radius: var(--radius-xl); padding: 32px;
+  position: sticky; top: calc(var(--nav-h) + 24px);
+  box-shadow: 0 16px 40px rgba(17,17,17,0.08);
+}
+.order-panel-title {
+  font-family: var(--font-display); font-size: 1.5rem; font-weight: 900;
+  letter-spacing: -0.02em; margin-bottom: 24px;
+}
+.order-row {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 11px 0; border-bottom: 1.5px solid rgba(17,17,17,0.07); font-size: 0.85rem;
+}
+.order-row:last-of-type { border-bottom: none; }
+.order-row-label { color: #888; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.order-row-val { text-align: right; max-width: 180px; font-weight: 600; }
+.order-total {
+  font-family: var(--font-display); font-size: 2.5rem; font-weight: 900;
+  color: var(--black); letter-spacing: -0.02em;
+}
+
+/* Payment section */
+.card-section {
+  border-top: 1.5px solid rgba(17,17,17,0.08);
+  padding-top: 24px; margin-top: 24px;
+}
+.card-section-title {
+  font-family: var(--font-display); font-size: 1.1rem; font-weight: 900;
+  letter-spacing: -0.01em; margin-bottom: 16px;
+}
+.demo-note {
+  background: rgba(245,197,24,0.15); border: 1.5px solid rgba(245,197,24,0.4);
+  border-radius: var(--radius); padding: 10px 14px;
+  font-size: 0.75rem; font-weight: 600; color: #7a5a00;
+  margin-bottom: 18px; letter-spacing: 0.02em;
+}
+
+@media(max-width:900px) {
+  .checkout-grid { grid-template-columns: 1fr; }
+  .order-panel { position: static; }
+}
+</style>
+</head>
+<body>
+<div class="noise-overlay"></div>
+<nav class="navbar" id="navbar"></nav>
+<div id="toast-container"></div>
+
+<div style="padding-top:var(--nav-h)">
+  <div class="steps">
+    <div class="step done"><span class="step-num">01</span><span class="step-dot"></span>Join Queue ✓</div>
+    <div class="step active"><span class="step-num">02</span><span class="step-dot"></span>Select Seat</div>
+    <div class="step"><span class="step-num">03</span><span class="step-dot"></span>Payment</div>
+    <div class="step"><span class="step-num">04</span><span class="step-dot"></span>Confirmation</div>
+  </div>
+</div>
+
+<div style="padding:48px 0 0">
+  <div class="container">
+    <div class="checkout-grid">
+      <!-- Seat map -->
+      <div>
+        <div class="section-label mb-24">Choose Your Seat</div>
+        <div class="cat-toggle" id="cat-toggle"></div>
+        <div class="stage-label">🎤 Stage</div>
+        <div class="seat-grid" id="seat-map">
+          <div class="skel" style="height:200px;width:100%;border-radius:var(--radius)"></div>
+        </div>
+        <div class="seat-legend mt-16">
+          <div class="legend-i"><div class="legend-box" style="background:var(--white)"></div>Available</div>
+          <div class="legend-i"><div class="legend-box" style="background:var(--teal)"></div>Selected</div>
+          <div class="legend-i"><div class="legend-box" style="background:rgba(17,17,17,0.12)"></div>Taken</div>
+        </div>
+      </div>
+
+      <!-- Order + payment -->
+      <div>
+        <div class="order-panel">
+          <div class="order-panel-title">Order Summary</div>
+          <div class="order-row">
+            <span class="order-row-label">Concert</span>
+            <span class="order-row-val" id="o-concert" style="font-size:0.78rem">—</span>
+          </div>
+          <div class="order-row">
+            <span class="order-row-label">Category</span>
+            <span class="order-row-val" id="o-cat" style="color:var(--blue)">—</span>
+          </div>
+          <div class="order-row">
+            <span class="order-row-label">Seat</span>
+            <span class="order-row-val" id="o-seat" style="color:var(--pink);font-weight:700">—</span>
+          </div>
+          <div class="order-row" style="border-top:1.5px solid rgba(17,17,17,0.1);padding-top:14px;margin-top:4px">
+            <span class="order-row-label">Total</span>
+            <span class="order-total" id="o-total">—</span>
+          </div>
+
+          <div class="card-section">
+            <div class="card-section-title">Payment Details</div>
+            <div class="demo-note">🔒 Demo mode — use card 4242 4242 4242 4242</div>
+            <div class="form-group">
+              <label class="form-label">Card Number</label>
+              <input class="form-input" id="card-num" placeholder="4242 4242 4242 4242" maxlength="19" oninput="this.value=this.value.replace(/\D/g,'').replace(/(.{4})/g,'$1 ').trim()">
+            </div>
+            <div class="grid-2">
+              <div class="form-group"><label class="form-label">Expiry</label><input class="form-input" id="card-exp" placeholder="MM / YY" maxlength="7"></div>
+              <div class="form-group"><label class="form-label">CVC</label><input class="form-input" id="card-cvc" placeholder="123" maxlength="3"></div>
+            </div>
+            <button class="btn btn-black w-full btn-lg" id="pay-btn" onclick="pay()" disabled style="border-radius:var(--radius)">Complete Purchase →</button>
+            <div style="font-size:0.68rem;text-align:center;color:#aaa;margin-top:10px;letter-spacing:0.06em">🔒 Secured by Stripe</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Success modal -->
+<div class="modal-overlay" id="success-modal">
+  <div class="modal" style="text-align:center">
+    <div style="font-size:4rem;margin-bottom:8px">🎉</div>
+    <div style="font-family:var(--font-display);font-size:2.5rem;font-weight:900;letter-spacing:-0.02em;margin-bottom:8px">Ticket Confirmed!</div>
+    <p style="color:#777;margin-bottom:28px;font-size:0.9rem">Check your email for confirmation and your QR code.</p>
+    <div style="background:var(--white);border:2px solid rgba(17,17,17,0.08);border-radius:var(--radius-lg);padding:20px;text-align:left;margin-bottom:24px">
+      <div class="order-row"><span style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em">Ticket ID</span><span id="c-ticket" style="color:var(--teal);font-weight:700"></span></div>
+      <div class="order-row"><span style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em">Seat</span><span id="c-seat" style="font-weight:700"></span></div>
+      <div class="order-row" style="border-bottom:none"><span style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em">Payment</span><span id="c-pay" style="font-weight:700"></span></div>
+    </div>
+    <button class="btn btn-black w-full btn-lg" onclick="window.location.href='my-tickets.html'" style="border-radius:var(--radius)">View My Tickets →</button>
+  </div>
+</div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+const user=Auth.require(); renderNav();
+const concertId=Util.getParam('id'), catId=Util.getParam('cat');
+if(!concertId) window.location.href='index.html';
+let selectedTicket=null, currentCat=catId, allTickets=[], priceData=null, concert=null;
+
+async function init(){
+  try{ concert=await API.concerts.get(concertId); document.getElementById('o-concert').textContent=concert.name; }catch{}
+  if(catId) await loadCat(catId);
+  await loadPrice();
+  renderCatToggle();
+}
+
+async function loadCat(cid){
+  currentCat=cid;
+  const d=await API.tickets.list(concertId,'AVAILABLE');
+  allTickets=(d.tickets||[]).filter(t=>!cid||t.categoryId===cid);
+  if(!allTickets.length) allTickets=genDemoSeats(cid);
+  renderMap();
+}
+
+async function loadPrice(){
+  if(!currentCat)return;
+  try{ priceData=await API.pricing.get(concertId,currentCat); document.getElementById('o-total').textContent=`SGD ${priceData.basePrice}`; document.getElementById('o-cat').textContent=currentCat; }catch{}
+}
+
+function genDemoSeats(cat){
+  const seats=[];
+  for(let r=1;r<=5;r++) for(let c=1;c<=10;c++) if(Math.random()>0.35) seats.push({ticketId:`TKT-D-${r}${c}`,seatNumber:`F-0${r}-${String(c).padStart(2,'0')}`,categoryId:cat,status:'AVAILABLE'});
+  return seats;
+}
+
+function renderCatToggle(){
+  const cats=[{id:'CAT-C001-01',label:'Floor'},{id:'CAT-C001-02',label:'Lower'},{id:'CAT-C001-03',label:'Upper'},{id:'CAT-C001-04',label:'Gallery'}];
+  const wrap=document.getElementById('cat-toggle');
+  wrap.innerHTML=cats.map(c=>`<button class="cat-btn ${c.id===currentCat?'active':''}" onclick="changeCat('${c.id}',this)">${c.label}</button>`).join('');
+}
+
+async function changeCat(cid,el){
+  document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active'); selectedTicket=null;
+  document.getElementById('o-seat').textContent='—'; document.getElementById('pay-btn').disabled=true;
+  await loadCat(cid); await loadPrice();
+}
+
+function renderMap(){
+  const map=document.getElementById('seat-map');
+  const rows={};
+  allTickets.forEach(t=>{ const r=t.seatNumber.split('-').slice(0,2).join('-'); if(!rows[r])rows[r]=[]; rows[r].push(t); });
+  if(!Object.keys(rows).length){map.innerHTML=`<div style="text-align:center;padding:60px;font-family:var(--font-display);font-size:2rem;font-weight:900;color:#aaa">No seats available</div>`;return;}
+  map.innerHTML=Object.entries(rows).map(([rk,seats])=>`
+    <div class="seat-row">
+      <span class="seat-row-lbl">${rk.split('-')[1]}</span>
+      ${seats.map(t=>`<div class="seat seat-av" id="s-${t.ticketId}" onclick="selectSeat('${t.ticketId}','${t.seatNumber}')" title="${t.seatNumber}">${t.seatNumber.split('-')[2]}</div>`).join('')}
+    </div>`).join('');
+}
+
+function selectSeat(tid,sn){
+  document.querySelectorAll('.seat').forEach(s=>s.classList.remove('seat-sel'));
+  document.getElementById(`s-${tid}`)?.classList.add('seat-sel');
+  selectedTicket={ticketId:tid,seatNumber:sn};
+  document.getElementById('o-seat').textContent=sn;
+  document.getElementById('pay-btn').disabled=false;
+}
+
+async function pay(){
+  if(!selectedTicket){toast('Select a seat first','warning');return;}
+  const btn=document.getElementById('pay-btn'); btn.disabled=true; btn.textContent='Processing…';
+  try{
+    const r=await API.purchase.complete(concertId,{userId:user.userId,ticketId:selectedTicket.ticketId,stripeToken:'tok_visa_simulated'});
+    document.getElementById('c-ticket').textContent=r.ticketId||selectedTicket.ticketId;
+    document.getElementById('c-seat').textContent=selectedTicket.seatNumber;
+    document.getElementById('c-pay').textContent=`${Util.formatPrice(r.amount||priceData?.basePrice||0,'SGD')} · ${r.paymentId}`;
+    openModal('success-modal');
+    toast('Ticket purchased!','success');
+  }catch(e){
+    toast(e.message||'Purchase failed','error');
+    btn.disabled=false; btn.textContent='Complete Purchase →';
+    if(e.status===410) window.location.href=`queue.html?id=${concertId}`;
+  }
+}
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Queue — CTMS</title>
+<link rel="stylesheet" href="../assets/css/global.css">
+<style>
+body { background: var(--black); }
+
+.q-page {
+  min-height: 100vh;
+  padding: calc(var(--nav-h) + 48px) 0 80px;
+  display: flex; align-items: center; justify-content: center;
+  position: relative; overflow: hidden;
+}
+
+/* Background blobs */
+.q-bg-blob-1 {
+  position: absolute; width: 500px; height: 500px;
+  background: var(--blue); opacity: 0.05;
+  border-radius: 60% 40% 70% 30% / 40% 60% 30% 70%;
+  top: -100px; left: -100px;
+  animation: blobFloat 12s ease-in-out infinite;
+}
+.q-bg-blob-2 {
+  position: absolute; width: 400px; height: 400px;
+  background: var(--teal); opacity: 0.05;
+  border-radius: 40% 60% 30% 70% / 60% 40% 70% 30%;
+  bottom: -80px; right: -80px;
+  animation: blobFloat 9s ease-in-out infinite reverse;
+}
+.q-bg-star {
+  position: absolute; color: rgba(255,255,255,0.04);
+  font-size: 10rem; top: 20%; right: 10%;
+  animation: starSpin 25s linear infinite;
+  pointer-events: none;
+}
+
+.q-wrap { width: 100%; max-width: 620px; position: relative; z-index: 2; }
+.phase { display: none; }
+.phase.active { display: block; }
+
+.back-link {
+  font-size: 0.78rem; font-weight: 600; color: #555;
+  display: inline-flex; align-items: center; gap: 8px; margin-bottom: 32px;
+  transition: color 0.15s;
+}
+.back-link:hover { color: var(--teal); }
+
+/* Concert chip */
+.concert-chip {
+  background: rgba(255,255,255,0.04);
+  border: 1.5px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius-lg);
+  padding: 18px 24px; margin-bottom: 32px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.concert-chip-name {
+  font-family: var(--font-display); font-size: 1.3rem; font-weight: 900;
+  color: var(--cream); letter-spacing: -0.02em; font-style: italic;
+}
+.concert-chip-meta { font-size: 0.72rem; letter-spacing: 0.06em; color: #555; margin-top: 3px; }
+
+/* ── Phase 1: Waiting ── */
+.waiting-box {
+  background: rgba(255,255,255,0.03);
+  border: 1.5px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius-xl);
+  padding: 52px; text-align: center;
+  position: relative; overflow: hidden;
+}
+.waiting-box::before {
+  content: 'QUEUE';
+  font-family: var(--font-display); font-size: 16rem; font-weight: 900;
+  color: var(--yellow); opacity: 0.03;
+  position: absolute; top: -20px; left: -20px;
+  pointer-events: none; line-height: 1; letter-spacing: -0.05em;
+}
+.pos-display {
+  font-family: var(--font-display); font-size: clamp(6rem, 20vw, 11rem);
+  font-weight: 900; color: var(--yellow); line-height: 0.88; margin-bottom: 8px;
+  letter-spacing: -0.04em;
+}
+.pos-label {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: #555; margin-bottom: 32px;
+}
+.stats-row {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0;
+  border: 1.5px solid rgba(255,255,255,0.08); border-radius: var(--radius-lg);
+  overflow: hidden; margin: 32px 0;
+}
+.stat-cell {
+  padding: 20px; border-right: 1.5px solid rgba(255,255,255,0.08);
+  text-align: center;
+}
+.stat-cell:last-child { border-right: none; }
+.stat-val {
+  font-family: var(--font-display); font-size: 2rem; font-weight: 900;
+  color: var(--cream); letter-spacing: -0.02em;
+}
+.stat-key {
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.15em;
+  text-transform: uppercase; color: #555; margin-top: 4px;
+}
+.pulse-bar {
+  height: 4px; background: rgba(255,255,255,0.06);
+  border-radius: 2px; margin-top: 24px; position: relative; overflow: hidden;
+}
+.pulse-bar::after {
+  content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, var(--teal), transparent);
+  animation: pulse-sweep 2s linear infinite;
+}
+@keyframes pulse-sweep { 0%{left:-100%} 100%{left:100%} }
+.refresh-note { font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase; color: #333; margin-top: 10px; }
+.tip-box {
+  background: rgba(255,255,255,0.03);
+  border: 1.5px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius); padding: 16px 20px; margin-top: 24px;
+  font-size: 0.82rem; color: #555; text-align: left; line-height: 1.7;
+}
+.tip-box strong { color: var(--cream); }
+
+/* ── Phase 2: Window granted ── */
+.window-box {
+  background: rgba(255,255,255,0.03);
+  border: 2px solid var(--yellow);
+  border-radius: var(--radius-xl);
+  padding: 52px; text-align: center;
+  position: relative; overflow: hidden;
+  box-shadow: 0 0 60px rgba(245,197,24,0.15), 0 24px 60px rgba(17,17,17,0.3);
+}
+.window-box::before {
+  content: '';
+  position: absolute; width: 300px; height: 300px;
+  background: var(--yellow); opacity: 0.05; border-radius: 50%;
+  top: -80px; right: -80px;
+  animation: blobFloat 8s ease-in-out infinite;
+}
+.window-eyebrow {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--yellow); margin-bottom: 16px;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+.window-eyebrow::before, .window-eyebrow::after {
+  content: ''; width: 24px; height: 2px; background: var(--yellow); border-radius: 2px;
+}
+.window-title {
+  font-family: var(--font-display); font-size: 1.8rem; font-weight: 900;
+  color: var(--cream); margin-bottom: 6px; letter-spacing: -0.02em;
+}
+.countdown-display {
+  font-family: var(--font-display); font-size: clamp(5rem, 15vw, 9rem);
+  font-weight: 900; color: var(--yellow); line-height: 0.9;
+  letter-spacing: -0.04em; margin: 16px 0;
+  position: relative; z-index: 1;
+}
+.countdown-display.urgent { color: var(--pink); animation: blink 0.8s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.countdown-label {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: #555; margin-bottom: 32px; min-height: 1.2em;
+}
+.expires-note { font-size: 0.68rem; color: #555; margin-top: 12px; letter-spacing: 0.04em; }
+
+/* ── Phase 3: Expired ── */
+.expired-box {
+  background: rgba(255,255,255,0.03);
+  border: 2px solid rgba(240,62,138,0.3);
+  border-radius: var(--radius-xl);
+  padding: 52px; text-align: center;
+  position: relative; overflow: hidden;
+  box-shadow: 0 0 60px rgba(240,62,138,0.1);
+}
+.expired-box::before {
+  content: '';
+  position: absolute; width: 300px; height: 300px;
+  background: var(--pink); opacity: 0.06; border-radius: 50%;
+  bottom: -80px; left: -80px;
+  animation: blobFloat 9s ease-in-out infinite reverse;
+}
+.expired-title {
+  font-family: var(--font-display); font-size: clamp(4rem, 12vw, 7rem);
+  font-weight: 900; color: var(--pink); line-height: 0.9;
+  letter-spacing: -0.04em; margin-bottom: 20px;
+  font-style: italic; position: relative; z-index: 1;
+}
+</style>
+</head>
+<body>
+<div class="noise-overlay"></div>
+<nav class="navbar" id="navbar"></nav>
+<div id="toast-container"></div>
+
+<div class="q-page">
+  <div class="q-bg-blob-1"></div>
+  <div class="q-bg-blob-2"></div>
+  <span class="q-bg-star">✦</span>
+
+  <div class="q-wrap">
+    <a href="index.html" class="back-link">← Back to Lineup</a>
+
+    <div class="concert-chip">
+      <div>
+        <div class="concert-chip-name" id="q-concert-name">Loading…</div>
+        <div class="concert-chip-meta" id="q-concert-meta"></div>
+      </div>
+      <div id="q-concert-status"></div>
+    </div>
+
+    <!-- PHASE 1: Waiting -->
+    <div class="phase active" id="phase-waiting">
+      <div class="waiting-box">
+        <div class="pos-display" id="q-pos">—</div>
+        <div class="pos-label">Your position in queue</div>
+        <div class="stats-row">
+          <div class="stat-cell"><div class="stat-val" id="q-ahead">—</div><div class="stat-key">Ahead</div></div>
+          <div class="stat-cell"><div class="stat-val" id="q-wait">—</div><div class="stat-key">Est. Wait</div></div>
+          <div class="stat-cell"><div class="stat-val" id="q-avail">—</div><div class="stat-key">Seats Left</div></div>
+        </div>
+        <div class="pulse-bar"></div>
+        <div class="refresh-note">Refreshing every 10 seconds</div>
+        <div class="tip-box">⚡ <strong>Keep this tab open.</strong> When your window opens you'll have exactly 10 minutes to select a seat and pay. Missing your window means rejoining the queue.</div>
+        <button class="btn btn-sm mt-24" style="background:transparent;border-color:rgba(255,255,255,0.1);color:#555;border-radius:100px" onclick="leaveQ()">Leave Queue</button>
+      </div>
+    </div>
+
+    <!-- PHASE 2: Window granted -->
+    <div class="phase" id="phase-window">
+      <div class="window-box">
+        <div class="window-eyebrow">It's Your Turn</div>
+        <div style="font-size:3rem;margin-bottom:8px;position:relative;z-index:1">🎫</div>
+        <div class="window-title">Purchase Window Open</div>
+        <div style="font-size:0.78rem;color:#666;margin-bottom:0;position:relative;z-index:1">Time Remaining</div>
+        <div class="countdown-display" id="countdown">10:00</div>
+        <div class="countdown-label" id="expires-label"></div>
+        <button class="btn btn-yellow btn-lg w-full" onclick="goSelect()" style="position:relative;z-index:1;border-radius:var(--radius)">Select My Seat →</button>
+        <div class="expires-note">Window closes at <span id="expires-time"></span></div>
+      </div>
+    </div>
+
+    <!-- PHASE 3: Expired -->
+    <div class="phase" id="phase-expired">
+      <div class="expired-box">
+        <div class="expired-title">Time's<br>Up.</div>
+        <p style="font-size:0.85rem;color:#666;margin-bottom:32px;position:relative;z-index:1">Your window expired. Rejoin the queue to try again.</p>
+        <button class="btn btn-yellow w-full btn-lg mb-16" onclick="rejoin()" style="position:relative;z-index:1;border-radius:var(--radius)">Rejoin Queue →</button>
+        <a href="index.html" class="btn w-full" style="background:transparent;border-color:rgba(255,255,255,0.1);color:#555;border-radius:var(--radius);position:relative;z-index:1">Back to Lineup</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+const user=Auth.require(); renderNav();
+const concertId=Util.getParam('id'), catId=Util.getParam('cat');
+if(!concertId) window.location.href='index.html';
+let poll, cdInterval, windowExpires;
+
+function showPhase(n){ document.querySelectorAll('.phase').forEach(p=>p.classList.remove('active')); document.getElementById(`phase-${n}`)?.classList.add('active'); }
+
+async function loadConcert(){
+  try{
+    const c=await API.concerts.get(concertId);
+    document.getElementById('q-concert-name').textContent=c.name;
+    document.getElementById('q-concert-meta').textContent=`${Util.formatDateShort(c.eventDate)} · ${c.venue?.split(',')[0]}`;
+    document.getElementById('q-concert-status').innerHTML=Util.tag(c.status);
+    document.getElementById('q-avail').textContent=c.availableSeats?.toLocaleString()||'—';
+  }catch{}
+}
+
+async function pollQueue(){
+  try{
+    const q=await API.queue.status(concertId,user.userId);
+    if(q.status==='WINDOW_GRANTED'){
+      clearInterval(poll);
+      windowExpires=new Date(q.windowExpiresAt||(Date.now()+600000));
+      document.getElementById('expires-time').textContent=windowExpires.toLocaleTimeString('en-SG');
+      showPhase('window'); startCountdown(); return;
+    }
+    if(q.status==='COMPLETED'){ window.location.href='my-tickets.html'; return; }
+    const pos=q.position||1; const ahead=Math.max(0,pos-1);
+    document.getElementById('q-pos').textContent=pos;
+    document.getElementById('q-ahead').textContent=ahead;
+    document.getElementById('q-wait').textContent=ahead<=0?'Soon':`~${Math.ceil(ahead*0.5)}m`;
+  }catch(e){ if(e.status===410){ clearInterval(poll); showPhase('expired'); } }
+}
+
+function startCountdown(){
+  clearInterval(cdInterval);
+  cdInterval=setInterval(()=>{
+    const diff=Math.max(0,Math.floor((windowExpires-Date.now())/1000));
+    if(!diff){ clearInterval(cdInterval); showPhase('expired'); return; }
+    const m=String(Math.floor(diff/60)).padStart(2,'0'), s=String(diff%60).padStart(2,'0');
+    const el=document.getElementById('countdown');
+    el.textContent=`${m}:${s}`; el.classList.toggle('urgent',diff<120);
+    document.getElementById('expires-label').textContent=diff<120?'⚠ Less than 2 minutes remaining':'';
+  },1000);
+}
+
+function goSelect(){ window.location.href=`seat-select.html?id=${concertId}&cat=${catId||''}`; }
+async function leaveQ(){ if(!confirm('Leave the queue? You will lose your position.'))return; await API.queue.leave(concertId,user.userId); window.location.href=`concert-detail.html?id=${concertId}`; }
+async function rejoin(){
+  try{ await API.queue.join(concertId,{userId:user.userId}); showPhase('waiting'); startPoll(); toast('Back in the queue!','success'); }
+  catch(e){ toast(e.message||'Could not rejoin','error'); }
+}
+function startPoll(){ pollQueue(); poll=setInterval(pollQueue,10000); }
+loadConcert(); startPoll();
+</script>
+</body>
+</html>

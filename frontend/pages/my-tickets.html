@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My Tickets — CTMS</title>
+<link rel="stylesheet" href="../assets/css/global.css">
+<style>
+/* ── Hero ─────────────────────────────── */
+.tickets-hero {
+  background: var(--black);
+  padding: calc(var(--nav-h) + 56px) 0 52px;
+  position: relative; overflow: hidden;
+}
+.th-blob-1 {
+  position: absolute; width: 400px; height: 400px;
+  background: var(--teal); opacity: 0.07;
+  border-radius: 60% 40% 70% 30% / 40% 60% 30% 70%;
+  top: -80px; right: -80px;
+  animation: blobFloat 10s ease-in-out infinite;
+}
+.th-blob-2 {
+  position: absolute; width: 250px; height: 250px;
+  background: var(--yellow); opacity: 0.06;
+  border-radius: 40% 60% 30% 70% / 60% 40% 70% 30%;
+  bottom: -60px; left: 20%;
+  animation: blobFloat 13s ease-in-out infinite reverse;
+}
+.hero-row {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  flex-wrap: wrap; gap: 24px; position: relative; z-index: 2;
+}
+.tickets-title {
+  font-family: var(--font-display); font-size: clamp(3rem, 8vw, 6rem);
+  font-weight: 900; color: var(--cream); letter-spacing: -0.03em;
+  font-style: italic;
+}
+.tickets-title em { color: var(--yellow); font-style: normal; }
+
+/* ── Tab bar ─────────────────────────── */
+.tab-bar {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.tab {
+  padding: 10px 22px; font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
+  border: 2px solid rgba(255,255,255,0.1); border-radius: 100px;
+  background: transparent; color: #666; cursor: none; transition: all 0.15s;
+  white-space: nowrap;
+}
+.tab.active { background: var(--yellow); color: var(--black); border-color: var(--yellow); }
+.tab:hover:not(.active) { border-color: rgba(255,255,255,0.25); color: var(--cream); }
+
+/* ── Ticket card ─────────────────────── */
+.tkt-card {
+  display: grid; grid-template-columns: 90px 1fr auto;
+  border: 2px solid rgba(17,17,17,0.08);
+  border-radius: var(--radius-lg); margin-bottom: 12px;
+  background: var(--white); overflow: hidden;
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+  position: relative;
+}
+.tkt-card:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(17,17,17,0.1); }
+
+.tkt-stub {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 20px 16px;
+  border-right: 2px dashed rgba(17,17,17,0.1);
+  position: relative;
+}
+.tkt-stub::before, .tkt-stub::after {
+  content: ''; position: absolute; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--cream); border: 2px solid rgba(17,17,17,0.08); z-index: 1;
+}
+.tkt-stub::before { top: -9px; left: 50%; transform: translateX(-50%); }
+.tkt-stub::after  { bottom: -9px; left: 50%; transform: translateX(-50%); }
+.tkt-stub-emoji { font-size: 2rem; }
+.tkt-stub-cat {
+  font-size: 0.52rem; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: #888; text-align: center;
+}
+
+/* Color accent stubs */
+.tkt-card:nth-child(5n+1) .tkt-stub { background: rgba(58,180,242,0.08); }
+.tkt-card:nth-child(5n+2) .tkt-stub { background: rgba(62,207,178,0.08); }
+.tkt-card:nth-child(5n+3) .tkt-stub { background: rgba(245,197,24,0.1); }
+.tkt-card:nth-child(5n+4) .tkt-stub { background: rgba(240,62,138,0.08); }
+.tkt-card:nth-child(5n+5) .tkt-stub { background: rgba(124,77,255,0.08); }
+
+.tkt-body { padding: 20px 24px; }
+.tkt-title {
+  font-family: var(--font-display); font-size: 1.3rem; font-weight: 900;
+  letter-spacing: -0.02em; margin-bottom: 8px;
+}
+.tkt-meta {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  font-size: 0.72rem; color: #888; margin-bottom: 12px;
+}
+.tkt-actions {
+  padding: 20px 24px; display: flex; flex-direction: column;
+  gap: 8px; align-items: flex-end; justify-content: center;
+  border-left: 2px dashed rgba(17,17,17,0.1);
+  min-width: 140px;
+}
+.tkt-price {
+  font-family: var(--font-display); font-size: 1.6rem; font-weight: 900;
+  color: var(--black); letter-spacing: -0.02em;
+}
+
+.empty-state {
+  border: 2px dashed rgba(17,17,17,0.12); border-radius: var(--radius-xl);
+  padding: 80px; text-align: center; background: var(--white);
+}
+.empty-state h2 { font-family: var(--font-display); font-size: 2.5rem; font-weight: 900; }
+</style>
+</head>
+<body>
+<div class="noise-overlay"></div>
+<nav class="navbar" id="navbar"></nav>
+<div id="toast-container"></div>
+
+<div class="tickets-hero">
+  <div class="th-blob-1"></div>
+  <div class="th-blob-2"></div>
+  <div class="container">
+    <div class="hero-row">
+      <div>
+        <div class="section-label" style="color:#666;margin-bottom:12px">Your Collection</div>
+        <h1 class="tickets-title">My <em>Tickets</em></h1>
+      </div>
+      <div class="tab-bar" id="tab-bar">
+        <button class="tab active" onclick="switchTab('upcoming',this)">Upcoming</button>
+        <button class="tab" onclick="switchTab('past',this)">Past</button>
+        <button class="tab" onclick="switchTab('reselling',this)">Reselling</button>
+        <button class="tab" onclick="switchTab('refunded',this)">Refunded</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="padding:48px 0 80px">
+  <div class="container">
+    <div id="ticket-list">
+      <div class="skel" style="height:110px;margin-bottom:12px;border-radius:var(--radius-lg)"></div>
+      <div class="skel" style="height:110px;margin-bottom:12px;border-radius:var(--radius-lg)"></div>
+      <div class="skel" style="height:110px;border-radius:var(--radius-lg)"></div>
+    </div>
+  </div>
+</div>
+
+<!-- QR modal -->
+<div class="modal-overlay" id="qr-modal">
+  <div class="modal" style="background:var(--black);color:var(--cream)">
+    <button class="modal-close" onclick="closeModal('qr-modal')">✕</button>
+    <div class="modal-title" style="color:var(--yellow)">Your QR Ticket</div>
+    <div class="modal-sub" id="qr-sub"></div>
+    <div style="background:rgba(255,255,255,0.04);border:2px solid rgba(255,255,255,0.08);border-radius:var(--radius-lg);padding:32px;text-align:center;margin:24px 0">
+      <div id="qr-area" style="display:flex;flex-direction:column;align-items:center;gap:12px">
+        <div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:#666">Loading QR code…</div>
+      </div>
+    </div>
+    <div id="qr-data" style="font-size:0.62rem;font-family:var(--font-body);background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius);padding:12px;word-break:break-all;color:#555"></div>
+    <div style="font-size:0.65rem;text-align:center;color:#555;margin-top:12px;letter-spacing:0.06em">Show at venue entrance for scanning</div>
+  </div>
+</div>
+
+<!-- Resale modal -->
+<div class="modal-overlay" id="resale-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('resale-modal')">✕</button>
+    <div class="modal-title">List for Resale</div>
+    <div class="modal-sub" id="resale-sub"></div>
+    <div id="resale-alert"></div>
+    <div class="form-group">
+      <label class="form-label">Asking Price (SGD)</label>
+      <div style="font-size:0.72rem;color:#888;margin-bottom:10px">Max allowed: <strong id="ceiling-display">—</strong></div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap" id="price-suggestions"></div>
+      <input class="form-input" type="number" id="resale-price" placeholder="e.g. 300.00" step="0.01">
+    </div>
+    <button class="btn btn-black w-full" onclick="submitResale()" style="border-radius:var(--radius)">List Ticket →</button>
+  </div>
+</div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+const user=Auth.require(); renderNav('tickets');
+let allTickets=[], activeTab='upcoming', resaleTarget=null;
+const STATUS_TABS={ upcoming:['CONFIRMED','PENDING'], past:['USED'], reselling:['RESALE_LISTED','RESALE_PENDING'], refunded:['REFUNDED'] };
+const CONCERT_NAMES={ 'CONC-000001':'Taylor Swift — The Eras Tour','CONC-000002':'Coldplay — Music of the Spheres','CONC-000003':'Bruno Mars — 24K Magic','CONC-000004':'BTS — Yet to Come','CONC-000005':'Ed Sheeran — Mathematics Tour' };
+const EMOJIS={ 'CONC-000001':'🌟','CONC-000002':'🎸','CONC-000003':'🎷','CONC-000004':'💜','CONC-000005':'🎵' };
+
+async function load(){
+  allTickets=SEED.tickets.filter(t=>t.ownerId===user.userId);
+  render();
+  try{
+    const ids=['CONC-000001','CONC-000002','CONC-000003','CONC-000004','CONC-000005'];
+    const res=await Promise.allSettled(ids.map(id=>API.tickets.list(id,'ALL')));
+    const live=res.flatMap(r=>r.value?.tickets||[]).filter(t=>t.ownerId===user.userId);
+    if(live.length){allTickets=live;render();}
+  }catch{}
+}
+
+function switchTab(tab,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active'); activeTab=tab; render();
+}
+
+function render(){
+  const statuses=STATUS_TABS[activeTab]||[];
+  const list=allTickets.filter(t=>statuses.includes(t.status));
+  const wrap=document.getElementById('ticket-list');
+  if(!list.length){
+    wrap.innerHTML=`<div class="empty-state"><h2>No tickets here</h2><p class="mt-16 text-muted">${activeTab==='upcoming'?'Browse concerts to find your next show.':'Nothing to show in this tab.'}</p>${activeTab==='upcoming'?'<a href="index.html" class="btn btn-black mt-24" style="border-radius:100px">Browse Lineup →</a>':''}</div>`;
+    return;
+  }
+  wrap.innerHTML=list.map(t=>`
+    <div class="tkt-card">
+      <div class="tkt-stub">
+        <span class="tkt-stub-emoji">${EMOJIS[t.concertId]||'🎫'}</span>
+        <span class="tkt-stub-cat">${t.categoryId?.split('-').pop()||'GEN'}</span>
+      </div>
+      <div class="tkt-body">
+        <div class="tkt-title">${CONCERT_NAMES[t.concertId]||t.concertId}</div>
+        <div class="tkt-meta">
+          <span>🪑 ${t.seatNumber}</span>
+          <span>🆔 ${t.ticketId}</span>
+          ${t.resalePrice?`<span style="color:var(--pink);font-weight:700">Listed @ SGD ${t.resalePrice}</span>`:''}
+        </div>
+        ${Util.tag(t.status)}
+      </div>
+      <div class="tkt-actions">
+        <div class="tkt-price">SGD ${t.purchasePrice||'—'}</div>
+        ${t.status==='CONFIRMED'?`
+          <button class="btn btn-sm btn-black" onclick="viewQR('${t.ticketId}','${t.concertId}','${t.seatNumber}')" style="border-radius:100px">QR Code</button>
+          <button class="btn btn-sm btn-outline" onclick="openResale('${t.ticketId}','${t.concertId}','${t.categoryId}',${t.purchasePrice||0})" style="border-radius:100px">Sell</button>`:''}
+        ${t.status==='RESALE_LISTED'?`
+          <button class="btn btn-sm btn-black" onclick="viewQR('${t.ticketId}','${t.concertId}','${t.seatNumber}')" style="border-radius:100px">QR Code</button>
+          <button class="btn btn-sm" style="border-color:var(--pink);color:var(--pink);border-radius:100px" onclick="cancelListing('${t.ticketId}')">Cancel</button>`:''}
+        ${t.status==='USED'?`<button class="btn btn-sm btn-outline" onclick="viewQR('${t.ticketId}','${t.concertId}','${t.seatNumber}')" style="border-radius:100px">View QR</button>`:''}
+      </div>
+    </div>`).join('');
+}
+
+async function viewQR(tid,cid,seat){
+  document.getElementById('qr-sub').textContent=`${CONCERT_NAMES[cid]||cid} · Seat ${seat}`;
+  document.getElementById('qr-area').innerHTML=`<div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:#666">Loading…</div>`;
+  document.getElementById('qr-data').textContent='';
+  openModal('qr-modal');
+  try{
+    const qr=await API.qr.get(tid);
+    document.getElementById('qr-data').textContent=qr.qrData;
+    document.getElementById('qr-area').innerHTML=`
+      <div style="width:180px;height:180px;background:var(--cream);border-radius:12px;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.1)">
+        <div style="font-family:var(--font-display);font-size:0.85rem;color:var(--black);text-align:center;padding:16px;letter-spacing:0.02em;line-height:1.4;font-weight:900">QR renders<br>in production<br><span style="font-size:2rem;display:block;margin-top:8px">📱</span></div>
+      </div>
+      <div style="font-size:0.65rem;color:#555;letter-spacing:0.06em;text-transform:uppercase">${qr.isValid?'✓ Valid':'✕ Invalid'}</div>`;
+  }catch{
+    document.getElementById('qr-area').innerHTML=`<div style="color:var(--pink);font-family:var(--font-display);font-size:1.5rem;font-weight:900">QR Not Found</div>`;
+  }
+}
+
+async function openResale(tid,cid,catId,purchasePrice){
+  resaleTarget={tid,cid,catId,purchasePrice};
+  document.getElementById('resale-sub').textContent=`Ticket ${tid}`;
+  document.getElementById('resale-alert').innerHTML='';
+  document.getElementById('resale-price').value='';
+  document.getElementById('price-suggestions').innerHTML='';
+  document.getElementById('ceiling-display').textContent='Loading…';
+  openModal('resale-modal');
+  try{
+    const ceil=await API.pricing.ceiling(cid,catId);
+    const c=ceil.resaleCeiling;
+    document.getElementById('ceiling-display').textContent=c?`SGD ${c}`:'No cap';
+    const sugs=[purchasePrice,purchasePrice*1.1,purchasePrice*1.2].filter(p=>!c||p<=c);
+    document.getElementById('price-suggestions').innerHTML=sugs.map(p=>`<button class="btn btn-sm btn-outline" onclick="document.getElementById('resale-price').value='${p.toFixed(2)}'" style="border-radius:100px">SGD ${p.toFixed(0)}</button>`).join('');
+  }catch{ document.getElementById('ceiling-display').textContent='—'; }
+}
+
+async function submitResale(){
+  const price=parseFloat(document.getElementById('resale-price').value);
+  if(!price||price<=0){toast('Enter a valid price','warning');return;}
+  try{
+    await API.resale.list({sellerId:user.userId,ticketId:resaleTarget.tid,concertId:resaleTarget.cid,resalePrice:price});
+    const t=allTickets.find(x=>x.ticketId===resaleTarget.tid);
+    if(t){t.status='RESALE_LISTED';t.resalePrice=price;}
+    toast('Ticket listed for resale!','success');
+    closeModal('resale-modal'); render();
+  }catch(e){
+    document.getElementById('resale-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Listing failed'}</div>`;
+  }
+}
+
+async function cancelListing(tid){
+  if(!confirm('Cancel this listing?'))return;
+  const t=allTickets.find(x=>x.ticketId===tid);
+  if(t){t.status='CONFIRMED';t.resalePrice=null;}
+  toast('Listing cancelled','success'); render();
+}
+
+load();
+</script>
+</body>
+</html>

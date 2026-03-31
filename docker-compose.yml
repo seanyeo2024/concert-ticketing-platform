@@ -1,0 +1,341 @@
+version: "3.8"
+
+# =============================================================================
+# Concert Ticketing Platform — Docker Compose
+# NOTE: Concert Service (OutSystems) is NOT here — it is called over HTTP.
+# =============================================================================
+
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: ctms_rabbitmq
+    ports:
+      - "5672:5672"       # AMQP
+      - "15672:15672"     # Management UI  →  http://localhost:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - ./infra/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./infra/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One MySQL instance per atomic service (each owns its own DB)
+  mysql_pricing:
+    image: mysql:8.0
+    container_name: ctms_mysql_pricing
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: pricing_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3301:3306"
+    volumes:
+      - mysql_pricing_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql_queue:
+    image: mysql:8.0
+    container_name: ctms_mysql_queue
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: queue_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3302:3306"
+    volumes:
+      - mysql_queue_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql_ticket_inventory:
+    image: mysql:8.0
+    container_name: ctms_mysql_ticket
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ticket_inventory_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3303:3306"
+    volumes:
+      - mysql_ticket_data:/var/lib/mysql
+      - ./database/seeds/ticket_inventory_db.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql_payment:
+    image: mysql:8.0
+    container_name: ctms_mysql_payment
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: payment_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3304:3306"
+    volumes:
+      - mysql_payment_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql_qr:
+    image: mysql:8.0
+    container_name: ctms_mysql_qr
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: qr_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3305:3306"
+    volumes:
+      - mysql_qr_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql_notification:
+    image: mysql:8.0
+    container_name: ctms_mysql_notification
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: notification_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_notification_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Atomic Services ─────────────────────────────────────────────────────────
+
+  pricing:
+    build: ./services/pricing
+    container_name: ctms_pricing
+    ports:
+      - "${PRICING_PORT}:5001"
+    environment:
+      MYSQL_HOST: mysql_pricing
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: pricing_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      CONCERT_SERVICE_URL: ${CONCERT_SERVICE_URL}
+    depends_on:
+      mysql_pricing:
+        condition: service_healthy
+    restart: unless-stopped
+
+  queue:
+    build: ./services/queue
+    container_name: ctms_queue
+    ports:
+      - "${QUEUE_PORT}:5002"
+    environment:
+      MYSQL_HOST: mysql_queue
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: queue_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE}
+      PURCHASE_WINDOW_SECONDS: ${PURCHASE_WINDOW_SECONDS}
+    depends_on:
+      mysql_queue:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ticket_inventory:
+    build: ./services/ticket_inventory
+    container_name: ctms_ticket_inventory
+    ports:
+      - "${TICKET_INVENTORY_PORT}:5003"
+    environment:
+      MYSQL_HOST: mysql_ticket_inventory
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ticket_inventory_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    depends_on:
+      mysql_ticket_inventory:
+        condition: service_healthy
+    restart: unless-stopped
+
+  payment:
+    build: ./services/payment
+    container_name: ctms_payment
+    ports:
+      - "${PAYMENT_PORT}:5004"
+    environment:
+      MYSQL_HOST: mysql_payment
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: payment_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+    depends_on:
+      mysql_payment:
+        condition: service_healthy
+    restart: unless-stopped
+
+  qr:
+    build: ./services/qr
+    container_name: ctms_qr
+    ports:
+      - "${QR_PORT}:5005"
+    environment:
+      MYSQL_HOST: mysql_qr
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: qr_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      QR_HMAC_SECRET: ${QR_HMAC_SECRET}
+    depends_on:
+      mysql_qr:
+        condition: service_healthy
+    restart: unless-stopped
+
+  notification:
+    build: ./services/notification
+    container_name: ctms_notification
+    ports:
+      - "${NOTIFICATION_PORT}:5006"
+    environment:
+      MYSQL_HOST: mysql_notification
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: notification_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      EMAIL_FROM: ${EMAIL_FROM}
+    depends_on:
+      mysql_notification:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Composite Services ──────────────────────────────────────────────────────
+
+  purchase_window:
+    build: ./services/purchase_window
+    container_name: ctms_purchase_window
+    ports:
+      - "${PURCHASE_WINDOW_PORT}:5010"
+    environment:
+      CONCERT_SERVICE_URL: ${CONCERT_SERVICE_URL}
+      PRICING_SERVICE_URL: http://pricing:5001
+      QUEUE_SERVICE_URL: http://queue:5002
+      TICKET_INVENTORY_SERVICE_URL: http://ticket_inventory:5003
+      PAYMENT_SERVICE_URL: http://payment:5004
+      QR_SERVICE_URL: http://qr:5005
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE}
+    depends_on:
+      - pricing
+      - queue
+      - ticket_inventory
+      - payment
+      - qr
+      - rabbitmq
+    restart: unless-stopped
+
+  resale_purchase:
+    build: ./services/resale_purchase
+    container_name: ctms_resale_purchase
+    ports:
+      - "${RESALE_PURCHASE_PORT}:5011"
+    environment:
+      TICKET_INVENTORY_SERVICE_URL: http://ticket_inventory:5003
+      PRICING_SERVICE_URL: http://pricing:5001
+      PAYMENT_SERVICE_URL: http://payment:5004
+      QR_SERVICE_URL: http://qr:5005
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE}
+    depends_on:
+      - ticket_inventory
+      - pricing
+      - payment
+      - qr
+      - rabbitmq
+    restart: unless-stopped
+
+  concert_cancellation:
+    build: ./services/concert_cancellation
+    container_name: ctms_concert_cancellation
+    ports:
+      - "${CONCERT_CANCELLATION_PORT}:5012"
+    environment:
+      CONCERT_SERVICE_URL: ${CONCERT_SERVICE_URL}
+      TICKET_INVENTORY_SERVICE_URL: http://ticket_inventory:5003
+      PAYMENT_SERVICE_URL: http://payment:5004
+      QR_SERVICE_URL: http://qr:5005
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE}
+    depends_on:
+      - ticket_inventory
+      - payment
+      - qr
+      - rabbitmq
+    restart: unless-stopped
+
+volumes:
+  mysql_pricing_data:
+  mysql_queue_data:
+  mysql_ticket_data:
+  mysql_payment_data:
+  mysql_qr_data:
+  mysql_notification_data:

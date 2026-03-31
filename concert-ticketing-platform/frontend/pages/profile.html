@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Profile — CTMS</title>
+  <link rel="stylesheet" href="../assets/css/global.css">
+  <style>
+    .profile-grid { display: grid; grid-template-columns: 300px 1fr; gap: 32px; }
+    .profile-card { position: sticky; top: calc(var(--nav-h) + 24px); height: fit-content; }
+    .avatar-large { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--gold-dim)); display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 700; color: #fff; margin-bottom: 16px; }
+    .profile-name { font-family: var(--font-display); font-size: 1.4rem; font-weight: 700; }
+    .profile-role { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; }
+    .stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 24px 0; }
+    .stat-box { background: var(--bg2); border-radius: var(--radius); padding: 14px; text-align: center; }
+    .stat-box-val { font-family: var(--font-display); font-size: 1.6rem; font-weight: 700; color: var(--gold); }
+    .stat-box-label { font-size: 0.72rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+    .tabs { display: flex; gap: 4px; background: var(--bg2); border-radius: var(--radius); padding: 4px; margin-bottom: 28px; }
+    .tab { padding: 8px 18px; border-radius: 7px; cursor: pointer; font-size: 0.85rem; font-weight: 500; color: var(--text2); transition: all var(--transition); background: none; border: none; font-family: var(--font-body); }
+    .tab.active { background: var(--surface2); color: var(--text); }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .pay-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); }
+    .pay-row:last-of-type { border-bottom: none; }
+    .pay-type { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
+    .pay-type.purchase  { background: rgba(76,175,130,0.15); }
+    .pay-type.refund    { background: rgba(124,111,205,0.15); }
+    .pay-amount-pos { color: var(--danger); font-weight: 600; }
+    .pay-amount-neg { color: var(--success); font-weight: 600; }
+    @media (max-width: 900px) { .profile-grid { grid-template-columns: 1fr; } .profile-card { position: static; } }
+  </style>
+</head>
+<body>
+  <nav class="navbar" id="navbar"></nav>
+  <div id="toast-container"></div>
+
+  <div class="page-content">
+    <div class="container">
+      <div class="profile-grid">
+
+        <!-- Left: profile card -->
+        <div class="profile-card">
+          <div class="card">
+            <div class="avatar-large" id="profile-avatar">?</div>
+            <div class="profile-name" id="profile-name">—</div>
+            <div id="profile-email" class="text-muted text-sm mt-4"></div>
+            <div class="profile-role">
+              <div id="profile-role-badge"></div>
+            </div>
+            <div class="stat-row" id="stat-row">
+              <div class="stat-box"><div class="stat-box-val" id="stat-tickets">—</div><div class="stat-box-label">Tickets</div></div>
+              <div class="stat-box"><div class="stat-box-val" id="stat-spent">—</div><div class="stat-box-label">Spent</div></div>
+            </div>
+            <div class="divider"></div>
+            <div class="form-group">
+              <label class="form-label">Display Name</label>
+              <input type="text" class="form-input" id="edit-name">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email</label>
+              <input type="email" class="form-input" id="edit-email">
+            </div>
+            <button class="btn btn-primary btn-full" onclick="saveProfile()">Save Changes</button>
+            <button class="btn btn-danger btn-full mt-10" onclick="Auth.logout()">Sign Out</button>
+          </div>
+        </div>
+
+        <!-- Right: tabbed panels -->
+        <div>
+          <div class="tabs" id="profile-tabs">
+            <button class="tab active" onclick="switchPanel('activity',this)">Activity</button>
+            <button class="tab"        onclick="switchPanel('payments',this)">Payments</button>
+            <button class="tab"        onclick="switchPanel('notifications',this)">Notifications</button>
+          </div>
+
+          <!-- Activity -->
+          <div class="panel active" id="panel-activity">
+            <h3 class="mb-20">Recent Activity</h3>
+            <div id="activity-list">
+              <div class="skeleton" style="height:60px;margin-bottom:10px;border-radius:var(--radius)"></div>
+              <div class="skeleton" style="height:60px;margin-bottom:10px;border-radius:var(--radius)"></div>
+              <div class="skeleton" style="height:60px;border-radius:var(--radius)"></div>
+            </div>
+          </div>
+
+          <!-- Payments -->
+          <div class="panel" id="panel-payments">
+            <h3 class="mb-20">Payment History</h3>
+            <div id="payment-list"></div>
+          </div>
+
+          <!-- Notifications -->
+          <div class="panel" id="panel-notifications">
+            <h3 class="mb-20">Notification Log</h3>
+            <div id="notification-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/js/api.js"></script>
+  <script>
+    const user = Auth.require();
+    renderNav();
+
+    function switchPanel(name, el) {
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById(`panel-${name}`).classList.add('active');
+      el.classList.add('active');
+      if (name === 'payments' && !document.getElementById('payment-list').childElementCount) loadPayments();
+      if (name === 'notifications' && !document.getElementById('notification-list').childElementCount) loadNotifications();
+    }
+
+    function initProfile() {
+      document.getElementById('profile-avatar').textContent = user.name[0];
+      document.getElementById('profile-name').textContent = user.name;
+      document.getElementById('profile-email').textContent = user.email;
+      document.getElementById('edit-name').value = user.name;
+      document.getElementById('edit-email').value = user.email;
+      const isAdmin = user.role === 'admin';
+      document.getElementById('profile-role-badge').innerHTML = isAdmin
+        ? `<span class="badge" style="background:rgba(201,168,76,0.15);color:var(--gold);border:1px solid var(--gold-dim)">👑 Administrator</span>`
+        : `<span class="badge badge-active">Customer</span>`;
+    }
+
+    async function loadActivity() {
+      const activities = [
+        { icon: '🎫', label: 'Purchased ticket for Taylor Swift', sub: 'Seat F-01-03 · CAT 1 Floor', time: '2 days ago', color: 'var(--success)' },
+        { icon: '🔄', label: 'Listed ticket for resale', sub: 'TKT-10007 · SGD 300', time: '5 days ago', color: 'var(--accent2)' },
+        { icon: '🎟️', label: 'Joined queue for Coldplay', sub: 'Position #142', time: '1 week ago', color: 'var(--gold)' },
+      ];
+      document.getElementById('activity-list').innerHTML = activities.map(a => `
+        <div class="pay-row">
+          <div style="display:flex;align-items:center;gap:14px">
+            <div class="pay-type" style="background:rgba(0,0,0,0.2);font-size:1.2rem">${a.icon}</div>
+            <div>
+              <div style="font-size:0.875rem;font-weight:500">${a.label}</div>
+              <div class="text-xs text-dim">${a.sub}</div>
+            </div>
+          </div>
+          <div class="text-xs text-dim">${a.time}</div>
+        </div>`).join('');
+    }
+
+    async function loadPayments() {
+      const list = document.getElementById('payment-list');
+      try {
+        const d = await API.payment.byUser(user.userId);
+        const payments = d.payments || [];
+        if (!payments.length) { list.innerHTML = `<p class="text-muted text-center" style="padding:40px">No payment history yet.</p>`; return; }
+        list.innerHTML = `<div class="card">` + payments.map(p => {
+          const isRefund = p.type === 'REFUND';
+          return `<div class="pay-row">
+            <div style="display:flex;align-items:center;gap:14px">
+              <div class="pay-type ${isRefund?'refund':'purchase'}">${isRefund?'↩️':'💳'}</div>
+              <div>
+                <div style="font-size:0.875rem;font-weight:500">${p.type.replace('_',' ')}</div>
+                <div class="text-xs text-dim">${p.ticketId} · ${Util.formatDate(p.createdAt)}</div>
+              </div>
+            </div>
+            <div class="${isRefund?'pay-amount-neg':'pay-amount-pos'}">${isRefund?'+':'-'}${Util.formatPrice(p.amount,p.currency)}</div>
+          </div>`;
+        }).join('') + `</div>`;
+      } catch {
+        list.innerHTML = `<p class="text-muted text-center" style="padding:40px">Could not load payment history.</p>`;
+      }
+    }
+
+    async function loadNotifications() {
+      const list = document.getElementById('notification-list');
+      try {
+        const d = await API.notification.byUser(user.userId);
+        const notifs = d.notifications || [];
+        if (!notifs.length) { list.innerHTML = `<p class="text-muted text-center" style="padding:40px">No notifications yet.</p>`; return; }
+        list.innerHTML = `<div class="card">` + notifs.map(n => `
+          <div class="pay-row">
+            <div style="display:flex;align-items:center;gap:14px">
+              <div class="pay-type" style="background:rgba(124,111,205,0.15)">📧</div>
+              <div>
+                <div style="font-size:0.875rem;font-weight:500">${n.subject}</div>
+                <div class="text-xs text-dim">${n.channel} · ${Util.formatDate(n.sentAt || n.createdAt)}</div>
+              </div>
+            </div>
+            ${Util.statusBadge(n.status)}
+          </div>`).join('') + `</div>`;
+      } catch {
+        list.innerHTML = `<p class="text-muted text-center" style="padding:40px">Could not load notifications.</p>`;
+      }
+    }
+
+    function saveProfile() {
+      const name = document.getElementById('edit-name').value.trim();
+      if (!name) { toast('Name cannot be empty', 'warning'); return; }
+      const stored = Auth.getUser();
+      stored.name = name;
+      localStorage.setItem('ctms_user', JSON.stringify(stored));
+      document.getElementById('profile-name').textContent = name;
+      document.getElementById('profile-avatar').textContent = name[0];
+      toast('Profile updated', 'success');
+    }
+
+    initProfile();
+    loadActivity();
+
+    // Stat counters (demo values)
+    document.getElementById('stat-tickets').textContent = '3';
+    document.getElementById('stat-spent').textContent = 'S$1,024';
+  </script>
+</body>
+</html>

@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Concert Detail — CTMS</title>
+  <link rel="stylesheet" href="../assets/css/global.css">
+  <style>
+    .concert-hero {
+      padding: calc(var(--nav-h) + 48px) 0 48px;
+      background: radial-gradient(ellipse 80% 100% at 50% 0%, rgba(201,168,76,0.1) 0%, transparent 65%), var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .concert-hero-inner { display: grid; grid-template-columns: auto 1fr; gap: 40px; align-items: start; }
+    .concert-poster {
+      width: 200px; height: 200px; border-radius: var(--radius-lg);
+      background: var(--bg3); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center; font-size: 5rem; flex-shrink: 0;
+    }
+    .concert-info h1 { margin-bottom: 12px; }
+    .concert-tags { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+    .info-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; margin-top: 24px; }
+    .info-block label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); display: block; margin-bottom: 4px; }
+    .info-block span { font-size: 0.95rem; color: var(--text); font-weight: 500; }
+    .main-grid { display: grid; grid-template-columns: 1fr 360px; gap: 32px; margin-top: 48px; }
+    .cat-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+      padding: 20px; display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; transition: all var(--transition); margin-bottom: 12px;
+    }
+    .cat-card:hover, .cat-card.selected { border-color: var(--gold); background: rgba(201,168,76,0.04); }
+    .cat-card.selected { box-shadow: 0 0 0 1px var(--gold-dim); }
+    .cat-name { font-weight: 600; margin-bottom: 4px; }
+    .cat-avail { font-size: 0.8rem; color: var(--text3); }
+    .cat-price { font-family: var(--font-display); font-size: 1.4rem; font-weight: 700; color: var(--gold); }
+    .sidebar-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 24px; position: sticky; top: calc(var(--nav-h) + 24px); }
+    .sidebar-card h3 { margin-bottom: 20px; }
+    .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
+    .summary-row:last-of-type { border-bottom: none; }
+    .summary-total { font-size: 1.2rem; font-weight: 700; color: var(--gold); }
+    .availability-bar { height: 5px; background: var(--bg3); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+    .availability-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+    @media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } .concert-hero-inner { grid-template-columns: 1fr; } .concert-poster { width: 120px; height: 120px; font-size: 3rem; } .info-grid { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <nav class="navbar" id="navbar"></nav>
+  <div id="toast-container"></div>
+
+  <div id="page-content">
+    <!-- Concert Hero -->
+    <div class="concert-hero">
+      <div class="container">
+        <div class="concert-hero-inner">
+          <div class="concert-poster" id="concert-emoji">🎤</div>
+          <div class="concert-info">
+            <div class="concert-tags" id="concert-tags">
+              <div class="skeleton" style="width:80px;height:24px;border-radius:20px"></div>
+            </div>
+            <h1 id="concert-name"><span class="skeleton" style="display:inline-block;width:400px;height:40px"></span></h1>
+            <p id="concert-artist" class="text-muted"></p>
+            <div class="info-grid" id="info-grid">
+              <div class="info-block"><label>Date & Time</label><span class="skeleton" style="width:140px;height:18px;display:block"></span></div>
+              <div class="info-block"><label>Venue</label><span class="skeleton" style="width:180px;height:18px;display:block"></span></div>
+              <div class="info-block"><label>Availability</label><span class="skeleton" style="width:100px;height:18px;display:block"></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main content -->
+    <div class="page-content" style="padding-top:0">
+      <div class="container">
+        <div class="main-grid">
+          <!-- Left: categories -->
+          <div>
+            <h2 class="mb-24">Select a Category</h2>
+            <div id="categories-list">
+              ${[1,2,3,4].map(()=>`<div class="skeleton" style="height:80px;border-radius:var(--radius-lg);margin-bottom:12px"></div>`).join('')}
+            </div>
+
+            <div class="divider"></div>
+            <h3 class="mb-16">About this event</h3>
+            <p id="concert-about" class="text-muted" style="line-height:1.8">Select a concert to see details.</p>
+
+            <!-- Resale section (shown if sold out) -->
+            <div id="resale-section" class="hidden mt-40">
+              <div class="divider"></div>
+              <h3 class="mb-8">Resale Tickets Available</h3>
+              <p class="text-muted mb-16">Official tickets are sold out, but fans are reselling tickets below.</p>
+              <button class="btn btn-secondary" onclick="window.location.href='resale.html?id='+concertId">Browse Resale Tickets</button>
+            </div>
+          </div>
+
+          <!-- Right: sidebar -->
+          <div>
+            <div class="sidebar-card">
+              <h3>Your Order</h3>
+              <div id="sidebar-empty" style="text-align:center;padding:24px 0;color:var(--text3)">
+                <div style="font-size:2rem;margin-bottom:12px">🎫</div>
+                <p class="text-sm">Select a category to continue</p>
+              </div>
+              <div id="sidebar-summary" class="hidden">
+                <div class="summary-row"><span>Concert</span><span id="sum-concert" class="text-right" style="max-width:180px;font-size:0.8rem"></span></div>
+                <div class="summary-row"><span>Category</span><span id="sum-category" class="text-gold"></span></div>
+                <div class="summary-row"><span>Seat</span><span id="sum-seat">—</span></div>
+                <div class="summary-row"><span>Price</span><span id="sum-price" class="summary-total"></span></div>
+              </div>
+              <div id="sidebar-actions" class="hidden mt-24" style="display:flex;flex-direction:column;gap:10px">
+                <button class="btn btn-primary btn-full btn-lg" id="join-queue-btn" onclick="handleJoinQueue()">Join Queue</button>
+                <p class="text-xs text-dim text-center">You'll be placed in a virtual queue. When it's your turn, you'll have 10 minutes to complete purchase.</p>
+              </div>
+              <div id="sidebar-blocked" class="hidden mt-16">
+                <div class="alert alert-warning">This concert is not currently available for purchase.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/js/api.js"></script>
+  <script>
+    let concertId, concert, categories = [], prices = [], selectedCat = null;
+
+    renderNav('concerts');
+
+    async function init() {
+      concertId = Util.getParam('id');
+      if (!concertId) { window.location.href = 'index.html'; return; }
+      try {
+        [concert] = await Promise.all([API.concerts.get(concertId)]);
+        renderHero();
+        await Promise.all([loadCategories(), loadPrices()]);
+        renderCategories();
+      } catch (e) {
+        toast('Could not load concert details', 'error');
+      }
+    }
+
+    function renderHero() {
+      document.title = `${concert.name} — CTMS`;
+      document.getElementById('concert-emoji').textContent = Util.concertEmoji(concert.name);
+      document.getElementById('concert-name').textContent = concert.name;
+      document.getElementById('concert-artist').textContent = `by ${concert.artistName}`;
+      document.getElementById('concert-tags').innerHTML = Util.statusBadge(concert.status);
+      document.getElementById('concert-about').textContent =
+        `Experience ${concert.artistName} live at ${concert.venue}. This is a landmark event on the Singapore concert calendar — book your seat before they're gone.`;
+      const pct = concert.totalSeats ? Math.round((concert.totalSeats - concert.availableSeats) / concert.totalSeats * 100) : 0;
+      const fillColor = pct > 80 ? 'var(--danger)' : pct > 50 ? 'var(--warning)' : 'var(--success)';
+      document.getElementById('info-grid').innerHTML = `
+        <div class="info-block"><label>Date & Time</label><span>${Util.formatDate(concert.eventDate)}</span></div>
+        <div class="info-block"><label>Venue</label><span>${concert.venue}</span></div>
+        <div class="info-block">
+          <label>Availability</label>
+          <span>${concert.availableSeats?.toLocaleString()} / ${concert.totalSeats?.toLocaleString()} seats</span>
+          <div class="availability-bar"><div class="availability-fill" style="width:${pct}%;background:${fillColor}"></div></div>
+        </div>`;
+      if (concert.status === 'SOLD_OUT') document.getElementById('resale-section').classList.remove('hidden');
+      if (!['ACTIVE'].includes(concert.status)) {
+        document.getElementById('sidebar-blocked').classList.remove('hidden');
+      }
+    }
+
+    async function loadCategories() {
+      try { const d = await API.concerts.seats(concertId); categories = d.categories || []; }
+      catch { categories = [
+        {categoryId:'CAT-C001-01',categoryName:'CAT 1 — Floor / Pit',  totalSeats:5000, availableSeats:230},
+        {categoryId:'CAT-C001-02',categoryName:'CAT 2 — Lower Tier',   totalSeats:15000,availableSeats:4100},
+        {categoryId:'CAT-C001-03',categoryName:'CAT 3 — Upper Tier',   totalSeats:20000,availableSeats:8100},
+        {categoryId:'CAT-C001-04',categoryName:'CAT 4 — Gallery',      totalSeats:10000,availableSeats:6000},
+      ]; }
+    }
+
+    async function loadPrices() {
+      try { const d = await API.pricing.list(concertId); prices = d.prices || []; }
+      catch { prices = [
+        {categoryId:'CAT-C001-01',basePrice:388,currency:'SGD'},
+        {categoryId:'CAT-C001-02',basePrice:248,currency:'SGD'},
+        {categoryId:'CAT-C001-03',basePrice:158,currency:'SGD'},
+        {categoryId:'CAT-C001-04',basePrice:98, currency:'SGD'},
+      ]; }
+    }
+
+    function renderCategories() {
+      const list = document.getElementById('categories-list');
+      list.innerHTML = categories.map(cat => {
+        const price = prices.find(p => p.categoryId === cat.categoryId);
+        const avail = cat.availableSeats;
+        const pct = Math.round((cat.totalSeats - avail) / cat.totalSeats * 100);
+        const soldOut = avail === 0;
+        const fillColor = pct > 80 ? 'var(--danger)' : pct > 50 ? 'var(--warning)' : 'var(--success)';
+        return `<div class="cat-card ${soldOut?'opacity-50':''}" id="cat-${cat.categoryId}"
+                     onclick="${soldOut?'':''}"
+                     onclick="selectCategory('${cat.categoryId}')">
+          <div>
+            <div class="cat-name">${cat.categoryName}</div>
+            <div class="cat-avail">${soldOut ? 'Sold out' : `${avail.toLocaleString()} seats remaining`}</div>
+            <div class="availability-bar" style="width:160px;margin-top:8px">
+              <div class="availability-fill" style="width:${pct}%;background:${fillColor}"></div>
+            </div>
+          </div>
+          <div class="text-right">
+            ${price ? `<div class="cat-price">${Util.formatPrice(price.basePrice, price.currency)}</div><div class="text-xs text-dim">per ticket</div>` : '<span class="text-dim">—</span>'}
+            ${soldOut ? '<div class="badge badge-sold-out mt-8">Sold Out</div>' : ''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function selectCategory(catId) {
+      if (concert?.status !== 'ACTIVE') return;
+      document.querySelectorAll('.cat-card').forEach(c => c.classList.remove('selected'));
+      document.getElementById(`cat-${catId}`)?.classList.add('selected');
+      selectedCat = categories.find(c => c.categoryId === catId);
+      const price = prices.find(p => p.categoryId === catId);
+      if (!selectedCat || selectedCat.availableSeats === 0) return;
+      document.getElementById('sidebar-empty').classList.add('hidden');
+      document.getElementById('sidebar-summary').classList.remove('hidden');
+      document.getElementById('sidebar-actions').classList.remove('hidden');
+      document.getElementById('sum-concert').textContent = concert.name;
+      document.getElementById('sum-category').textContent = selectedCat.categoryName;
+      document.getElementById('sum-seat').textContent = 'Assigned at purchase';
+      document.getElementById('sum-price').textContent = price ? Util.formatPrice(price.basePrice, price.currency) : '—';
+    }
+
+    async function handleJoinQueue() {
+      const user = Auth.require();
+      if (!selectedCat) { toast('Please select a category first', 'warning'); return; }
+      const btn = document.getElementById('join-queue-btn');
+      btn.disabled = true; btn.textContent = 'Joining queue…';
+      try {
+        await API.queue.join(concertId, { userId: user.userId });
+        toast('You\'re in the queue! Taking you there now…', 'success');
+        setTimeout(() => window.location.href = `queue.html?id=${concertId}&cat=${selectedCat.categoryId}`, 800);
+      } catch (e) {
+        if (e.code === 'ALREADY_IN_QUEUE') {
+          toast('You\'re already in the queue for this concert!', 'info');
+          setTimeout(() => window.location.href = `queue.html?id=${concertId}&cat=${selectedCat.categoryId}`, 600);
+        } else {
+          toast(e.message || 'Could not join queue', 'error');
+        }
+        btn.disabled = false; btn.textContent = 'Join Queue';
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

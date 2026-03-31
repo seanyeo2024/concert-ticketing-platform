@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Profile — CTMS</title>
+<link rel="stylesheet" href="../assets/css/global.css">
+<style>
+/* ── Profile hero ─────────────────────── */
+.profile-hero {
+  background: var(--black);
+  padding: calc(var(--nav-h) + 56px) 0 0;
+  position: relative; overflow: hidden;
+}
+.ph-blob-1 {
+  position: absolute; width: 380px; height: 380px;
+  background: var(--purple); opacity: 0.07;
+  border-radius: 60% 40% 70% 30% / 40% 60% 30% 70%;
+  top: -60px; right: -60px;
+  animation: blobFloat 12s ease-in-out infinite;
+}
+.ph-blob-2 {
+  position: absolute; width: 220px; height: 220px;
+  background: var(--teal); opacity: 0.06;
+  border-radius: 40% 60% 30% 70% / 60% 40% 70% 30%;
+  bottom: 0; left: 25%;
+  animation: blobFloat 9s ease-in-out infinite reverse;
+}
+.profile-top {
+  display: grid; grid-template-columns: auto 1fr;
+  gap: 40px; align-items: end; padding-bottom: 48px;
+  position: relative; z-index: 2;
+}
+.avatar-xl {
+  width: 110px; height: 110px;
+  background: linear-gradient(135deg, var(--blue), var(--teal));
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-size: 3.5rem; font-weight: 900;
+  color: var(--white); flex-shrink: 0;
+  box-shadow: 0 8px 32px rgba(58,180,242,0.3);
+}
+.profile-name {
+  font-family: var(--font-display); font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 900; color: var(--cream); line-height: 0.9;
+  letter-spacing: -0.03em; font-style: italic;
+}
+.profile-email { font-size: 0.82rem; color: #555; margin-top: 8px; }
+.role-tag { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; }
+
+/* ── Tabs bar ─────────────────────────── */
+.tabs-bar {
+  display: flex; gap: 0;
+  border-top: 1.5px solid rgba(255,255,255,0.06);
+  position: relative; z-index: 2;
+}
+.tab-btn {
+  padding: 16px 28px; font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
+  background: none; border: none; border-right: 1.5px solid rgba(255,255,255,0.06);
+  color: #555; cursor: none; transition: all 0.15s; letter-spacing: 0.02em;
+}
+.tab-btn:last-child { border-right: none; }
+.tab-btn.active { color: var(--yellow); border-bottom: 3px solid var(--yellow); }
+.tab-btn:hover:not(.active) { color: var(--cream); }
+
+/* ── Panels ──────────────────────────── */
+.panel { display: none; padding: 48px 0 80px; }
+.panel.active { display: block; }
+
+/* Stats strip */
+.stat-strip {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px; margin-bottom: 40px;
+}
+.stat-cell {
+  background: var(--white); border: 2px solid rgba(17,17,17,0.07);
+  border-radius: var(--radius-lg); padding: 24px; text-align: center;
+  transition: transform 0.15s var(--ease);
+}
+.stat-cell:hover { transform: translateY(-3px); }
+.stat-val {
+  font-family: var(--font-display); font-size: 2.5rem; font-weight: 900;
+  color: var(--black); letter-spacing: -0.03em;
+}
+.stat-key {
+  font-size: 0.65rem; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #888; margin-top: 4px;
+}
+
+/* Activity / payment rows */
+.pay-row {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 0; border-bottom: 1.5px solid rgba(17,17,17,0.07);
+}
+.pay-row:last-of-type { border-bottom: none; }
+.pay-icon {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: rgba(17,17,17,0.06);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem; flex-shrink: 0;
+}
+.pay-amount {
+  font-family: var(--font-display); font-size: 1.3rem; font-weight: 900;
+  letter-spacing: -0.02em;
+}
+.pay-credit { color: var(--teal); }
+.pay-debit  { color: var(--pink); }
+
+/* Profile grid */
+.profile-grid { display: grid; grid-template-columns: 380px 1fr; gap: 40px; }
+
+@media(max-width:900px){
+  .profile-top { grid-template-columns: 1fr; }
+  .stat-strip { grid-template-columns: 1fr 1fr; }
+  .profile-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="noise-overlay"></div>
+<nav class="navbar" id="navbar"></nav>
+<div id="toast-container"></div>
+
+<div class="profile-hero">
+  <div class="ph-blob-1"></div>
+  <div class="ph-blob-2"></div>
+  <div class="container">
+    <div class="profile-top">
+      <div class="avatar-xl" id="p-avatar">?</div>
+      <div>
+        <div class="profile-name" id="p-name">Loading</div>
+        <div class="profile-email" id="p-email"></div>
+        <div class="role-tag" id="p-role"></div>
+      </div>
+    </div>
+  </div>
+  <div class="tabs-bar" id="tab-bar">
+    <button class="tab-btn active" onclick="switchPanel('overview',this)">Overview</button>
+    <button class="tab-btn" onclick="switchPanel('payments',this)">Payments</button>
+    <button class="tab-btn" onclick="switchPanel('notifications',this)">Notifications</button>
+    <button class="tab-btn" onclick="switchPanel('settings',this)">Settings</button>
+  </div>
+</div>
+
+<div style="background:var(--cream)">
+  <div class="container">
+
+    <!-- Overview -->
+    <div class="panel active" id="panel-overview">
+      <div class="stat-strip">
+        <div class="stat-cell"><div class="stat-val" id="stat-tix">3</div><div class="stat-key">Tickets Held</div></div>
+        <div class="stat-cell"><div class="stat-val" id="stat-shows">2</div><div class="stat-key">Shows Attended</div></div>
+        <div class="stat-cell"><div class="stat-val" id="stat-spent">1,124</div><div class="stat-key">SGD Spent</div></div>
+      </div>
+      <div class="section-label mb-16">Recent Activity</div>
+      <div class="card" id="activity-list">
+        <div class="skel" style="height:56px;margin-bottom:8px;border-radius:var(--radius)"></div>
+        <div class="skel" style="height:56px;margin-bottom:8px;border-radius:var(--radius)"></div>
+        <div class="skel" style="height:56px;border-radius:var(--radius)"></div>
+      </div>
+    </div>
+
+    <!-- Payments -->
+    <div class="panel" id="panel-payments">
+      <div class="section-label mb-24">Payment History</div>
+      <div class="card" id="payment-list"><div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Loading…</div></div>
+    </div>
+
+    <!-- Notifications -->
+    <div class="panel" id="panel-notifications">
+      <div class="section-label mb-24">Notification Log</div>
+      <div class="card" id="notif-list"><div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Loading…</div></div>
+    </div>
+
+    <!-- Settings -->
+    <div class="panel" id="panel-settings">
+      <div class="profile-grid">
+        <div>
+          <div class="section-label mb-24">Account Settings</div>
+          <div class="card">
+            <div class="form-group"><label class="form-label">Display Name</label><input class="form-input" id="s-name"></div>
+            <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="s-email" type="email"></div>
+            <button class="btn btn-black w-full" onclick="saveSettings()" style="border-radius:var(--radius)">Save Changes →</button>
+            <div class="divider mt-24 mb-24"></div>
+            <button class="btn w-full" style="border-color:var(--pink);color:var(--pink);border-radius:var(--radius)" onclick="Auth.logout()">Sign Out ✕</button>
+          </div>
+        </div>
+        <div>
+          <div class="section-label mb-24">Preferences</div>
+          <div class="card">
+            <p style="font-size:0.85rem;color:#888;line-height:1.7">Notification preferences, payment methods, and other settings would appear here in production.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+const user=Auth.require(); renderNav();
+function switchPanel(n,el){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById(`panel-${n}`).classList.add('active'); el.classList.add('active');
+  if(n==='payments'&&!document.getElementById('payment-list').dataset.loaded) loadPayments();
+  if(n==='notifications'&&!document.getElementById('notif-list').dataset.loaded) loadNotifs();
+}
+
+function init(){
+  document.getElementById('p-avatar').textContent=user.name[0];
+  document.getElementById('p-name').textContent=user.name;
+  document.getElementById('p-email').textContent=user.email;
+  document.getElementById('p-role').innerHTML=user.role==='admin'
+    ?`<span class="tag tag-active">👑 Administrator</span>`
+    :`<span class="tag">Customer</span>`;
+  document.getElementById('s-name').value=user.name;
+  document.getElementById('s-email').value=user.email;
+  loadActivity();
+}
+
+function loadActivity(){
+  const acts=[
+    {icon:'🎫',label:'Purchased Ticket — Taylor Swift',sub:'Seat F-01-03 · SGD 388',time:'2 days ago'},
+    {icon:'🔄',label:'Listed Ticket for Resale',sub:'TKT-10007 · SGD 300',time:'5 days ago'},
+    {icon:'💜',label:'BTS Ticket Refunded',sub:'Concert cancelled · SGD 398',time:'1 week ago'},
+  ];
+  document.getElementById('activity-list').innerHTML=acts.map(a=>`
+    <div class="pay-row">
+      <div class="pay-icon">${a.icon}</div>
+      <div style="flex:1"><div style="font-weight:600;font-size:0.85rem">${a.label}</div><div class="text-xs text-muted">${a.sub}</div></div>
+      <div class="text-xs text-muted">${a.time}</div>
+    </div>`).join('');
+}
+
+async function loadPayments(){
+  const list=document.getElementById('payment-list');
+  list.dataset.loaded='1';
+  try{
+    const d=await API.payment.byUser(user.userId);
+    const pays=d.payments||[];
+    if(!pays.length){list.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No payments yet</div>`;return;}
+    list.innerHTML=pays.map(p=>{
+      const isRef=p.type==='REFUND';
+      return `<div class="pay-row">
+        <div class="pay-icon" style="background:${isRef?'rgba(245,197,24,0.15)':'rgba(17,17,17,0.06)'}">${isRef?'↩':'💳'}</div>
+        <div style="flex:1"><div style="font-weight:600;font-size:0.85rem">${p.type.replace('_',' ')}</div><div class="text-xs text-muted">${p.ticketId} · ${Util.formatDateShort(p.createdAt)}</div></div>
+        <div class="pay-amount ${isRef?'pay-credit':'pay-debit'}">${isRef?'+':'-'}SGD ${p.amount}</div>
+      </div>`;
+    }).join('');
+  }catch{list.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Could not load</div>`;}
+}
+
+async function loadNotifs(){
+  const list=document.getElementById('notif-list');
+  list.dataset.loaded='1';
+  try{
+    const d=await API.notification.byUser(user.userId);
+    const notifs=d.notifications||[];
+    if(!notifs.length){list.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No notifications</div>`;return;}
+    list.innerHTML=notifs.map(n=>`
+      <div class="pay-row">
+        <div class="pay-icon" style="background:rgba(62,207,178,0.1)">📧</div>
+        <div style="flex:1"><div style="font-weight:600;font-size:0.85rem">${n.subject}</div><div class="text-xs text-muted">${n.channel} · ${Util.formatDateShort(n.sentAt)}</div></div>
+        ${Util.tag(n.status)}
+      </div>`).join('');
+  }catch{list.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Could not load</div>`;}
+}
+
+function saveSettings(){
+  const name=document.getElementById('s-name').value.trim();
+  if(!name){toast('Name cannot be empty','warning');return;}
+  const stored=Auth.getUser(); stored.name=name;
+  localStorage.setItem('ctms_user',JSON.stringify(stored));
+  document.getElementById('p-name').textContent=name;
+  document.getElementById('p-avatar').textContent=name[0];
+  toast('Profile updated ✓','success');
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Resale Market — CTMS</title>
+<link rel="stylesheet" href="../assets/css/global.css">
+<style>
+/* ── Hero ─────────────────────────────── */
+.resale-hero {
+  background: var(--black);
+  padding: calc(var(--nav-h) + 56px) 0 52px;
+  position: relative; overflow: hidden;
+}
+.rh-blob-1 {
+  position: absolute; width: 420px; height: 420px;
+  background: var(--pink); opacity: 0.07;
+  border-radius: 60% 40% 70% 30% / 40% 60% 30% 70%;
+  top: -80px; right: -60px;
+  animation: blobFloat 11s ease-in-out infinite;
+}
+.rh-blob-2 {
+  position: absolute; width: 280px; height: 280px;
+  background: var(--purple); opacity: 0.07;
+  border-radius: 40% 60% 30% 70% / 60% 40% 70% 30%;
+  bottom: -60px; left: 30%;
+  animation: blobFloat 14s ease-in-out infinite reverse;
+}
+.rh-star { position: absolute; color: rgba(255,255,255,0.05); font-size: 7rem; bottom: 10px; right: 15%; animation: starSpin 18s linear infinite; pointer-events: none; }
+.resale-hero-inner { position: relative; z-index: 2; }
+.resale-title {
+  font-family: var(--font-display); font-size: clamp(3rem, 8vw, 7rem);
+  font-weight: 900; color: var(--cream); letter-spacing: -0.03em;
+  line-height: 0.92; font-style: italic;
+}
+.resale-title em { color: var(--pink); font-style: normal; }
+
+/* ── Main grid ─────────────────────────── */
+.resale-grid {
+  display: grid; grid-template-columns: 280px 1fr;
+  gap: 48px; margin-top: 48px; padding-bottom: 80px;
+}
+
+/* Filter column */
+.filter-col { }
+.filter-title {
+  font-family: var(--font-display); font-size: 1.4rem; font-weight: 900;
+  letter-spacing: -0.02em; margin-bottom: 24px;
+}
+.filter-section { margin-bottom: 28px; }
+.filter-section h4 {
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.16em;
+  text-transform: uppercase; color: #888; margin-bottom: 12px;
+}
+.filter-check { display: flex; flex-direction: column; gap: 10px; }
+.filter-check label {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 0.85rem; font-weight: 500; color: #444; cursor: none;
+}
+.filter-check input[type=checkbox] {
+  accent-color: var(--black); width: 16px; height: 16px; cursor: none;
+  border-radius: 4px;
+}
+input[type=range] { width: 100%; accent-color: var(--black); }
+
+/* Listings column */
+.listings-col { }
+.sort-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 24px; padding-bottom: 16px;
+  border-bottom: 1.5px solid rgba(17,17,17,0.08);
+}
+.sort-count {
+  font-family: var(--font-display); font-size: 1.3rem; font-weight: 900;
+  letter-spacing: -0.02em;
+}
+.sort-count span { color: var(--pink); }
+
+/* Listing row */
+.listing-row {
+  display: grid; grid-template-columns: 60px 1fr auto;
+  border: 2px solid rgba(17,17,17,0.08);
+  border-radius: var(--radius-lg); margin-bottom: 10px;
+  background: var(--white); overflow: hidden;
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+  position: relative;
+}
+.listing-row:hover {
+  transform: translateX(4px) translateY(-2px);
+  box-shadow: 0 12px 32px rgba(17,17,17,0.1);
+  border-color: rgba(17,17,17,0.15);
+}
+.listing-icon {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.6rem;
+  border-right: 2px solid rgba(17,17,17,0.06);
+}
+.listing-body { padding: 16px 20px; }
+.listing-title {
+  font-family: var(--font-display); font-size: 1.1rem; font-weight: 900;
+  letter-spacing: -0.02em; margin-bottom: 6px;
+}
+.listing-meta {
+  display: flex; gap: 12px; font-size: 0.72rem; color: #888; flex-wrap: wrap;
+}
+.listing-price-col {
+  padding: 16px 20px; text-align: right;
+  border-left: 2px solid rgba(17,17,17,0.06);
+  display: flex; flex-direction: column; justify-content: center; gap: 6px;
+  min-width: 140px;
+}
+.listing-price {
+  font-family: var(--font-display); font-size: 1.5rem; font-weight: 900;
+  letter-spacing: -0.02em;
+}
+.listing-orig { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: #aaa; }
+.listing-markup { font-size: 0.68rem; font-weight: 700; }
+.markup-up { color: var(--pink); }
+.markup-ok { color: var(--teal); }
+
+.no-listings {
+  border: 2px dashed rgba(17,17,17,0.12); border-radius: var(--radius-xl);
+  padding: 60px; text-align: center; background: var(--white);
+}
+.no-listings h3 { font-family: var(--font-display); font-size: 2rem; font-weight: 900; }
+
+@media(max-width:900px){
+  .resale-grid { grid-template-columns: 1fr; }
+  .filter-col { border-bottom: 1.5px solid rgba(17,17,17,0.08); padding-bottom: 32px; margin-bottom: 8px; }
+}
+</style>
+</head>
+<body>
+<div class="noise-overlay"></div>
+<nav class="navbar" id="navbar"></nav>
+<div id="toast-container"></div>
+
+<div class="resale-hero">
+  <div class="rh-blob-1"></div>
+  <div class="rh-blob-2"></div>
+  <span class="rh-star">✦</span>
+  <div class="container resale-hero-inner">
+    <div class="section-label" style="color:#666;margin-bottom:14px">Fan-to-Fan Marketplace</div>
+    <h1 class="resale-title">Resale<br><em>Market</em></h1>
+    <p style="color:#666;max-width:480px;margin-top:16px;font-size:0.95rem">Buy and sell tickets safely. All prices capped — no scalping, guaranteed.</p>
+  </div>
+</div>
+
+<div style="padding:0 0 0">
+  <div class="container">
+    <div class="resale-grid">
+      <!-- Filters -->
+      <div class="filter-col">
+        <div class="filter-title">Filter</div>
+        <div class="filter-section">
+          <h4>Concert</h4>
+          <select class="form-select" id="f-concert" onchange="applyFilters()">
+            <option value="">All Concerts</option>
+            <option value="CONC-000001">Taylor Swift</option>
+            <option value="CONC-000002">Coldplay</option>
+            <option value="CONC-000003">Bruno Mars</option>
+            <option value="CONC-000005">Ed Sheeran</option>
+          </select>
+        </div>
+        <div class="filter-section">
+          <h4>Category</h4>
+          <div class="filter-check">
+            <label><input type="checkbox" value="01" onchange="applyFilters()"> Cat 1 — Floor</label>
+            <label><input type="checkbox" value="02" onchange="applyFilters()"> Cat 2 — Lower</label>
+            <label><input type="checkbox" value="03" onchange="applyFilters()"> Cat 3 — Upper</label>
+            <label><input type="checkbox" value="04" onchange="applyFilters()"> Cat 4 — Gallery</label>
+          </div>
+        </div>
+        <div class="filter-section">
+          <h4>Max Price (SGD)</h4>
+          <input type="range" id="f-price" min="0" max="600" value="600" oninput="updatePriceLabel(this.value);applyFilters()">
+          <div class="flex-sb mt-8 text-sm text-muted"><span>SGD 0</span><span id="price-label">SGD 600</span></div>
+        </div>
+        <button class="btn btn-sm btn-outline w-full mt-16" onclick="clearFilters()" style="border-radius:100px">Clear All</button>
+      </div>
+
+      <!-- Listings -->
+      <div class="listings-col">
+        <div class="sort-row">
+          <div class="sort-count"><span id="listing-count">—</span> listings</div>
+          <select id="f-sort" class="form-select" onchange="applyFilters()" style="width:auto;border-radius:100px;padding:8px 16px">
+            <option value="price-asc">Price: Low → High</option>
+            <option value="price-desc">Price: High → Low</option>
+            <option value="markup-asc">Markup: Lowest First</option>
+          </select>
+        </div>
+        <div id="listings-wrap">
+          <div class="skel" style="height:88px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
+          <div class="skel" style="height:88px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
+          <div class="skel" style="height:88px;border-radius:var(--radius-lg)"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Buy modal -->
+<div class="modal-overlay" id="buy-modal">
+  <div class="modal" style="background:var(--black);color:var(--cream)">
+    <button class="modal-close" onclick="closeModal('buy-modal')">✕</button>
+    <div class="modal-title" style="color:var(--yellow)">Buy Resale Ticket</div>
+    <div class="modal-sub" id="buy-sub"></div>
+    <div id="buy-alert"></div>
+    <div style="background:rgba(255,255,255,0.04);border:1.5px solid rgba(255,255,255,0.08);border-radius:var(--radius-lg);padding:20px;margin-bottom:24px">
+      <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:0.82rem;border-bottom:1px solid rgba(255,255,255,0.06)"><span style="color:#666">Ticket</span><span id="b-ticket" style="color:var(--yellow);font-weight:700"></span></div>
+      <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:0.82rem;border-bottom:1px solid rgba(255,255,255,0.06)"><span style="color:#666">Seat</span><span id="b-seat" style="color:var(--cream)"></span></div>
+      <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:0.82rem"><span style="color:#666">Price</span><span id="b-price" style="font-family:var(--font-display);font-size:1.8rem;font-weight:900;color:var(--yellow)"></span></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" style="color:#666">Card Number</label>
+      <input class="form-input" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1);color:var(--cream)" placeholder="4242 4242 4242 4242" maxlength="19">
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label" style="color:#666">Expiry</label><input class="form-input" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1);color:var(--cream)" placeholder="MM / YY"></div>
+      <div class="form-group"><label class="form-label" style="color:#666">CVC</label><input class="form-input" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1);color:var(--cream)" placeholder="123"></div>
+    </div>
+    <button class="btn btn-yellow w-full btn-lg" id="buy-btn" onclick="confirmBuy()" style="border-radius:var(--radius)">Confirm Purchase →</button>
+    <div style="font-size:0.65rem;text-align:center;color:#555;margin-top:10px;letter-spacing:0.04em">🔒 Secured by Stripe · QR delivered instantly</div>
+  </div>
+</div>
+
+<!-- Success modal -->
+<div class="modal-overlay" id="buy-success">
+  <div class="modal" style="text-align:center">
+    <div style="font-size:3.5rem;margin-bottom:8px">🎉</div>
+    <div style="font-family:var(--font-display);font-size:2.5rem;font-weight:900;letter-spacing:-0.02em;margin-bottom:8px">Ticket is Yours!</div>
+    <p class="text-muted mb-24">Your resale ticket has been transferred. Check your email for the QR code.</p>
+    <button class="btn btn-black w-full btn-lg" onclick="window.location.href='my-tickets.html'" style="border-radius:var(--radius)">View My Tickets →</button>
+  </div>
+</div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+const user=Auth.getUser(); renderNav('resale');
+let allListings=[],selectedListing=null;
+const NAMES={'CONC-000001':'Taylor Swift','CONC-000002':'Coldplay','CONC-000003':'Bruno Mars','CONC-000005':'Ed Sheeran'};
+const EMOJIS={'CONC-000001':'🌟','CONC-000002':'🎸','CONC-000003':'🎷','CONC-000005':'🎵'};
+const BASE={'CAT-C001-01':388,'CAT-C001-02':248,'CAT-C001-03':158,'CAT-C001-04':98,'CAT-C002-01':298,'CAT-C002-02':188,'CAT-C002-03':118,'CAT-C002-04':68};
+
+async function load(){
+  const preId=Util.getParam('id');
+  if(preId) document.getElementById('f-concert').value=preId;
+  allListings=SEED.resaleListings;
+  applyFilters();
+  try{
+    const ids=['CONC-000001','CONC-000002'];
+    const res=await Promise.allSettled(ids.map(id=>API.tickets.resale(id)));
+    const live=res.flatMap(r=>r.value?.listings||[]).filter(t=>t.ownerId!==user?.userId);
+    if(live.length){allListings=live;applyFilters();}
+  }catch{}
+}
+
+function updatePriceLabel(v){document.getElementById('price-label').textContent=`SGD ${v}`;}
+function clearFilters(){
+  document.getElementById('f-concert').value='';
+  document.getElementById('f-price').value=600; updatePriceLabel(600);
+  document.querySelectorAll('.filter-check input').forEach(c=>c.checked=false);
+  applyFilters();
+}
+
+function applyFilters(){
+  const concert=document.getElementById('f-concert').value;
+  const max=parseFloat(document.getElementById('f-price').value);
+  const cats=[...document.querySelectorAll('.filter-check input:checked')].map(c=>c.value);
+  const sort=document.getElementById('f-sort').value;
+  let list=allListings.filter(t=>{
+    if(concert&&t.concertId!==concert)return false;
+    if(t.resalePrice>max)return false;
+    if(cats.length){const last=t.categoryId?.split('-').pop();if(!cats.includes(last))return false;}
+    return true;
+  });
+  if(sort==='price-asc')list.sort((a,b)=>a.resalePrice-b.resalePrice);
+  else if(sort==='price-desc')list.sort((a,b)=>b.resalePrice-a.resalePrice);
+  else list.sort((a,b)=>(a.resalePrice/(BASE[a.categoryId]||100))-(b.resalePrice/(BASE[b.categoryId]||100)));
+  document.getElementById('listing-count').textContent=list.length;
+  renderListings(list);
+}
+
+function renderListings(list){
+  const wrap=document.getElementById('listings-wrap');
+  if(!list.length){
+    wrap.innerHTML=`<div class="no-listings"><h3>No listings found</h3><p class="text-muted mt-16">Try adjusting your filters.</p></div>`;
+    return;
+  }
+  wrap.innerHTML=list.map(t=>{
+    const base=BASE[t.categoryId]||100;
+    const markup=((t.resalePrice-base)/base*100).toFixed(0);
+    const mkCls=parseFloat(markup)>0?'markup-up':'markup-ok';
+    const mkLabel=parseFloat(markup)>0?`+${markup}% above face`:'At face value';
+    return `<div class="listing-row">
+      <div class="listing-icon">${EMOJIS[t.concertId]||'🎫'}</div>
+      <div class="listing-body">
+        <div class="listing-title">${NAMES[t.concertId]||t.concertId}</div>
+        <div class="listing-meta">
+          <span>🪑 ${t.seatNumber}</span>
+          <span>${t.categoryId?.split('-').slice(2).join('-')||'GEN'}</span>
+          <span class="${mkCls}">${mkLabel}</span>
+        </div>
+      </div>
+      <div class="listing-price-col">
+        <div class="listing-price">SGD ${t.resalePrice}</div>
+        <div class="listing-orig">Face: SGD ${base}</div>
+        <button class="btn btn-sm btn-black" onclick='openBuy(${JSON.stringify(t).replace(/'/g,"&#39;")})' style="border-radius:100px">Buy Now</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openBuy(listing){
+  if(!Auth.isLoggedIn()){window.location.href='login.html';return;}
+  selectedListing=listing;
+  document.getElementById('buy-sub').textContent=`${NAMES[listing.concertId]||listing.concertId}`;
+  document.getElementById('b-ticket').textContent=listing.ticketId;
+  document.getElementById('b-seat').textContent=listing.seatNumber;
+  document.getElementById('b-price').textContent=`SGD ${listing.resalePrice}`;
+  document.getElementById('buy-alert').innerHTML='';
+  openModal('buy-modal');
+}
+
+async function confirmBuy(){
+  if(!selectedListing)return;
+  const btn=document.getElementById('buy-btn'); btn.disabled=true; btn.textContent='Processing…';
+  try{
+    await API.resale.buy({buyerId:user.userId,ticketId:selectedListing.ticketId,concertId:selectedListing.concertId,stripeToken:'tok_visa'});
+    closeModal('buy-modal');
+    openModal('buy-success');
+    allListings=allListings.filter(t=>t.ticketId!==selectedListing.ticketId);
+    applyFilters();
+  }catch(e){
+    document.getElementById('buy-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Purchase failed'}</div>`;
+    btn.disabled=false; btn.textContent='Confirm Purchase →';
+  }
+}
+load();
+</script>
+</body>
+</html>

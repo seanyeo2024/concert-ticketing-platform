@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign In — CTMS</title>
+<link rel="stylesheet" href="../assets/css/global.css">
+<style>
+body { background: var(--black); overflow: hidden; }
+
+.login-wrap {
+  min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr;
+  position: relative;
+}
+
+/* ── Left panel ── */
+.login-left {
+  background: var(--cream);
+  padding: 60px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  position: relative; overflow: hidden;
+}
+.login-brand {
+  font-family: var(--font-display); font-size: 1.5rem; font-weight: 900;
+  letter-spacing: -0.03em; display: flex; align-items: center; gap: 8px;
+  position: relative; z-index: 2;
+}
+.login-brand-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--blue); border: 2px solid var(--black); display: inline-block;
+}
+.login-headline {
+  font-family: var(--font-display); font-size: clamp(3.5rem, 7vw, 6.5rem);
+  line-height: 0.95; font-weight: 900; letter-spacing: -0.03em;
+  position: relative; z-index: 2;
+}
+.login-headline em { font-style: italic; color: var(--blue); }
+.login-headline .pink { font-style: italic; color: var(--pink); }
+.login-features {
+  display: flex; flex-direction: column; gap: 0;
+  border-top: 1.5px solid rgba(17,17,17,0.12);
+  position: relative; z-index: 2;
+}
+.login-feature-item {
+  padding: 14px 0; border-bottom: 1.5px solid rgba(17,17,17,0.08);
+  font-family: var(--font-body); font-size: 0.85rem; font-weight: 500;
+  color: #444; display: flex; align-items: center; gap: 12px;
+}
+.login-feature-icon {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--black); color: var(--yellow);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.75rem; flex-shrink: 0;
+}
+
+/* Blobs on left */
+.l-blob-1 {
+  position: absolute; width: 340px; height: 340px;
+  background: var(--blue); opacity: 0.18;
+  border-radius: 60% 40% 70% 30% / 40% 60% 30% 70%;
+  bottom: -80px; right: -80px; z-index: 1;
+  animation: blobFloat 9s ease-in-out infinite;
+}
+.l-blob-2 {
+  position: absolute; width: 200px; height: 200px;
+  background: var(--yellow); opacity: 0.25;
+  border-radius: 40% 60% 30% 70% / 60% 40% 70% 30%;
+  top: 60px; right: 40px; z-index: 1;
+  animation: blobFloat 12s ease-in-out infinite reverse;
+}
+.l-star-1 { position: absolute; bottom: 30%; left: 60%; z-index: 2; color: var(--black); font-size: 1.8rem; animation: starSpin 10s linear infinite; }
+.l-star-2 { position: absolute; top: 20%; left: 80%; z-index: 2; color: var(--pink); font-size: 1.2rem; animation: starSpin 7s linear infinite reverse; }
+
+/* ── Right panel ── */
+.login-right {
+  background: var(--black);
+  padding: 60px;
+  display: flex; flex-direction: column; justify-content: center;
+  position: relative; overflow: hidden;
+}
+.r-blob {
+  position: absolute; width: 400px; height: 400px;
+  background: var(--teal); opacity: 0.05;
+  border-radius: 50% 50% 40% 60% / 60% 40% 60% 40%;
+  top: -100px; right: -100px;
+  animation: blobFloat 11s ease-in-out infinite;
+}
+.login-form-wrap { max-width: 400px; width: 100%; position: relative; z-index: 2; }
+.login-title {
+  font-family: var(--font-display); font-size: 3rem; font-weight: 900;
+  color: var(--cream); letter-spacing: -0.03em; margin-bottom: 4px;
+}
+.login-title em { font-style: italic; color: var(--yellow); }
+.login-sub { font-size: 0.82rem; color: #666; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 36px; }
+
+.demo-box {
+  border: 1.5px solid rgba(255,255,255,0.08);
+  border-radius: 20px; padding: 20px; margin-bottom: 28px;
+  background: rgba(255,255,255,0.03);
+}
+.demo-box-title {
+  font-family: var(--font-body); font-size: 0.65rem; font-weight: 700;
+  letter-spacing: 0.18em; text-transform: uppercase; color: #555; margin-bottom: 14px;
+}
+.demo-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 0; border-top: 1px solid rgba(255,255,255,0.05); font-size: 0.8rem; color: #888;
+}
+.demo-row:first-of-type { border-top: none; }
+.demo-role { font-weight: 700; color: var(--cream); font-size: 0.78rem; margin-bottom: 2px; }
+.demo-role.admin { color: var(--yellow); }
+.demo-fill {
+  background: rgba(255,255,255,0.07); color: var(--teal);
+  font-weight: 700; font-size: 0.75rem; letter-spacing: 0.06em;
+  padding: 6px 14px; border-radius: 100px;
+  transition: background 0.15s;
+}
+.demo-fill:hover { background: var(--teal); color: var(--black); }
+
+.login-form .form-input {
+  background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1);
+  color: var(--cream); border-radius: var(--radius);
+}
+.login-form .form-input::placeholder { color: #555; }
+.login-form .form-input:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(58,180,242,0.15); }
+.login-form .form-label { color: #666; }
+
+@media (max-width: 768px) {
+  body { overflow: auto; }
+  .login-wrap { grid-template-columns: 1fr; }
+  .login-left { display: none; }
+  .login-right { min-height: 100vh; }
+}
+</style>
+</head>
+<body>
+<div class="noise-overlay"></div>
+<div id="toast-container"></div>
+<div class="login-wrap">
+
+  <!-- Left panel -->
+  <div class="login-left">
+    <div class="login-brand">CTMS <span class="login-brand-dot"></span></div>
+    <div>
+      <div class="login-headline">Your<br><em>Ticket</em><br>to the<br><span class="pink">Show.</span></div>
+    </div>
+    <div>
+      <div class="login-features">
+        <div class="login-feature-item">
+          <div class="login-feature-icon">⏱</div>
+          Virtual waiting room — fair queuing for everyone
+        </div>
+        <div class="login-feature-item">
+          <div class="login-feature-icon">🔄</div>
+          Safe fan-to-fan resale at capped prices
+        </div>
+        <div class="login-feature-item">
+          <div class="login-feature-icon">📱</div>
+          Digital QR tickets delivered instantly
+        </div>
+        <div class="login-feature-item">
+          <div class="login-feature-icon">💸</div>
+          Automatic refunds on cancellation
+        </div>
+      </div>
+    </div>
+    <div class="l-blob-1"></div>
+    <div class="l-blob-2"></div>
+    <span class="l-star-1">✦</span>
+    <span class="l-star-2">✶</span>
+  </div>
+
+  <!-- Right panel -->
+  <div class="login-right">
+    <div class="r-blob"></div>
+    <div class="login-form-wrap">
+      <div class="login-title"><em>Sign</em> In</div>
+      <div class="login-sub">Concert Ticketing Management System</div>
+
+      <!-- Demo accounts -->
+      <div class="demo-box">
+        <div class="demo-box-title">Demo Accounts</div>
+        <div class="demo-row">
+          <div>
+            <div class="demo-role">Customer</div>
+            <div>alex@demo.com</div>
+          </div>
+          <span class="demo-fill" onclick="fill('alex@demo.com','demo123')">Use →</span>
+        </div>
+        <div class="demo-row">
+          <div>
+            <div class="demo-role">Customer</div>
+            <div>jamie@demo.com</div>
+          </div>
+          <span class="demo-fill" onclick="fill('jamie@demo.com','demo123')">Use →</span>
+        </div>
+        <div class="demo-row">
+          <div>
+            <div class="demo-role admin">Admin</div>
+            <div>admin@demo.com</div>
+          </div>
+          <span class="demo-fill" onclick="fill('admin@demo.com','admin123')">Use →</span>
+        </div>
+      </div>
+
+      <div id="err-msg" class="alert alert-danger hidden"></div>
+
+      <form class="login-form" onsubmit="event.preventDefault();doLogin()">
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input class="form-input" type="email" id="email" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input class="form-input" type="password" id="pw" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <button type="submit" id="btn" class="btn btn-yellow w-full btn-lg" style="margin-top:8px;border-radius:var(--radius)">
+          Enter the Show →
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/api.js"></script>
+<script>
+if (Auth.isLoggedIn()) window.location.href='index.html';
+function fill(e,p){ document.getElementById('email').value=e; document.getElementById('pw').value=p; }
+function doLogin(){
+  const email=document.getElementById('email').value.trim();
+  const pw=document.getElementById('pw').value;
+  const errEl=document.getElementById('err-msg');
+  const btn=document.getElementById('btn');
+  errEl.classList.add('hidden');
+  if(!email||!pw){errEl.textContent='Please enter your email and password.';errEl.classList.remove('hidden');return;}
+  btn.disabled=true;btn.textContent='Loading…';
+  setTimeout(()=>{
+    try{
+      const u=Auth.login(email,pw);
+      toast(`Welcome back, ${u.name}!`,'success');
+      setTimeout(()=>window.location.href='index.html',600);
+    }catch(e){
+      errEl.textContent='Invalid email or password. Please try again.';
+      errEl.classList.remove('hidden');
+      btn.disabled=false;btn.textContent='Enter the Show →';
+    }
+  },200);
+}
+</script>
+</body>
+</html>

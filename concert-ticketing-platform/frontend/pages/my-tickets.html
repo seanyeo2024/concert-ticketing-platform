@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Tickets — CTMS</title>
+  <link rel="stylesheet" href="../assets/css/global.css">
+  <style>
+    .tabs { display: flex; gap: 4px; background: var(--bg2); border-radius: var(--radius); padding: 4px; margin-bottom: 32px; width: fit-content; }
+    .tab { padding: 8px 20px; border-radius: 7px; cursor: pointer; font-size: 0.875rem; font-weight: 500; color: var(--text2); transition: all var(--transition); background: none; border: none; font-family: var(--font-body); }
+    .tab.active { background: var(--surface2); color: var(--text); }
+    .ticket-card { display: grid; grid-template-columns: 80px 1fr auto; gap: 20px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 14px; transition: all var(--transition); }
+    .ticket-card:hover { border-color: var(--gold-dim); }
+    .ticket-stub { background: linear-gradient(135deg, var(--bg3), var(--bg2)); border-radius: var(--radius); width: 80px; height: 80px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid var(--border); flex-shrink: 0; }
+    .stub-emoji { font-size: 2rem; }
+    .stub-cat { font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text3); margin-top: 4px; }
+    .ticket-info h4 { margin-bottom: 4px; }
+    .ticket-meta { display: flex; gap: 16px; flex-wrap: wrap; margin: 8px 0; }
+    .ticket-meta span { font-size: 0.78rem; color: var(--text3); display: flex; align-items: center; gap: 4px; }
+    .ticket-price { font-family: var(--font-display); font-size: 1rem; color: var(--gold); }
+    .ticket-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; min-width: 120px; }
+
+    /* QR Modal */
+    .qr-display { background: #fff; border-radius: var(--radius-lg); padding: 24px; text-align: center; margin: 20px 0; }
+    .qr-placeholder { width: 200px; height: 200px; background: var(--bg2); border-radius: var(--radius); margin: 0 auto; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; color: var(--text3); border: 2px dashed var(--border); flex-direction: column; gap: 8px; }
+    .qr-data-mono { font-family: 'Courier New', monospace; font-size: 0.65rem; color: var(--text3); word-break: break-all; background: var(--bg2); padding: 10px; border-radius: 6px; margin-top: 12px; }
+
+    /* Resale modal */
+    .price-suggest { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .price-btn { padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg2); color: var(--text2); font-size: 0.8rem; cursor: pointer; transition: all var(--transition); font-family: var(--font-body); }
+    .price-btn:hover { border-color: var(--gold); color: var(--gold); }
+
+    .empty-state { text-align: center; padding: 80px 20px; color: var(--text3); }
+    .empty-state .icon { font-size: 3rem; margin-bottom: 16px; }
+    @media (max-width: 600px) { .ticket-card { grid-template-columns: 1fr; } .ticket-stub { display: none; } }
+  </style>
+</head>
+<body>
+  <nav class="navbar" id="navbar"></nav>
+  <div id="toast-container"></div>
+
+  <div class="page-content">
+    <div class="container">
+      <div class="section-title">
+        <h1>My Tickets</h1>
+        <div class="gold-line"></div>
+        <p>Your ticket wallet — view, manage, and resell your tickets.</p>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('upcoming',this)">Upcoming</button>
+        <button class="tab"        onclick="switchTab('past',this)">Past</button>
+        <button class="tab"        onclick="switchTab('reselling',this)">Reselling</button>
+        <button class="tab"        onclick="switchTab('refunded',this)">Refunded</button>
+      </div>
+
+      <div id="tickets-container">
+        ${[1,2,3].map(()=>`<div class="skeleton" style="height:120px;border-radius:var(--radius-lg);margin-bottom:14px"></div>`).join('')}
+      </div>
+    </div>
+  </div>
+
+  <!-- QR Code Modal -->
+  <div class="modal-overlay" id="qr-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <div><h3>Your QR Ticket</h3><p class="text-sm text-muted" id="qr-modal-subtitle"></p></div>
+        <button class="modal-close" onclick="closeModal('qr-modal')">✕</button>
+      </div>
+      <div class="qr-display">
+        <div class="qr-placeholder" id="qr-image-area">
+          <span style="font-size:2rem">📱</span>
+          <span>Loading QR…</span>
+        </div>
+      </div>
+      <div class="qr-data-mono" id="qr-data-text"></div>
+      <p class="text-xs text-dim text-center mt-12">Show this QR code at the venue entrance for scanning.</p>
+    </div>
+  </div>
+
+  <!-- Resale listing modal -->
+  <div class="modal-overlay" id="resale-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <div><h3>List for Resale</h3><p class="text-sm text-muted" id="resale-modal-subtitle"></p></div>
+        <button class="modal-close" onclick="closeModal('resale-modal')">✕</button>
+      </div>
+      <div id="resale-alert"></div>
+      <div class="form-group">
+        <label class="form-label">Asking Price (SGD)</label>
+        <p class="text-xs text-dim mb-8">Max allowed: <span id="resale-ceiling-display">—</span></p>
+        <div class="price-suggest" id="price-suggestions"></div>
+        <input type="number" class="form-input" id="resale-price-input" placeholder="e.g. 300.00" step="0.01">
+        <span class="form-hint">Price must be at or below the maximum allowed ceiling.</span>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Why are you selling?</label>
+        <select class="form-select" id="resale-reason">
+          <option value="">Select a reason</option>
+          <option value="CANT_ATTEND">Can no longer attend</option>
+          <option value="DUPLICATE">Bought duplicate tickets</option>
+          <option value="OTHER">Other</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-full" onclick="submitResale()">List Ticket for Resale</button>
+    </div>
+  </div>
+
+  <script src="../assets/js/api.js"></script>
+  <script>
+    const user = Auth.require();
+    renderNav('tickets');
+
+    let allTickets = [];
+    let activeTab = 'upcoming';
+    let selectedTicketForResale = null;
+
+    const STATUS_TABS = {
+      upcoming:  ['CONFIRMED', 'PENDING'],
+      past:      ['USED'],
+      reselling: ['RESALE_LISTED', 'RESALE_PENDING'],
+      refunded:  ['REFUNDED'],
+    };
+
+    async function loadTickets() {
+      try {
+        // Load from all concerts the user may have tickets in
+        // In production this would be a single user-tickets endpoint
+        const concertIds = ['CONC-000001','CONC-000002','CONC-000003','CONC-000004','CONC-000005'];
+        const results = await Promise.allSettled(
+          concertIds.map(cid => API.tickets.list(cid, 'ALL').catch(() => ({ tickets: [] })))
+        );
+        allTickets = results.flatMap(r => (r.value?.tickets || []).filter(t => t.ownerId === user.userId));
+      } catch {
+        // Demo fallback
+        allTickets = [
+          { ticketId:'TKT-10003', concertId:'CONC-000001', seatNumber:'F-01-03', categoryId:'CAT-C001-01', ownerId: user.userId, status:'CONFIRMED', purchasePrice:388.00 },
+          { ticketId:'TKT-10007', concertId:'CONC-000001', seatNumber:'L-05-12', categoryId:'CAT-C001-02', ownerId: user.userId, status:'CONFIRMED', purchasePrice:248.00 },
+          { ticketId:'TKT-30001', concertId:'CONC-000003', seatNumber:'F-01-01', categoryId:'CAT-C003-01', ownerId: user.userId, status:'USED', purchasePrice:488.00 },
+        ];
+      }
+      renderTickets();
+    }
+
+    function switchTab(tab, el) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+      activeTab = tab;
+      renderTickets();
+    }
+
+    const CONCERT_NAMES = {
+      'CONC-000001': "Taylor Swift — The Eras Tour",
+      'CONC-000002': "Coldplay — Music of the Spheres",
+      'CONC-000003': "Bruno Mars — 24K Magic Live",
+      'CONC-000004': "BTS — Yet To Come",
+      'CONC-000005': "Ed Sheeran — Mathematics Tour",
+    };
+
+    function renderTickets() {
+      const container = document.getElementById('tickets-container');
+      const statuses = STATUS_TABS[activeTab] || [];
+      const filtered = allTickets.filter(t => statuses.includes(t.status));
+      if (!filtered.length) {
+        container.innerHTML = `<div class="empty-state"><div class="icon">🎫</div><h3>No tickets here</h3><p class="mt-8">Tickets with ${statuses.join(', ')} status will appear here.</p>${activeTab==='upcoming'?'<a href="index.html" class="btn btn-primary mt-24">Browse Concerts</a>':''}</div>`;
+        return;
+      }
+      container.innerHTML = filtered.map(t => {
+        const concertName = CONCERT_NAMES[t.concertId] || t.concertId;
+        const catShort = t.categoryId?.split('-')[2] || 'GEN';
+        return `<div class="ticket-card">
+          <div class="ticket-stub">
+            <span class="stub-emoji">${Util.concertEmoji(concertName)}</span>
+            <span class="stub-cat">CAT ${catShort}</span>
+          </div>
+          <div class="ticket-info">
+            <h4>${concertName}</h4>
+            <div class="ticket-meta">
+              <span>🪑 ${t.seatNumber}</span>
+              <span>🆔 ${t.ticketId}</span>
+              ${t.resalePrice ? `<span>🏷️ Listed at ${Util.formatPrice(t.resalePrice,'SGD')}</span>` : ''}
+            </div>
+            ${Util.statusBadge(t.status)}
+          </div>
+          <div class="ticket-actions">
+            <div class="ticket-price">${t.purchasePrice ? Util.formatPrice(t.purchasePrice,'SGD') : '—'}</div>
+            ${t.status === 'CONFIRMED' ? `
+              <button class="btn btn-secondary btn-sm" onclick="viewQR('${t.ticketId}','${concertName}','${t.seatNumber}')">View QR</button>
+              <button class="btn btn-ghost btn-sm" onclick="openResaleModal('${t.ticketId}','${t.concertId}','${t.categoryId}','${t.purchasePrice}')">Sell</button>
+            ` : ''}
+            ${t.status === 'RESALE_LISTED' ? `
+              <button class="btn btn-secondary btn-sm" onclick="viewQR('${t.ticketId}','${concertName}','${t.seatNumber}')">View QR</button>
+              <button class="btn btn-danger btn-sm" onclick="cancelResale('${t.ticketId}','${t.concertId}')">Cancel Listing</button>
+            ` : ''}
+            ${t.status === 'USED' ? `<button class="btn btn-ghost btn-sm" onclick="viewQR('${t.ticketId}','${concertName}','${t.seatNumber}')">View QR</button>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    async function viewQR(ticketId, concertName, seatNumber) {
+      document.getElementById('qr-modal-subtitle').textContent = `${concertName} · Seat ${seatNumber}`;
+      document.getElementById('qr-image-area').innerHTML = '<span style="font-size:2rem">⏳</span><span>Loading…</span>';
+      document.getElementById('qr-data-text').textContent = '';
+      document.getElementById('qr-modal').classList.add('open');
+      try {
+        const qr = await API.qr.get(ticketId);
+        document.getElementById('qr-data-text').textContent = qr.qrData;
+        document.getElementById('qr-image-area').innerHTML = `
+          <div style="padding:16px;background:#fff;border-radius:8px">
+            <div style="font-size:0.7rem;color:#333;font-family:monospace;word-break:break-all;max-width:180px">${qr.qrData}</div>
+            <div style="margin-top:8px;font-size:0.65rem;color:#888">QR image would render here (qrcode.js)</div>
+          </div>`;
+      } catch {
+        document.getElementById('qr-image-area').innerHTML = '<span style="font-size:2rem">❌</span><span>QR not found</span>';
+      }
+    }
+
+    async function openResaleModal(ticketId, concertId, categoryId, purchasePrice) {
+      selectedTicketForResale = { ticketId, concertId, categoryId, purchasePrice: parseFloat(purchasePrice) };
+      document.getElementById('resale-modal-subtitle').textContent = `Ticket ${ticketId}`;
+      document.getElementById('resale-alert').innerHTML = '';
+      document.getElementById('resale-price-input').value = '';
+      document.getElementById('resale-ceiling-display').textContent = 'Loading…';
+      document.getElementById('price-suggestions').innerHTML = '';
+      document.getElementById('resale-modal').classList.add('open');
+      try {
+        const ceil = await API.pricing.ceiling(concertId, categoryId);
+        const ceiling = ceil.resaleCeiling;
+        document.getElementById('resale-ceiling-display').textContent = ceiling ? Util.formatPrice(ceiling,'SGD') : 'No cap';
+        const suggestions = [purchasePrice, purchasePrice * 1.1, purchasePrice * 1.2].filter(p => !ceiling || p <= ceiling);
+        document.getElementById('price-suggestions').innerHTML = suggestions.map(p =>
+          `<button class="price-btn" onclick="document.getElementById('resale-price-input').value='${p.toFixed(2)}'">${Util.formatPrice(p,'SGD')}</button>`
+        ).join('');
+      } catch {}
+    }
+
+    async function submitResale() {
+      const price = parseFloat(document.getElementById('resale-price-input').value);
+      if (!price || price <= 0) { toast('Enter a valid price', 'warning'); return; }
+      try {
+        const ticket = allTickets.find(t => t.ticketId === selectedTicketForResale.ticketId);
+        await API.resale.list({
+          sellerId: user.userId,
+          ticketId: selectedTicketForResale.ticketId,
+          concertId: selectedTicketForResale.concertId,
+          resalePrice: price,
+        });
+        toast('Ticket listed for resale!', 'success');
+        closeModal('resale-modal');
+        if (ticket) ticket.status = 'RESALE_LISTED';
+        renderTickets();
+      } catch (e) { toast(e.message || 'Could not list ticket', 'error'); }
+    }
+
+    async function cancelResale(ticketId, concertId) {
+      if (!confirm('Remove this listing?')) return;
+      try {
+        const ticket = allTickets.find(t => t.ticketId === ticketId);
+        if (ticket) { ticket.status = 'CONFIRMED'; ticket.resalePrice = null; }
+        renderTickets();
+        toast('Listing cancelled', 'success');
+      } catch (e) { toast(e.message || 'Could not cancel listing', 'error'); }
+    }
+
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+    document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); }));
+
+    loadTickets();
+  </script>
+</body>
+</html>

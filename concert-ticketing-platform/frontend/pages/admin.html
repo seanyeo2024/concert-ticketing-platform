@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel — CTMS</title>
+  <link rel="stylesheet" href="../assets/css/global.css">
+  <style>
+    .admin-grid { display: grid; grid-template-columns: 240px 1fr; gap: 0; min-height: calc(100vh - var(--nav-h)); }
+    .admin-sidebar {
+      background: var(--surface); border-right: 1px solid var(--border);
+      padding: 32px 16px; position: sticky; top: var(--nav-h); height: calc(100vh - var(--nav-h)); overflow-y: auto;
+    }
+    .admin-sidebar h4 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); padding: 0 12px; margin-bottom: 8px; margin-top: 20px; }
+    .admin-sidebar h4:first-of-type { margin-top: 0; }
+    .admin-nav-link { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--radius); color: var(--text2); font-size: 0.875rem; cursor: pointer; transition: all var(--transition); margin-bottom: 2px; border: none; background: none; font-family: var(--font-body); width: 100%; text-align: left; }
+    .admin-nav-link:hover, .admin-nav-link.active { background: var(--bg3); color: var(--text); }
+    .admin-nav-link .icon { width: 18px; text-align: center; }
+    .admin-main { padding: 40px 40px; background: var(--bg); overflow-y: auto; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 32px; }
+    .kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; }
+    .kpi-val { font-family: var(--font-display); font-size: 2rem; font-weight: 700; color: var(--gold); }
+    .kpi-label { font-size: 0.75rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+    .kpi-sub { font-size: 0.75rem; color: var(--success); margin-top: 6px; }
+    .health-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .health-row:last-of-type { border-bottom: none; }
+    .health-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .health-dot.ok      { background: var(--success); }
+    .health-dot.warn    { background: var(--warning); }
+    .health-dot.error   { background: var(--danger); }
+    .health-dot.unknown { background: var(--text3); }
+    .cancel-form { background: rgba(224,90,90,0.06); border: 1px solid rgba(224,90,90,0.2); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 28px; }
+    .cancel-form h4 { color: var(--danger); margin-bottom: 16px; }
+    @media (max-width: 900px) { .admin-grid { grid-template-columns: 1fr; } .admin-sidebar { position: static; height: auto; } .kpi-grid { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <nav class="navbar" id="navbar"></nav>
+  <div id="toast-container"></div>
+
+  <div style="padding-top: var(--nav-h)">
+    <div class="admin-grid">
+      <!-- Sidebar -->
+      <div class="admin-sidebar">
+        <h4>Overview</h4>
+        <button class="admin-nav-link active" onclick="switchPanel('dashboard',this)"><span class="icon">📊</span>Dashboard</button>
+        <button class="admin-nav-link"        onclick="switchPanel('health',this)">   <span class="icon">💚</span>System Health</button>
+
+        <h4>Concerts</h4>
+        <button class="admin-nav-link" onclick="switchPanel('concerts',this)">   <span class="icon">🎤</span>All Concerts</button>
+        <button class="admin-nav-link" onclick="switchPanel('create',this)">     <span class="icon">➕</span>Create Concert</button>
+        <button class="admin-nav-link" onclick="switchPanel('cancel',this)">     <span class="icon">❌</span>Cancel Concert</button>
+
+        <h4>Operations</h4>
+        <button class="admin-nav-link" onclick="switchPanel('queue-monitor',this)"><span class="icon">👥</span>Queue Monitor</button>
+        <button class="admin-nav-link" onclick="switchPanel('payments',this)">    <span class="icon">💰</span>Payments</button>
+      </div>
+
+      <!-- Main content -->
+      <div class="admin-main">
+
+        <!-- Dashboard -->
+        <div class="panel active" id="panel-dashboard">
+          <h2 class="mb-8">Dashboard</h2>
+          <p class="text-muted mb-32">Platform overview</p>
+          <div class="kpi-grid">
+            <div class="kpi-card"><div class="kpi-val">5</div><div class="kpi-label">Active Concerts</div><div class="kpi-sub">↑ 2 this month</div></div>
+            <div class="kpi-card"><div class="kpi-val">30</div><div class="kpi-label">Tickets Issued</div><div class="kpi-sub">↑ 12 this week</div></div>
+            <div class="kpi-card"><div class="kpi-val">2</div><div class="kpi-label">Resale Listings</div><div class="kpi-sub">Active now</div></div>
+            <div class="kpi-card"><div class="kpi-val">SGD 0</div><div class="kpi-label">Revenue Today</div><div class="kpi-sub">—</div></div>
+          </div>
+          <div class="card">
+            <h3 class="mb-20">Concert Status Summary</h3>
+            <div id="dashboard-concert-list">
+              <div class="skeleton" style="height:50px;margin-bottom:10px"></div>
+              <div class="skeleton" style="height:50px;margin-bottom:10px"></div>
+              <div class="skeleton" style="height:50px"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Health -->
+        <div class="panel" id="panel-health">
+          <h2 class="mb-8">System Health</h2>
+          <p class="text-muted mb-32">Live health check of all microservices</p>
+          <div class="card">
+            <div id="health-list">
+              <div class="skeleton" style="height:50px;margin-bottom:10px"></div>
+              <div class="skeleton" style="height:50px"></div>
+            </div>
+          </div>
+          <button class="btn btn-secondary mt-16" onclick="loadHealth()">↻ Refresh</button>
+        </div>
+
+        <!-- Concert list -->
+        <div class="panel" id="panel-concerts">
+          <h2 class="mb-8">All Concerts</h2>
+          <p class="text-muted mb-32">Manage concerts and their status</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Concert</th><th>Date</th><th>Venue</th><th>Availability</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="admin-concert-table">
+                <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text3)">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Create concert -->
+        <div class="panel" id="panel-create">
+          <h2 class="mb-8">Create Concert</h2>
+          <p class="text-muted mb-32">Add a new concert to the platform</p>
+          <div class="card" style="max-width:600px">
+            <div class="form-group"><label class="form-label">Concert Name</label><input type="text" class="form-input" id="new-name" placeholder="Artist — Tour Name"></div>
+            <div class="form-group"><label class="form-label">Artist Name</label><input type="text" class="form-input" id="new-artist"></div>
+            <div class="form-group"><label class="form-label">Venue</label><input type="text" class="form-input" id="new-venue" placeholder="Stadium / Hall name, City"></div>
+            <div class="grid-2">
+              <div class="form-group"><label class="form-label">Date & Time</label><input type="datetime-local" class="form-input" id="new-date"></div>
+              <div class="form-group"><label class="form-label">Currency</label>
+                <select class="form-select" id="new-currency"><option value="SGD">SGD</option><option value="USD">USD</option><option value="GBP">GBP</option></select>
+              </div>
+            </div>
+            <div id="create-alert"></div>
+            <button class="btn btn-primary" onclick="createConcert()">Create Concert</button>
+          </div>
+        </div>
+
+        <!-- Cancel concert (S3) -->
+        <div class="panel" id="panel-cancel">
+          <h2 class="mb-8">Cancel Concert</h2>
+          <p class="text-muted mb-32">This will trigger the S3 orchestration flow: mark as cancelled → bulk refund all tickets → invalidate all QR codes → notify all ticketholders.</p>
+          <div class="cancel-form">
+            <h4>⚠️ This action is irreversible</h4>
+            <div class="form-group">
+              <label class="form-label">Select Concert</label>
+              <select class="form-select" id="cancel-concert-id">
+                <option value="">Choose a concert to cancel…</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Cancellation Reason</label>
+              <textarea class="form-textarea" id="cancel-reason" placeholder="e.g. Artist illness, venue unavailable, force majeure…"></textarea>
+            </div>
+            <div id="cancel-confirm-wrap" class="hidden">
+              <div class="alert alert-danger mb-16">
+                You are about to cancel <strong id="cancel-concert-name"></strong>. All <strong id="cancel-ticket-count"></strong> confirmed tickets will be refunded.
+              </div>
+              <div class="flex gap-16">
+                <button class="btn btn-danger" id="cancel-execute-btn" onclick="executeCancellation()">Confirm Cancellation</button>
+                <button class="btn btn-ghost" onclick="hideCancelConfirm()">Go back</button>
+              </div>
+            </div>
+            <button class="btn btn-secondary" id="cancel-preview-btn" onclick="previewCancellation()">Preview & Confirm →</button>
+          </div>
+          <div id="cancel-result" class="hidden"></div>
+        </div>
+
+        <!-- Queue monitor -->
+        <div class="panel" id="panel-queue-monitor">
+          <h2 class="mb-8">Queue Monitor</h2>
+          <p class="text-muted mb-32">Real-time queue depths across all active concerts</p>
+          <div class="form-group" style="max-width:320px">
+            <label class="form-label">Concert</label>
+            <select class="form-select" id="qmon-concert" onchange="loadQueueDepth()">
+              <option value="CONC-000001">Taylor Swift</option>
+              <option value="CONC-000002">Coldplay</option>
+            </select>
+          </div>
+          <div class="card" id="queue-depth-display">
+            <p class="text-dim text-center" style="padding:24px">Select a concert to see queue depth</p>
+          </div>
+          <button class="btn btn-secondary mt-16" onclick="loadQueueDepth()">↻ Refresh</button>
+        </div>
+
+        <!-- Payments -->
+        <div class="panel" id="panel-payments">
+          <h2 class="mb-8">Payment Records</h2>
+          <p class="text-muted mb-32">View payments for a concert</p>
+          <div class="form-group" style="max-width:320px">
+            <label class="form-label">Concert</label>
+            <select class="form-select" id="pay-concert" onchange="loadConcertPayments()">
+              <option value="">Select concert…</option>
+              <option value="CONC-000001">Taylor Swift</option>
+              <option value="CONC-000002">Coldplay</option>
+              <option value="CONC-000004">BTS (Cancelled)</option>
+            </select>
+          </div>
+          <div id="admin-payments-list"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/js/api.js"></script>
+  <script>
+    Auth.requireAdmin();
+    renderNav('admin');
+
+    function switchPanel(name, el) {
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.admin-nav-link').forEach(l => l.classList.remove('active'));
+      document.getElementById(`panel-${name}`).classList.add('active');
+      el.classList.add('active');
+      if (name === 'health') loadHealth();
+      if (name === 'concerts') loadAdminConcerts();
+      if (name === 'cancel') loadCancelOptions();
+    }
+
+    async function loadDashboard() {
+      try {
+        const data = await API.concerts.list();
+        const concerts = data.concerts || data || [];
+        document.getElementById('dashboard-concert-list').innerHTML = concerts.map(c => `
+          <div class="health-row">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span style="font-size:1.2rem">${Util.concertEmoji(c.name)}</span>
+              <div><div style="font-size:0.875rem;font-weight:500">${c.name}</div><div class="text-xs text-dim">${Util.formatDate(c.eventDate)}</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px">
+              <span class="text-sm text-muted">${c.availableSeats?.toLocaleString()} left</span>
+              ${Util.statusBadge(c.status)}
+            </div>
+          </div>`).join('');
+      } catch {
+        document.getElementById('dashboard-concert-list').innerHTML = '<p class="text-dim text-center" style="padding:24px">Could not load concerts</p>';
+      }
+    }
+
+    async function loadHealth() {
+      const services = [
+        { name: 'Concert Service (OutSystems)', url: null, note: 'External — check manually' },
+        { name: 'Pricing Service',          url: 'http://localhost:5001/health' },
+        { name: 'Queue Service',            url: 'http://localhost:5002/health' },
+        { name: 'Ticket Inventory',         url: 'http://localhost:5003/health' },
+        { name: 'Payment Service',          url: 'http://localhost:5004/health' },
+        { name: 'QR Service',               url: 'http://localhost:5005/health' },
+        { name: 'Notification Service',     url: 'http://localhost:5006/health' },
+        { name: 'Purchase Window',          url: 'http://localhost:5010/health' },
+        { name: 'Resale Purchase',          url: 'http://localhost:5011/health' },
+        { name: 'Concert Cancellation',     url: 'http://localhost:5012/health' },
+      ];
+      document.getElementById('health-list').innerHTML = '<p class="text-dim text-sm" style="padding:12px 0">Checking services…</p>';
+      const rows = await Promise.all(services.map(async svc => {
+        if (!svc.url) return { ...svc, status: 'unknown', latency: null };
+        const t0 = Date.now();
+        try {
+          await fetch(svc.url, { signal: AbortSignal.timeout(3000) });
+          return { ...svc, status: 'ok', latency: Date.now() - t0 };
+        } catch { return { ...svc, status: 'error', latency: null }; }
+      }));
+      document.getElementById('health-list').innerHTML = rows.map(r => `
+        <div class="health-row">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div class="health-dot ${r.status}"></div>
+            <span class="text-sm">${r.name}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            ${r.latency ? `<span class="text-xs text-dim">${r.latency}ms</span>` : ''}
+            <span class="text-xs" style="color:${r.status==='ok'?'var(--success)':r.status==='error'?'var(--danger)':'var(--text3)'}">${r.status==='ok'?'Online':r.status==='error'?'Offline':r.note||'Unknown'}</span>
+          </div>
+        </div>`).join('');
+    }
+
+    async function loadAdminConcerts() {
+      try {
+        const data = await API.concerts.list();
+        const concerts = data.concerts || data || [];
+        document.getElementById('admin-concert-table').innerHTML = concerts.map(c => `
+          <tr>
+            <td><strong>${c.name}</strong></td>
+            <td class="text-sm text-muted">${Util.formatDate(c.eventDate)}</td>
+            <td class="text-sm text-muted">${c.venue}</td>
+            <td class="text-sm">${c.availableSeats?.toLocaleString()} / ${c.totalSeats?.toLocaleString()}</td>
+            <td>${Util.statusBadge(c.status)}</td>
+            <td><button class="btn btn-ghost btn-sm" onclick="window.location.href='concert-detail.html?id=${c.concertId}'">View</button></td>
+          </tr>`).join('');
+      } catch {
+        document.getElementById('admin-concert-table').innerHTML = `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text3)">Could not load concerts</td></tr>`;
+      }
+    }
+
+    async function loadCancelOptions() {
+      const sel = document.getElementById('cancel-concert-id');
+      sel.innerHTML = '<option value="">Choose a concert to cancel…</option>';
+      try {
+        const data = await API.concerts.list();
+        const concerts = (data.concerts || data || []).filter(c => c.status === 'ACTIVE' || c.status === 'POSTPONED');
+        concerts.forEach(c => { const o = document.createElement('option'); o.value = c.concertId; o.textContent = c.name; sel.appendChild(o); });
+      } catch {}
+    }
+
+    async function previewCancellation() {
+      const id = document.getElementById('cancel-concert-id').value;
+      const reason = document.getElementById('cancel-reason').value.trim();
+      if (!id) { toast('Select a concert', 'warning'); return; }
+      if (!reason) { toast('Enter a cancellation reason', 'warning'); return; }
+      const sel = document.getElementById('cancel-concert-id');
+      const name = sel.options[sel.selectedIndex].text;
+      document.getElementById('cancel-concert-name').textContent = name;
+      document.getElementById('cancel-ticket-count').textContent = '—';
+      document.getElementById('cancel-confirm-wrap').classList.remove('hidden');
+      document.getElementById('cancel-preview-btn').classList.add('hidden');
+    }
+
+    function hideCancelConfirm() {
+      document.getElementById('cancel-confirm-wrap').classList.add('hidden');
+      document.getElementById('cancel-preview-btn').classList.remove('hidden');
+    }
+
+    async function executeCancellation() {
+      const id = document.getElementById('cancel-concert-id').value;
+      const reason = document.getElementById('cancel-reason').value.trim();
+      const btn = document.getElementById('cancel-execute-btn');
+      btn.disabled = true; btn.textContent = 'Cancelling…';
+      try {
+        const result = await API.cancellation.cancel(id, { reason });
+        document.getElementById('cancel-result').innerHTML = `
+          <div class="alert alert-success">
+            ✓ Concert cancelled successfully. <strong>${result.ticketsRefunded}</strong> tickets refunded, <strong>${result.paymentsRefunded}</strong> payments processed.
+          </div>`;
+        document.getElementById('cancel-result').classList.remove('hidden');
+        document.getElementById('cancel-confirm-wrap').classList.add('hidden');
+        toast('Concert cancelled and refunds issued', 'success');
+      } catch (e) {
+        toast(e.message || 'Cancellation failed', 'error');
+        btn.disabled = false; btn.textContent = 'Confirm Cancellation';
+      }
+    }
+
+    async function createConcert() {
+      const payload = {
+        name: document.getElementById('new-name').value,
+        artistName: document.getElementById('new-artist').value,
+        venue: document.getElementById('new-venue').value,
+        eventDate: document.getElementById('new-date').value,
+        currency: document.getElementById('new-currency').value,
+        status: 'ACTIVE',
+      };
+      if (!payload.name || !payload.venue || !payload.eventDate) { toast('Fill in all required fields', 'warning'); return; }
+      try {
+        await API.concerts.create(payload);
+        toast('Concert created!', 'success');
+        document.getElementById('create-alert').innerHTML = `<div class="alert alert-success">Concert created successfully.</div>`;
+      } catch (e) {
+        document.getElementById('create-alert').innerHTML = `<div class="alert alert-danger">${e.message || 'Creation failed'}</div>`;
+      }
+    }
+
+    async function loadQueueDepth() {
+      const id = document.getElementById('qmon-concert').value;
+      if (!id) return;
+      try {
+        const d = await API.queue.depth(id);
+        const breakdown = d.breakdown || [];
+        document.getElementById('queue-depth-display').innerHTML = breakdown.length
+          ? breakdown.map(b => `<div class="health-row"><span>${b.status}</span><strong>${b.count}</strong></div>`).join('')
+          : '<p class="text-dim text-center" style="padding:24px">Queue is empty</p>';
+      } catch {
+        document.getElementById('queue-depth-display').innerHTML = '<p class="text-dim text-center" style="padding:24px">Service unavailable</p>';
+      }
+    }
+
+    async function loadConcertPayments() {
+      const id = document.getElementById('pay-concert').value;
+      if (!id) return;
+      const list = document.getElementById('admin-payments-list');
+      list.innerHTML = '<div class="skeleton" style="height:200px;border-radius:var(--radius-lg)"></div>';
+      try {
+        const d = await API.payment.byConcert(id);
+        const pays = d.payments || [];
+        list.innerHTML = pays.length
+          ? `<div class="table-wrap"><table><thead><tr><th>Payment ID</th><th>User</th><th>Type</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>
+             ${pays.map(p => `<tr><td class="text-sm">${p.paymentId}</td><td class="text-sm">${p.userId}</td><td>${Util.statusBadge(p.type)}</td><td class="text-sm">${Util.formatPrice(p.amount,p.currency)}</td><td>${Util.statusBadge(p.status)}</td><td class="text-xs text-muted">${Util.formatDate(p.createdAt)}</td></tr>`).join('')}
+             </tbody></table></div>`
+          : '<p class="text-dim text-center" style="padding:40px">No payments found for this concert</p>';
+      } catch { list.innerHTML = '<p class="text-dim text-center" style="padding:40px">Could not load payments</p>'; }
+    }
+
+    loadDashboard();
+  </script>
+</body>
+</html>

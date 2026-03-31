@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CTMS — Concert Ticketing</title>
+  <link rel="stylesheet" href="../assets/css/global.css">
+  <style>
+    .hero {
+      min-height: 480px;
+      display: flex; align-items: center;
+      background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(201,168,76,0.12) 0%, transparent 70%),
+                  radial-gradient(ellipse 50% 40% at 80% 50%, rgba(124,111,205,0.08) 0%, transparent 60%),
+                  var(--bg);
+      padding: calc(var(--nav-h) + 60px) 0 80px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,255,255,0.02) 40px),
+                  repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255,255,255,0.02) 40px);
+      pointer-events: none;
+    }
+    .hero-eyebrow {
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.18em;
+      text-transform: uppercase; color: var(--gold); margin-bottom: 20px;
+      display: flex; align-items: center; justify-content: center; gap: 12px;
+    }
+    .hero-eyebrow::before, .hero-eyebrow::after {
+      content: ''; width: 32px; height: 1px; background: var(--gold-dim);
+    }
+    .hero h1 { margin-bottom: 20px; }
+    .hero h1 span { color: var(--gold); }
+    .hero p { font-size: 1.05rem; color: var(--text2); max-width: 520px; margin: 0 auto 36px; }
+    .hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+    .search-bar {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-xl); padding: 8px 8px 8px 20px;
+      display: flex; gap: 10px; align-items: center;
+      max-width: 700px; margin: 0 auto 56px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+    .search-bar input {
+      flex: 1; background: none; border: none; outline: none;
+      color: var(--text); font-family: var(--font-body); font-size: 0.95rem;
+    }
+    .search-bar input::placeholder { color: var(--text3); }
+    .filter-row {
+      display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 32px; align-items: center;
+    }
+    .filter-chip {
+      padding: 6px 16px; border-radius: 20px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text2); font-size: 0.8rem;
+      cursor: pointer; transition: all var(--transition); font-family: var(--font-body);
+    }
+    .filter-chip:hover, .filter-chip.active { border-color: var(--gold); color: var(--gold); background: rgba(201,168,76,0.08); }
+    .results-meta { color: var(--text3); font-size: 0.82rem; margin-bottom: 16px; }
+    .no-results { text-align: center; padding: 80px 20px; color: var(--text3); }
+    .no-results .icon { font-size: 3rem; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <nav class="navbar" id="navbar"></nav>
+  <div id="toast-container"></div>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-eyebrow">The Stage is Set</div>
+      <h1>Your next unforgettable<br><span>live experience</span> awaits.</h1>
+      <p>Browse upcoming concerts, secure your seat, and manage your tickets — all in one place.</p>
+      <div class="search-bar">
+        <span style="color:var(--text3);font-size:1.1rem">🔍</span>
+        <input type="text" id="search-input" placeholder="Search concerts, artists, venues…">
+        <button class="btn btn-primary" onclick="applyFilters()">Search</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Concert Listings -->
+  <section class="page-content" style="padding-top:40px">
+    <div class="container">
+      <div class="flex-between mb-16" style="flex-wrap:wrap;gap:12px">
+        <div class="section-title" style="margin-bottom:0">
+          <h2>Upcoming Concerts</h2>
+        </div>
+        <div class="filter-row" style="margin-bottom:0">
+          <button class="filter-chip active" data-filter="ALL"    onclick="setFilter(this,'ALL')">All</button>
+          <button class="filter-chip"         data-filter="ACTIVE" onclick="setFilter(this,'ACTIVE')">On Sale</button>
+          <button class="filter-chip"         data-filter="SOLD_OUT" onclick="setFilter(this,'SOLD_OUT')">Sold Out</button>
+          <button class="filter-chip"         data-filter="POSTPONED" onclick="setFilter(this,'POSTPONED')">Postponed</button>
+        </div>
+      </div>
+
+      <p class="results-meta" id="results-meta"></p>
+      <div class="grid-3" id="concert-grid">
+        <!-- skeleton cards -->
+        ${[1,2,3,4,5,6].map(()=>`
+        <div class="concert-card">
+          <div class="concert-card-image skeleton" style="height:180px;border-radius:0"></div>
+          <div class="concert-card-body">
+            <div class="skeleton" style="height:18px;width:70%;margin-bottom:10px"></div>
+            <div class="skeleton" style="height:13px;width:50%;margin-bottom:6px"></div>
+            <div class="skeleton" style="height:13px;width:40%"></div>
+          </div>
+        </div>`).join('')}
+      </div>
+    </div>
+  </section>
+
+  <script src="../assets/js/api.js"></script>
+  <script>
+    let allConcerts = [];
+    let activeFilter = 'ALL';
+
+    renderNav('concerts');
+
+    async function loadConcerts() {
+      try {
+        const data = await API.concerts.list();
+        allConcerts = data.concerts || data || [];
+        applyFilters();
+      } catch (e) {
+        // Demo fallback data
+        allConcerts = [
+          { concertId:'CONC-000001', name:"Taylor Swift — The Eras Tour", artistName:"Taylor Swift", venue:"National Stadium, Singapore", eventDate:"2025-09-14T19:00:00", availableSeats:18430, totalSeats:50000, status:"ACTIVE", currency:"SGD" },
+          { concertId:'CONC-000002', name:"Coldplay — Music of the Spheres", artistName:"Coldplay", venue:"Singapore Indoor Stadium", eventDate:"2025-11-22T20:00:00", availableSeats:4210, totalSeats:12000, status:"ACTIVE", currency:"SGD" },
+          { concertId:'CONC-000003', name:"Bruno Mars — 24K Magic Live", artistName:"Bruno Mars", venue:"Resorts World Theatre", eventDate:"2025-08-03T21:00:00", availableSeats:0, totalSeats:5000, status:"SOLD_OUT", currency:"SGD" },
+          { concertId:'CONC-000004', name:"BTS — Yet To Come", artistName:"BTS", venue:"Singapore Sports Hub", eventDate:"2025-07-05T18:00:00", availableSeats:0, totalSeats:55000, status:"CANCELLED", currency:"SGD" },
+          { concertId:'CONC-000005', name:"Ed Sheeran — Mathematics Tour", artistName:"Ed Sheeran", venue:"Changi Exhibition Centre", eventDate:"2025-10-18T19:30:00", availableSeats:22100, totalSeats:30000, status:"POSTPONED", currency:"SGD" },
+        ];
+        applyFilters();
+      }
+    }
+
+    function setFilter(el, filter) {
+      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      el.classList.add('active');
+      activeFilter = filter;
+      applyFilters();
+    }
+
+    function applyFilters() {
+      const q = (document.getElementById('search-input')?.value || '').toLowerCase();
+      let filtered = allConcerts.filter(c => {
+        const matchFilter = activeFilter === 'ALL' || c.status === activeFilter;
+        const matchSearch = !q || c.name.toLowerCase().includes(q) || c.artistName?.toLowerCase().includes(q) || c.venue?.toLowerCase().includes(q);
+        return matchFilter && matchSearch;
+      });
+      document.getElementById('results-meta').textContent = `${filtered.length} concert${filtered.length !== 1 ? 's' : ''} found`;
+      renderConcerts(filtered);
+    }
+
+    document.getElementById('search-input')?.addEventListener('input', applyFilters);
+
+    function renderConcerts(concerts) {
+      const grid = document.getElementById('concert-grid');
+      if (!concerts.length) {
+        grid.innerHTML = `<div class="no-results" style="grid-column:1/-1">
+          <div class="icon">🎭</div>
+          <h3>No concerts found</h3>
+          <p class="mt-8">Try adjusting your search or filters.</p>
+        </div>`;
+        return;
+      }
+      grid.innerHTML = concerts.map(c => {
+        const pct = c.totalSeats ? Math.round((c.totalSeats - c.availableSeats) / c.totalSeats * 100) : 0;
+        const canBuy = c.status === 'ACTIVE' && c.availableSeats > 0;
+        return `<div class="concert-card" onclick="window.location.href='concert-detail.html?id=${c.concertId}'">
+          <div class="concert-card-image">
+            <span style="position:relative;z-index:1;font-size:3.5rem">${Util.concertEmoji(c.name)}</span>
+          </div>
+          <div class="concert-card-body">
+            <div class="flex-between mb-8">
+              ${Util.statusBadge(c.status)}
+              <span class="text-xs text-dim">${pct}% sold</span>
+            </div>
+            <div class="concert-name">${c.name}</div>
+            <div class="concert-meta">
+              <span class="concert-meta-item">📅 ${Util.formatDate(c.eventDate)}</span>
+              <span class="concert-meta-item">📍 ${c.venue}</span>
+            </div>
+            <div class="flex-between" style="align-items:flex-end">
+              <div>
+                <div class="text-xs text-dim mb-4">From</div>
+                <div style="font-family:var(--font-display);font-size:1.2rem;color:var(--gold);font-weight:700">SGD 98</div>
+              </div>
+              <button class="btn ${canBuy ? 'btn-primary' : 'btn-ghost'} btn-sm"
+                onclick="event.stopPropagation();window.location.href='concert-detail.html?id=${c.concertId}'">
+                ${canBuy ? 'Get Tickets' : c.status === 'SOLD_OUT' ? 'View Resale' : 'View'}
+              </button>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    loadConcerts();
+  </script>
+</body>
+</html>
