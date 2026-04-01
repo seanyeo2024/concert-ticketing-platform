@@ -1,10 +1,5 @@
 version: "3.8"
 
-# =============================================================================
-# Concert Ticketing Platform — Docker Compose
-# NOTE: Concert Service (OutSystems) is NOT here — it is called over HTTP.
-# =============================================================================
-
 services:
 
   # ── Infrastructure ──────────────────────────────────────────────────────────
@@ -28,6 +23,25 @@ services:
       retries: 5
 
   # One MySQL instance per atomic service (each owns its own DB)
+  mysql_concert:
+    image: mysql:8.0
+    container_name: ctms_mysql_concert
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: concert_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3300:3306"
+    volumes:
+      - mysql_concert_data:/var/lib/mysql
+      - ./database/seeds/concert_db.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   mysql_pricing:
     image: mysql:8.0
     container_name: ctms_mysql_pricing
@@ -40,6 +54,7 @@ services:
       - "3301:3306"
     volumes:
       - mysql_pricing_data:/var/lib/mysql
+      - ./database/seeds/pricing_db.sql:/docker-entrypoint-initdb.d/seed.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -139,6 +154,22 @@ services:
 
   # ── Atomic Services ─────────────────────────────────────────────────────────
 
+  concert:
+    build: ./services/concert
+    container_name: ctms_concert
+    ports:
+      - "${CONCERT_PORT}:5000"
+    environment:
+      MYSQL_HOST: mysql_concert
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: concert_db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    depends_on:
+      mysql_concert:
+        condition: service_healthy
+    restart: unless-stopped
+
   pricing:
     build: ./services/pricing
     container_name: ctms_pricing
@@ -152,6 +183,8 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       CONCERT_SERVICE_URL: ${CONCERT_SERVICE_URL}
     depends_on:
+      concert:
+        condition: service_started
       mysql_pricing:
         condition: service_healthy
     restart: unless-stopped
@@ -284,6 +317,7 @@ services:
       - ticket_inventory
       - payment
       - qr
+      - concert
       - rabbitmq
     restart: unless-stopped
 
@@ -307,6 +341,7 @@ services:
       - pricing
       - payment
       - qr
+      - concert
       - rabbitmq
     restart: unless-stopped
 
@@ -329,10 +364,12 @@ services:
       - ticket_inventory
       - payment
       - qr
+      - concert
       - rabbitmq
     restart: unless-stopped
 
 volumes:
+  mysql_concert_data:
   mysql_pricing_data:
   mysql_queue_data:
   mysql_ticket_data:

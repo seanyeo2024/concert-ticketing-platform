@@ -94,7 +94,7 @@ const SEED = {
 /* ── API client ─────────────────────────────────────────────── */
 const API = (() => {
   const BASE = {
-    concert:      'https://<outsystems>.outsystemscloud.com/ConcertAPI/rest/v1',
+    concert:      'http://localhost:5000',
     pricing:      'http://localhost:5001/pricing/v1',
     queue:        'http://localhost:5002/queue/v1',
     tickets:      'http://localhost:5003/tickets/v1',

@@ -26,6 +26,38 @@ def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "payment", "timestamp": datetime.utcnow().isoformat()}}), status
 
+
+def ensure_schema():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS payment_record (
+          paymentId VARCHAR(36) PRIMARY KEY,
+          userId VARCHAR(36) NOT NULL,
+          ticketId VARCHAR(36) NOT NULL,
+          concertId VARCHAR(36) NOT NULL,
+          type VARCHAR(20) NOT NULL,
+          amount DECIMAL(10,2) NOT NULL,
+          currency VARCHAR(3) NOT NULL,
+          status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+          stripePaymentIntentId VARCHAR(100) NULL,
+          stripeRefundId VARCHAR(100) NULL,
+          originalPaymentId VARCHAR(36) NULL,
+          reason VARCHAR(200) NULL,
+          createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          KEY idx_payment_concert_type (concertId, type),
+          KEY idx_payment_user (userId)
+        )
+        """
+    )
+    db.commit()
+    cur.close()
+    db.close()
+
+
+ensure_schema()
+
 def stripe_charge(amount, currency, token):
     """
     Call Stripe API to charge the card.
@@ -47,9 +79,13 @@ def stripe_refund(intent_id, amount):
 # POST /payment/v1/payment  — charge
 @app.route("/payment/v1/payment", methods=["POST"])
 def create_payment():
-    data = request.get_json()
+    data = request.get_json() or {}
     required = ["userId", "ticketId", "amount", "currency", "type"]
     if not all(k in data for k in required): return err("MISSING_FIELDS", f"Required: {required}")
+    if float(data["amount"]) <= 0:
+        return err("INVALID_AMOUNT", "amount must be > 0")
+    if data["type"] not in {"PURCHASE", "RESALE_PURCHASE"}:
+        return err("INVALID_TYPE", "type must be PURCHASE or RESALE_PURCHASE")
     intent_id, ok = stripe_charge(data["amount"], data["currency"], data.get("stripeToken", "tok_simulated"))
     status = "SUCCESS" if ok else "FAILED"
     pay_id = f"PAY-{uuid.uuid4().hex[:8].upper()}"
@@ -68,13 +104,19 @@ def create_payment():
 # POST /payment/v1/payment/refund
 @app.route("/payment/v1/payment/refund", methods=["POST"])
 def create_refund():
-    data = request.get_json()
+    data = request.get_json() or {}
     required = ["userId", "ticketId", "paymentId", "amount"]
     if not all(k in data for k in required): return err("MISSING_FIELDS", f"Required: {required}")
+    if float(data["amount"]) <= 0:
+        return err("INVALID_AMOUNT", "amount must be > 0")
     db = get_db(); cur = db.cursor(dictionary=True)
     cur.execute("SELECT * FROM payment_record WHERE paymentId=%s", (data["paymentId"],))
     original = cur.fetchone()
     if not original: return err("NOT_FOUND", "Original payment not found", 404)
+    cur.execute("SELECT paymentId FROM payment_record WHERE originalPaymentId=%s AND reason=%s", (data["paymentId"], data.get("reason")))
+    if cur.fetchone():
+        cur.close(); db.close()
+        return err("REFUND_EXISTS", "Refund already issued for this payment and reason", 409)
     refund_id_stripe, ok = stripe_refund(original["stripePaymentIntentId"], data["amount"])
     pay_id = f"PAY-{uuid.uuid4().hex[:8].upper()}"
     cur.execute("""INSERT INTO payment_record
@@ -84,9 +126,9 @@ def create_refund():
          data["amount"], original["currency"], "SUCCESS" if ok else "FAILED",
          refund_id_stripe, data["paymentId"], data.get("reason")))
     db.commit(); cur.close(); db.close()
-    return jsonify({"paymentId": pay_id, "type": "REFUND", "status": "SUCCESS",
+    return jsonify({"paymentId": pay_id, "type": "REFUND", "status": "SUCCESS" if ok else "FAILED",
                     "refundId": refund_id_stripe, "amount": data["amount"],
-                    "createdAt": datetime.utcnow().isoformat()}), 201
+                    "currency": original["currency"], "createdAt": datetime.utcnow().isoformat()}), 201
 
 # GET /payment/v1/payment/<paymentId>
 @app.route("/payment/v1/payment/<payment_id>", methods=["GET"])

@@ -26,6 +26,35 @@ def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "qr", "timestamp": datetime.utcnow().isoformat()}}), status
 
+
+def ensure_schema():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS qr_record (
+          qrId VARCHAR(36) PRIMARY KEY,
+          ticketId VARCHAR(36) NOT NULL,
+          concertId VARCHAR(36) NOT NULL,
+          userId VARCHAR(36) NOT NULL,
+          qrData TEXT NOT NULL,
+          qrImageUrl VARCHAR(500) NOT NULL,
+          isValid TINYINT(1) NOT NULL DEFAULT 1,
+          invalidatedAt DATETIME NULL,
+          invalidReason VARCHAR(100) NULL,
+          generatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          KEY idx_qr_ticket_valid (ticketId, isValid),
+          KEY idx_qr_concert_valid (concertId, isValid)
+        )
+        """
+    )
+    db.commit()
+    cur.close()
+    db.close()
+
+
+ensure_schema()
+
 def make_qr_data(ticket_id, user_id, concert_id):
     payload = f"CTMS|{ticket_id}|{user_id}|{concert_id}"
     sig = hmac.new(HMAC_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:8]
@@ -37,10 +66,18 @@ def generate_qr():
     data = request.get_json()
     required = ["ticketId", "userId", "concertId"]
     if not all(k in data for k in required): return err("MISSING_FIELDS", f"Required: {required}")
+    db = get_db(); cur = db.cursor()
+    cur.execute(
+        """
+        UPDATE qr_record
+        SET isValid=0, invalidatedAt=NOW(), invalidReason='REPLACED_BY_NEW_QR'
+        WHERE ticketId=%s AND isValid=1
+        """,
+        (data["ticketId"],),
+    )
     qr_id = f"QR-{uuid.uuid4().hex[:8].upper()}"
     qr_data = make_qr_data(data["ticketId"], data["userId"], data["concertId"])
     image_url = f"/qr/v1/qr/{data['ticketId']}/image"
-    db = get_db(); cur = db.cursor()
     cur.execute("""INSERT INTO qr_record (qrId,ticketId,concertId,userId,qrData,qrImageUrl,isValid)
                    VALUES (%s,%s,%s,%s,%s,%s,1)""",
                 (qr_id, data["ticketId"], data["concertId"], data["userId"], qr_data, image_url))
@@ -53,7 +90,7 @@ def generate_qr():
 @app.route("/qr/v1/qr/<ticket_id>", methods=["GET"])
 def get_qr(ticket_id):
     db = get_db(); cur = db.cursor(dictionary=True)
-    cur.execute("SELECT * FROM qr_record WHERE ticketId=%s AND isValid=1", (ticket_id,))
+    cur.execute("SELECT * FROM qr_record WHERE ticketId=%s AND isValid=1 ORDER BY generatedAt DESC LIMIT 1", (ticket_id,))
     row = cur.fetchone(); cur.close(); db.close()
     if not row: return err("NOT_FOUND", "No valid QR found for this ticket", 404)
     return jsonify(row)

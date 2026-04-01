@@ -166,7 +166,7 @@ VALUES
 ('CAT-C005-01', 'CONC-000005', 'CAT 1 — Floor / Pit',        3000,  600,  '2025-04-05 11:05:00'),
 ('CAT-C005-02', 'CONC-000005', 'CAT 2 — Lower Tier',        10000, 4500,  '2025-04-05 11:05:00'),
 ('CAT-C005-03', 'CONC-000005', 'CAT 3 — Upper Tier',        12000, 9000,  '2025-04-05 11:05:00'),
-('CAT-C005-04', 'CONC-000005', 'CAT 4 — Gallery',            5000, 8000,  '2025-04-05 11:05:00');
+('CAT-C005-04', 'CONC-000005', 'CAT 4 — Gallery',            8000, 8000,  '2025-04-05 11:05:00');
 
 -- Sync concert.totalSeats / availableSeats from seat_category aggregates
 UPDATE concert c
