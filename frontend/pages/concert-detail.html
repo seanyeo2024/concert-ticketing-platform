@@ -296,7 +296,13 @@ async function init(){
     if(!concert){window.location.href='index.html';return;}
     document.title=`${concert.name} — CTMS`;
     renderBanner();
-    const [catRes,priceRes]=await Promise.all([API.concerts.seats(concertId),API.pricing.list(concertId)]);
+    let catRes={ categories: [] }, priceRes={ prices: [] };
+    try {
+      [catRes, priceRes] = await Promise.all([API.concerts.seats(concertId),API.pricing.list(concertId)]);
+    } catch (e) {
+      catRes = { categories: [] };
+      priceRes = { prices: [] };
+    }
     categories=catRes.categories||[];
     prices=priceRes.prices||[];
     renderCats();
@@ -328,6 +334,14 @@ function renderBanner(){
 
 function renderCats(){
   const list=document.getElementById('cat-list');
+  if(!categories.length){
+    list.innerHTML=`<div class="alert alert-warning">Ticket categories have not been configured for this concert yet.</div>`;
+    document.getElementById('order-empty').classList.add('hidden');
+    document.getElementById('order-actions').classList.add('hidden');
+    document.getElementById('order-blocked').classList.remove('hidden');
+    document.getElementById('b-price-from').textContent='SGD —';
+    return;
+  }
   list.innerHTML=categories.map(cat=>{
     const price=prices.find(p=>p.categoryId===cat.categoryId);
     const soldOut=cat.availableSeats===0;

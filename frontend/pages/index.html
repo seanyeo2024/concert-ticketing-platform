@@ -346,7 +346,9 @@
 <div class="concerts-grid">
   <div class="container">
     <div class="grid-3" id="concert-grid">
-      ${[1,2,3,4,5,6].map(i=>`<div class="concert-card"><div class="concert-card-top skel" style="height:200px"></div><div class="concert-card-body"><div class="skel" style="height:28px;width:70%;margin-bottom:10px"></div><div class="skel" style="height:14px;width:50%"></div></div></div>`).join('')}
+      <div class="concert-card"><div class="concert-card-top skel" style="height:200px"></div><div class="concert-card-body"><div class="skel" style="height:28px;width:70%;margin-bottom:10px"></div><div class="skel" style="height:14px;width:50%"></div></div></div>
+      <div class="concert-card"><div class="concert-card-top skel" style="height:200px"></div><div class="concert-card-body"><div class="skel" style="height:28px;width:70%;margin-bottom:10px"></div><div class="skel" style="height:14px;width:50%"></div></div></div>
+      <div class="concert-card"><div class="concert-card-top skel" style="height:200px"></div><div class="concert-card-body"><div class="skel" style="height:28px;width:70%;margin-bottom:10px"></div><div class="skel" style="height:14px;width:50%"></div></div></div>
     </div>
   </div>
 </div>
@@ -384,7 +386,10 @@ function applyFilters() {
   const q=(document.getElementById('search-input')?.value||'').toLowerCase();
   const list = allConcerts.filter(c=>{
     const fOk = activeFilter==='ALL'||c.status===activeFilter;
-    const sOk = !q||c.artist.toLowerCase().includes(q)||c.venue.toLowerCase().includes(q);
+    const artist = (c.artistName || '').toLowerCase();
+    const concert = (c.name || '').toLowerCase();
+    const venue = (c.venue || '').toLowerCase();
+    const sOk = !q||artist.includes(q)||concert.includes(q)||venue.includes(q);
     return fOk&&sOk;
   });
   document.getElementById('results-line').textContent = `${list.length} concert${list.length!==1?'s':''}`;
@@ -395,26 +400,28 @@ function applyFilters() {
   }
   grid.innerHTML = list.map((c,i)=>{
     const topClass = CC_TOPS[i % CC_TOPS.length];
-    const pct = c.total_tickets>0?Math.round((1-c.available_tickets/c.total_tickets)*100):0;
-    const emoji = ['🎸','🎤','🥁','🎹','🎺','🎻'][i%6];
-    return `<div class="concert-card" onclick="location.href='concert-detail.html?id=${c.concert_id}'">
+    const totalSeats = Number(c.totalSeats || 0);
+    const availableSeats = Number(c.availableSeats || 0);
+    const pct = totalSeats > 0 ? Math.round((1 - availableSeats / totalSeats) * 100) : 0;
+    const emoji = c.emoji || ['🎸','🎤','🥁','🎹','🎺','🎻'][i%6];
+    return `<div class="concert-card" onclick="location.href='concert-detail.html?id=${c.concertId}'">
       <div class="concert-card-top ${topClass}">
         <div class="concert-card-num">${String(i+1).padStart(2,'0')}</div>
         <div class="concert-card-status">${Util.tag(c.status)}</div>
         <span style="font-size:3.5rem;z-index:1;position:relative">${emoji}</span>
       </div>
       <div class="concert-card-body">
-        <div class="concert-title">${c.artist}</div>
+        <div class="concert-title">${c.name}</div>
         <div class="concert-meta-row">
-          <span>📅 ${Util.date(c.event_date)}</span>
+          <span>📅 ${Util.formatDateShort(c.eventDate)}</span>
           <span>📍 ${c.venue}</span>
         </div>
         <div class="flex-sb">
-          <div class="concert-price">SGD ${c.base_price}</div>
+          <div class="concert-price">${c.currency || 'SGD'}</div>
           <span class="btn btn-sm btn-black">View →</span>
         </div>
         <div class="pct-bar"><div class="pct-fill" style="width:${pct}%"></div></div>
-        <div class="text-xs text-muted mt-8">${c.available_tickets?.toLocaleString()||'—'} seats left</div>
+        <div class="text-xs text-muted mt-8">${availableSeats.toLocaleString()||'—'} seats left</div>
       </div>
     </div>`;
   }).join('');
@@ -425,10 +432,10 @@ function renderLineup() {
   const items = allConcerts.slice(0,4);
   if(!items.length){row.innerHTML='<div class="lineup-entry"><div class="lineup-artist" style="color:#555">No concerts</div></div>';return;}
   row.innerHTML = items.map(c=>`
-    <div class="lineup-entry" onclick="location.href='concert-detail.html?id=${c.concert_id}'">
-      <div class="lineup-artist">${c.artist}</div>
+    <div class="lineup-entry" onclick="location.href='concert-detail.html?id=${c.concertId}'">
+      <div class="lineup-artist">${c.artistName || c.name}</div>
       <div class="lineup-detail">
-        <div class="lineup-date">${Util.date(c.event_date)}</div>
+        <div class="lineup-date">${Util.formatDateShort(c.eventDate)}</div>
         <div style="font-size:0.75rem;color:#888;margin-top:2px">${c.venue}</div>
       </div>
       <span class="lineup-arrow">→</span>

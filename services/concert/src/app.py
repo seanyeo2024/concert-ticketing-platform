@@ -259,6 +259,74 @@ def get_seats(concert_id):
     return jsonify({"concertId": concert_id, "categories": rows})
 
 
+@app.route("/concerts/<concert_id>/seats", methods=["POST"])
+def create_seat_categories(concert_id):
+    data = request.get_json() or {}
+    categories = data.get("categories", [])
+    if not categories:
+        return err("EMPTY_PAYLOAD", "categories array is required")
+
+    db = get_db()
+    cur = db.cursor(dictionary=True)
+    cur.execute("SELECT concertId FROM concert WHERE concertId=%s", (concert_id,))
+    existing_concert = cur.fetchone()
+    cur.close()
+    db.close()
+    if not existing_concert:
+        return err("CONCERT_NOT_FOUND", "Concert not found", 404)
+
+    db = get_db()
+    cur = db.cursor()
+    created = []
+    try:
+        for category in categories:
+            if not category.get("categoryName") or category.get("totalSeats") is None:
+                db.rollback()
+                return err("MISSING_FIELDS", "Each category needs categoryName and totalSeats")
+
+            total_seats = int(category["totalSeats"])
+            available_seats = int(category.get("availableSeats", total_seats))
+            if total_seats < 0 or available_seats < 0 or available_seats > total_seats:
+                db.rollback()
+                return err("INVALID_SEAT_COUNTS", "Seat counts would become invalid", 400)
+
+            category_id = category.get("categoryId") or f"CAT-{uuid.uuid4().hex[:8].upper()}"
+            cur.execute(
+                """
+                INSERT INTO seat_category
+                  (categoryId, concertId, categoryName, basePrice, totalSeats, availableSeats)
+                VALUES (%s,%s,%s,%s,%s,%s)
+                """,
+                (
+                    category_id,
+                    concert_id,
+                    category["categoryName"],
+                    category.get("basePrice"),
+                    total_seats,
+                    available_seats,
+                ),
+            )
+            created.append(
+                {
+                    "categoryId": category_id,
+                    "categoryName": category["categoryName"],
+                    "totalSeats": total_seats,
+                    "availableSeats": available_seats,
+                    "basePrice": category.get("basePrice"),
+                }
+            )
+        db.commit()
+    except mysql.connector.IntegrityError:
+        db.rollback()
+        return err("CATEGORY_EXISTS", "One or more categories already exist for this concert", 409)
+    finally:
+        cur.close()
+        db.close()
+
+    sync_concert_counts(concert_id)
+    return jsonify({"concertId": concert_id, "categories": created}), 201
+
+
 @app.route("/concerts/<concert_id>/seats/<category_id>", methods=["PUT"])
 def update_seat_category(concert_id, category_id):
     data = request.get_json() or {}

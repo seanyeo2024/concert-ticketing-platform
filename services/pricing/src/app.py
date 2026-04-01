@@ -73,6 +73,42 @@ def fetch_seat_category(concert_id, category_id):
         return None
 
 
+def parse_mysql_datetime(value, field_name):
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        raw = value.strip()
+        candidates = [
+            raw,
+            raw.replace("T", " ").replace("Z", ""),
+        ]
+        parsed = None
+        for candidate in candidates:
+            try:
+                parsed = datetime.fromisoformat(candidate)
+                break
+            except ValueError:
+                parsed = None
+        if parsed is None:
+            for fmt in ("%a, %d %b %Y %H:%M:%S GMT", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    parsed = datetime.strptime(raw, fmt)
+                    break
+                except ValueError:
+                    continue
+        if parsed is None:
+            raise ValueError(f"{field_name} must be a valid datetime")
+        dt = parsed
+    else:
+        raise ValueError(f"{field_name} must be a valid datetime")
+
+    if dt.year < 1000:
+        raise ValueError(f"{field_name} year must be 1000 or later")
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
 ensure_schema()
 
 # GET /pricing/v1/concerts/<concertId>/prices
@@ -117,6 +153,11 @@ def create_price(concert_id):
         return err("INVALID_CEILING", "resaleCeiling must be >= basePrice")
     if fetch_seat_category(concert_id, data["categoryId"]) is None:
         return err("CATEGORY_NOT_FOUND", "concertId or categoryId not found", 404)
+    try:
+        effective_from = parse_mysql_datetime(data["effectiveFrom"], "effectiveFrom")
+        effective_to = parse_mysql_datetime(data.get("effectiveTo"), "effectiveTo")
+    except ValueError as exc:
+        return err("INVALID_DATETIME", str(exc), 400)
     rule_id = f"PR-{uuid.uuid4().hex[:8].upper()}"
     db = get_db(); cur = db.cursor()
     try:
@@ -124,7 +165,7 @@ def create_price(concert_id):
             (priceRuleId,concertId,categoryId,basePrice,resaleCeiling,currency,effectiveFrom,effectiveTo)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
             (rule_id, concert_id, data["categoryId"], data["basePrice"],
-             data.get("resaleCeiling"), data["currency"], data["effectiveFrom"], data.get("effectiveTo")))
+             data.get("resaleCeiling"), data["currency"], effective_from, effective_to))
         db.commit()
     except mysql.connector.IntegrityError:
         return err("DUPLICATE_RULE", "Price rule already exists for this concert+category", 409)
