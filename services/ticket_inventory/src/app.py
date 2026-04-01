@@ -25,13 +25,61 @@ def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "ticket_inventory", "timestamp": datetime.utcnow().isoformat()}}), status
 
+
+VALID_TRANSITIONS = {
+    "AVAILABLE": {"PENDING"},
+    "PENDING": {"AVAILABLE", "CONFIRMED", "REFUNDED"},
+    "CONFIRMED": {"RESALE_LISTED", "USED", "REFUNDED"},
+    "RESALE_LISTED": {"RESALE_PENDING", "CONFIRMED", "REFUNDED"},
+    "RESALE_PENDING": {"RESALE_LISTED", "CONFIRMED", "REFUNDED"},
+    "USED": set(),
+    "REFUNDED": set(),
+}
+
+
+def ensure_schema():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ticket (
+          ticketId VARCHAR(36) NOT NULL,
+          concertId VARCHAR(36) NOT NULL,
+          seatNumber VARCHAR(20) NOT NULL,
+          categoryId VARCHAR(36) NOT NULL,
+          ownerId VARCHAR(36) NULL DEFAULT NULL,
+          status VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE',
+          purchasePrice DECIMAL(10,2) NULL DEFAULT NULL,
+          resalePrice DECIMAL(10,2) NULL DEFAULT NULL,
+          resaleListingId VARCHAR(36) NULL DEFAULT NULL,
+          version BIGINT NOT NULL DEFAULT 0,
+          createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (ticketId),
+          UNIQUE KEY uq_concert_seat (concertId, seatNumber),
+          KEY idx_concert_status (concertId, status),
+          KEY idx_owner_status (ownerId, status),
+          KEY idx_resale_available (concertId, status, resalePrice)
+        )
+        """
+    )
+    db.commit()
+    cur.close()
+    db.close()
+
+
+ensure_schema()
+
 # GET /tickets/v1/tickets/<concertId>
 @app.route("/tickets/v1/tickets/<concert_id>", methods=["GET"])
 def list_tickets(concert_id):
     status_filter = request.args.get("status", "AVAILABLE")
     db = get_db(); cur = db.cursor(dictionary=True)
-    cur.execute("SELECT * FROM ticket WHERE concertId=%s AND status=%s ORDER BY categoryId, seatNumber",
-                (concert_id, status_filter))
+    if status_filter == "ALL":
+        cur.execute("SELECT * FROM ticket WHERE concertId=%s ORDER BY categoryId, seatNumber", (concert_id,))
+    else:
+        cur.execute("SELECT * FROM ticket WHERE concertId=%s AND status=%s ORDER BY categoryId, seatNumber",
+                    (concert_id, status_filter))
     rows = cur.fetchall(); cur.close(); db.close()
     return jsonify({"concertId": concert_id, "tickets": rows, "count": len(rows)})
 
@@ -56,7 +104,7 @@ def get_ticket(concert_id, ticket_id):
 # POST /tickets/v1/tickets  — bulk create (admin)
 @app.route("/tickets/v1/tickets", methods=["POST"])
 def create_tickets():
-    data = request.get_json()
+    data = request.get_json() or {}
     tickets = data.get("tickets", [])
     if not tickets: return err("EMPTY_PAYLOAD", "tickets array is required")
     db = get_db(); cur = db.cursor()
@@ -76,6 +124,24 @@ def update_ticket(concert_id, ticket_id):
     data = request.get_json()
     version = data.get("version")
     if version is None: return err("VERSION_REQUIRED", "version field is required for optimistic locking")
+    db = get_db(); cur = db.cursor(dictionary=True)
+    cur.execute("SELECT * FROM ticket WHERE ticketId=%s AND concertId=%s", (ticket_id, concert_id))
+    existing = cur.fetchone()
+    if not existing:
+        cur.close(); db.close()
+        return err("TICKET_NOT_FOUND", f"Ticket {ticket_id} not found", 404)
+    if int(existing["version"]) != int(version):
+        cur.close(); db.close()
+        return err("VERSION_CONFLICT",
+                   "Optimistic lock failed — ticket was modified by another request. Refresh and retry.", 409)
+    new_status = data.get("status")
+    if new_status and new_status != existing["status"]:
+        allowed = VALID_TRANSITIONS.get(existing["status"], set())
+        if new_status not in allowed:
+            cur.close(); db.close()
+            return err("INVALID_STATUS_TRANSITION",
+                       f"Cannot transition ticket from {existing['status']} to {new_status}", 409)
+    cur.close()
     db = get_db(); cur = db.cursor()
     # Build dynamic SET clause from provided fields
     allowed = ["status", "ownerId", "purchasePrice", "resalePrice", "resaleListingId"]
@@ -94,14 +160,18 @@ def update_ticket(concert_id, ticket_id):
 # PUT /tickets/v1/tickets/<concertId>/cancel-all  — S3 bulk refund
 @app.route("/tickets/v1/tickets/<concert_id>/cancel-all", methods=["PUT"])
 def cancel_all(concert_id):
-    data = request.get_json()
+    data = request.get_json() or {}
     reason = data.get("reason", "Concert cancelled")
+    db = get_db(); cur = db.cursor(dictionary=True)
+    cur.execute("SELECT COUNT(*) AS pendingCount FROM ticket WHERE concertId=%s AND status='PENDING'", (concert_id,))
+    pending_count = cur.fetchone()["pendingCount"]
+    cur.close(); db.close()
     db = get_db(); cur = db.cursor()
     cur.execute("""UPDATE ticket SET status='REFUNDED', updatedAt=NOW()
                    WHERE concertId=%s AND status IN ('CONFIRMED','PENDING','RESALE_LISTED','RESALE_PENDING')""",
                 (concert_id,))
     db.commit(); affected = cur.rowcount; cur.close(); db.close()
-    return jsonify({"concertId": concert_id, "ticketsRefunded": affected,
+    return jsonify({"concertId": concert_id, "ticketsRefunded": affected, "ticketsPending": pending_count,
                     "reason": reason, "updatedAt": datetime.utcnow().isoformat()})
 
 @app.route("/health")

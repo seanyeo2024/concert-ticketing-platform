@@ -27,6 +27,34 @@ def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "notification", "timestamp": datetime.utcnow().isoformat()}}), status
 
+
+def ensure_schema():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS notification_log (
+          notificationId VARCHAR(36) PRIMARY KEY,
+          userId VARCHAR(36) NOT NULL,
+          eventType VARCHAR(60) NOT NULL,
+          channel VARCHAR(10) NOT NULL,
+          subject VARCHAR(200) NULL,
+          body TEXT NOT NULL,
+          status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+          refId VARCHAR(36) NULL,
+          externalMsgId VARCHAR(200) NULL,
+          retryCount INT NOT NULL DEFAULT 0,
+          sentAt DATETIME NULL,
+          createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          KEY idx_notification_user_event (userId, eventType),
+          KEY idx_notification_status_retry (status, retryCount)
+        )
+        """
+    )
+    db.commit()
+    cur.close()
+    db.close()
+
 def send_email(to_user, subject, body):
     """Stub — replace with SendGrid / SMTP call."""
     # TODO: sendgrid.SendGridAPIClient(os.environ["SENDGRID_API_KEY"]).send(...)
@@ -51,21 +79,29 @@ TEMPLATES = {
 def handle_event(event_type, payload):
     data = payload.get("data", payload)
     user_id = payload.get("userId", data.get("userId", "UNKNOWN"))
+    channel = payload.get("channel", "EMAIL")
     tmpl = TEMPLATES.get(event_type, ("Notification", str(data)))
     subject = tmpl[0]
     try: body = tmpl[1].format(**data)
     except KeyError: body = tmpl[1]
-    ext_id, ok = send_email(user_id, subject, body)
+    if channel == "SMS":
+        ext_id, ok = send_sms(user_id, body)
+        subject = None
+    else:
+        ext_id, ok = send_email(user_id, subject, body)
     status = "SENT" if ok else "FAILED"
     notif_id = f"NOTIF-{uuid.uuid4().hex[:8].upper()}"
     db = get_db(); cur = db.cursor()
     cur.execute("""INSERT INTO notification_log
-        (notificationId,userId,eventType,channel,subject,body,status,refId,externalMsgId,sentAt)
-        VALUES (%s,%s,%s,'EMAIL',%s,%s,%s,%s,%s,%s)""",
-        (notif_id, user_id, event_type, subject, body, status,
+        (notificationId,userId,eventType,channel,subject,body,status,refId,externalMsgId,retryCount,sentAt)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (notif_id, user_id, event_type, channel, subject, body, status,
          data.get("ticketId", data.get("concertId")), ext_id,
-         datetime.utcnow() if ok else None))
+         0 if ok else 1, datetime.utcnow() if ok else None))
     db.commit(); cur.close(); db.close()
+
+
+ensure_schema()
 
 def start_consumer():
     """Background thread: consumes all messages from ctms_topic."""

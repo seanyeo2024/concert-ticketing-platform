@@ -6,7 +6,7 @@ Also publishes: queue.window.granted, queue.window.expired → RabbitMQ
 """
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import mysql.connector, os, uuid, sys
+import mysql.connector, os, uuid, sys, math
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
@@ -33,14 +33,79 @@ def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "queue", "timestamp": datetime.utcnow().isoformat()}}), status
 
+
+def ensure_schema():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS queue_entry (
+          queueId VARCHAR(36) PRIMARY KEY,
+          concertId VARCHAR(36) NOT NULL,
+          userId VARCHAR(36) NOT NULL,
+          position INT NOT NULL,
+          status VARCHAR(20) NOT NULL DEFAULT 'WAITING',
+          windowGrantedAt DATETIME NULL,
+          windowExpiresAt DATETIME NULL,
+          joinedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uq_queue_user (concertId, userId),
+          KEY idx_concert_status_position (concertId, status, position)
+        )
+        """
+    )
+    db.commit()
+    cur.close()
+    db.close()
+
+
+def publish_window_expired(row):
+    try:
+        mq_publish("queue.window.expired", {
+            "eventType": "queue.window.expired",
+            "userId": row["userId"],
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "concertId": row["concertId"],
+                "queueId": row["queueId"],
+            },
+        })
+    except Exception:
+        pass
+
+
+def expire_if_needed(row):
+    expires_at = row.get("windowExpiresAt")
+    if row.get("status") == "WINDOW_GRANTED" and expires_at and datetime.utcnow() > expires_at:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute(
+            """
+            UPDATE queue_entry
+            SET status='EXPIRED', updatedAt=NOW()
+            WHERE queueId=%s AND status='WINDOW_GRANTED'
+            """,
+            (row["queueId"],),
+        )
+        db.commit()
+        cur.close()
+        db.close()
+        row["status"] = "EXPIRED"
+        publish_window_expired(row)
+        return True
+    return False
+
+
+ensure_schema()
+
 # POST /queue/v1/queue/<concertId>  — join queue
 @app.route("/queue/v1/queue/<concert_id>", methods=["POST"])
 def join_queue(concert_id):
-    data = request.get_json()
+    data = request.get_json() or {}
     user_id = data.get("userId")
     if not user_id: return err("MISSING_USER_ID", "userId is required")
     db = get_db(); cur = db.cursor(dictionary=True)
-    cur.execute("SELECT queueId FROM queue_entry WHERE concertId=%s AND userId=%s AND status IN ('WAITING','WINDOW_GRANTED')",
+    cur.execute("SELECT queueId FROM queue_entry WHERE concertId=%s AND userId=%s AND status IN ('WAITING','WINDOW_GRANTED','COMPLETED')",
                 (concert_id, user_id))
     if cur.fetchone():
         cur.close(); db.close()
@@ -64,8 +129,10 @@ def get_position(concert_id, user_id):
                 (concert_id, user_id))
     row = cur.fetchone(); cur.close(); db.close()
     if not row: return err("NOT_FOUND", "No queue entry found", 404)
-    if row.get("windowExpiresAt") and datetime.utcnow() > row["windowExpiresAt"]:
+    if expire_if_needed(row):
         return err("WINDOW_EXPIRED", "Purchase window has expired; please rejoin the queue", 410)
+    ahead = max((row.get("position") or 1) - 1, 0)
+    row["estimatedWaitMins"] = 0 if row.get("status") == "WINDOW_GRANTED" else math.ceil(ahead / 10)
     return jsonify(row)
 
 # GET /queue/v1/queue/<concertId>  — queue depth
@@ -79,8 +146,10 @@ def queue_depth(concert_id):
 # PUT /queue/v1/queue/<concertId>/<userId>  — update status
 @app.route("/queue/v1/queue/<concert_id>/<user_id>", methods=["PUT"])
 def update_entry(concert_id, user_id):
-    data = request.get_json()
+    data = request.get_json() or {}
     new_status = data.get("status")
+    if new_status not in {"WAITING", "WINDOW_GRANTED", "COMPLETED", "EXPIRED"}:
+        return err("INVALID_STATUS", "Unsupported queue status")
     db = get_db(); cur = db.cursor()
     if new_status == "WINDOW_GRANTED":
         granted_at = datetime.utcnow()
@@ -96,6 +165,13 @@ def update_entry(concert_id, user_id):
         cur.execute("UPDATE queue_entry SET status=%s, updatedAt=NOW() WHERE concertId=%s AND userId=%s",
                     (new_status, concert_id, user_id))
         db.commit()
+        if new_status == "EXPIRED":
+            mq_publish("queue.window.expired", {
+                "eventType": "queue.window.expired",
+                "userId": user_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "data": {"concertId": concert_id},
+            })
     affected = cur.rowcount; cur.close(); db.close()
     if affected == 0: return err("NOT_FOUND", "Queue entry not found", 404)
     return jsonify({"updated": True, "status": new_status})
