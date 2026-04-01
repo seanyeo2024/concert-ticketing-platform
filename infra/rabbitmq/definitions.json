@@ -4,7 +4,7 @@
   "users": [
     {
       "name": "ctms",
-      "password_hash": "REPLACE_WITH_RABBITMQ_PASSWORD_HASH",
+      "password": "ctms",
       "tags": "administrator"
     }
   ],

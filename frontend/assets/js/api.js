@@ -94,16 +94,16 @@ const SEED = {
 /* ── API client ─────────────────────────────────────────────── */
 const API = (() => {
   const BASE = {
-    concert:      'http://localhost:5000',
-    pricing:      'http://localhost:5001/pricing/v1',
-    queue:        'http://localhost:5002/queue/v1',
-    tickets:      'http://localhost:5003/tickets/v1',
-    payment:      'http://localhost:5004/payment/v1',
-    qr:           'http://localhost:5005/qr/v1',
-    notification: 'http://localhost:5006/notification/v1',
-    purchase:     'http://localhost:5010/purchase/v1',
-    resale:       'http://localhost:5011/resale/v1',
-    cancellation: 'http://localhost:5012/cancellation/v1',
+    concert:      'http://localhost:5100',
+    pricing:      'http://localhost:5101/pricing/v1',
+    queue:        'http://localhost:5102/queue/v1',
+    tickets:      'http://localhost:5103/tickets/v1',
+    payment:      'http://localhost:5104/payment/v1',
+    qr:           'http://localhost:5105/qr/v1',
+    notification: 'http://localhost:5106/notification/v1',
+    purchase:     'http://localhost:510/purchase/v1',
+    resale:       'http://localhost:5111/resale/v1',
+    cancellation: 'http://localhost:5112/cancellation/v1',
   };
 
   async function req(url, method='GET', body=null) {
@@ -120,6 +120,7 @@ const API = (() => {
       list: async () => { try { return await req(`${BASE.concert}/concerts`); } catch { return { concerts: SEED.concerts }; } },
       get:  async id  => { try { return await req(`${BASE.concert}/concerts/${id}`); } catch { return SEED.concerts.find(c=>c.concertId===id) || null; } },
       seats:async id  => { try { return await req(`${BASE.concert}/concerts/${id}/seats`); } catch { return { categories: SEED.categories[id]||[] }; } },
+      createSeats: (id,p) => req(`${BASE.concert}/concerts/${id}/seats`, 'POST', p),
       update: (id,p)  => req(`${BASE.concert}/concerts/${id}`, 'PUT', p),
       create: p       => req(`${BASE.concert}/concerts`, 'POST', p),
     },
@@ -140,6 +141,7 @@ const API = (() => {
       list:      async (cid,st) => { try { return await req(`${BASE.tickets}/tickets/${cid}?status=${st||'AVAILABLE'}`); } catch { return { tickets: SEED.tickets.filter(t=>t.concertId===cid&&(!st||st==='ALL'||t.status===st)) }; } },
       resale:    async cid      => { try { return await req(`${BASE.tickets}/tickets/${cid}/resale`); } catch { return { listings: SEED.resaleListings.filter(t=>t.concertId===cid) }; } },
       get:       async (cid,id) => { try { return await req(`${BASE.tickets}/tickets/${cid}/${id}`); } catch { return SEED.tickets.find(t=>t.ticketId===id)||null; } },
+      create:    p              => req(`${BASE.tickets}/tickets`, 'POST', p),
       update:    (cid,id,p)     => req(`${BASE.tickets}/tickets/${cid}/${id}`,'PUT',p).catch(()=>({ updated:true })),
       cancelAll: (cid,p)        => req(`${BASE.tickets}/tickets/${cid}/cancel-all`,'PUT',p).catch(()=>({ ticketsRefunded:0 })),
     },

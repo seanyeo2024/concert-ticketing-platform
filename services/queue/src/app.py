@@ -6,7 +6,7 @@ Also publishes: queue.window.granted, queue.window.expired → RabbitMQ
 """
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import mysql.connector, os, uuid, sys, math
+import mysql.connector, os, uuid, sys, math, requests
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
@@ -19,6 +19,8 @@ except ImportError:
     def mq_publish(rk, payload): print(f"[MQ STUB] {rk}: {payload}")
 
 WINDOW_SECONDS = int(os.environ.get("PURCHASE_WINDOW_SECONDS", 600))
+MAX_ACTIVE_WINDOWS = int(os.environ.get("MAX_ACTIVE_WINDOWS", 5))
+CONCERT_URL = os.environ.get("CONCERT_SERVICE_URL", "http://localhost:5000")
 
 def get_db():
     return mysql.connector.connect(
@@ -74,6 +76,144 @@ def publish_window_expired(row):
         pass
 
 
+def publish_window_granted(user_id, concert_id, expires_at):
+    try:
+        mq_publish("queue.window.granted", {
+            "userId": user_id,
+            "concertId": concert_id,
+            "windowExpiresAt": expires_at.isoformat(),
+        })
+    except Exception:
+        pass
+
+
+def fetch_available_seats(concert_id):
+    try:
+        res = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=5)
+        if res.status_code != 200:
+            return 0
+        data = res.json()
+        return max(int(data.get("availableSeats", 0) or 0), 0)
+    except Exception:
+        return 0
+
+
+def rebalance_waiting_positions(concert_id):
+    db = get_db()
+    cur = db.cursor(dictionary=True)
+    cur.execute(
+        """
+        SELECT queueId
+        FROM queue_entry
+        WHERE concertId=%s AND status='WAITING'
+        ORDER BY joinedAt, updatedAt, queueId
+        """,
+        (concert_id,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    cur = db.cursor()
+    for index, row in enumerate(rows, start=1):
+        cur.execute(
+            "UPDATE queue_entry SET position=%s WHERE queueId=%s AND position<>%s",
+            (index, row["queueId"], index),
+        )
+    db.commit()
+    cur.close()
+    db.close()
+
+
+def expire_granted_windows(concert_id):
+    db = get_db()
+    cur = db.cursor(dictionary=True)
+    cur.execute(
+        """
+        SELECT queueId, concertId, userId, windowExpiresAt
+        FROM queue_entry
+        WHERE concertId=%s AND status='WINDOW_GRANTED'
+        """,
+        (concert_id,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    expired = [row for row in rows if row.get("windowExpiresAt") and datetime.utcnow() > row["windowExpiresAt"]]
+    if not expired:
+        db.close()
+        return
+    cur = db.cursor()
+    for row in expired:
+        cur.execute(
+            "UPDATE queue_entry SET status='EXPIRED', updatedAt=NOW() WHERE queueId=%s AND status='WINDOW_GRANTED'",
+            (row["queueId"],),
+        )
+        publish_window_expired(row)
+    db.commit()
+    cur.close()
+    db.close()
+
+
+def grant_windows_if_needed(concert_id):
+    expire_granted_windows(concert_id)
+    rebalance_waiting_positions(concert_id)
+    available_seats = fetch_available_seats(concert_id)
+    target_active = max(0, min(MAX_ACTIVE_WINDOWS, available_seats))
+
+    db = get_db()
+    cur = db.cursor(dictionary=True)
+    cur.execute(
+        """
+        SELECT COUNT(*) AS activeCount
+        FROM queue_entry
+        WHERE concertId=%s AND status='WINDOW_GRANTED'
+        """,
+        (concert_id,),
+    )
+    active_count = cur.fetchone()["activeCount"]
+    slots_needed = max(target_active - active_count, 0)
+    if slots_needed == 0:
+        cur.close()
+        db.close()
+        return
+
+    cur.execute(
+        """
+        SELECT queueId, userId, position
+        FROM queue_entry
+        WHERE concertId=%s AND status='WAITING'
+        ORDER BY position, joinedAt, queueId
+        LIMIT %s
+        """,
+        (concert_id, slots_needed),
+    )
+    to_grant = cur.fetchall()
+    cur.close()
+
+    if not to_grant:
+        db.close()
+        return
+
+    cur = db.cursor()
+    granted_at = datetime.utcnow()
+    for row in to_grant:
+        expires_at = granted_at + timedelta(seconds=WINDOW_SECONDS)
+        cur.execute(
+            """
+            UPDATE queue_entry
+            SET status='WINDOW_GRANTED',
+                windowGrantedAt=%s,
+                windowExpiresAt=%s,
+                updatedAt=NOW()
+            WHERE queueId=%s AND status='WAITING'
+            """,
+            (granted_at, expires_at, row["queueId"]),
+        )
+        publish_window_granted(row["userId"], concert_id, expires_at)
+    db.commit()
+    cur.close()
+    db.close()
+    rebalance_waiting_positions(concert_id)
+
+
 def expire_if_needed(row):
     expires_at = row.get("windowExpiresAt")
     if row.get("status") == "WINDOW_GRANTED" and expires_at and datetime.utcnow() > expires_at:
@@ -117,9 +257,12 @@ def join_queue(concert_id):
                    VALUES (%s,%s,%s,%s,'WAITING',NOW(),NOW())""",
                 (queue_id, concert_id, user_id, position))
     db.commit(); cur.close(); db.close()
-    return jsonify({"queueId": queue_id, "concertId": concert_id, "userId": user_id,
-                    "position": position, "status": "WAITING",
-                    "joinedAt": datetime.utcnow().isoformat()}), 201
+    grant_windows_if_needed(concert_id)
+    db = get_db(); cur = db.cursor(dictionary=True)
+    cur.execute("SELECT * FROM queue_entry WHERE queueId=%s", (queue_id,))
+    row = cur.fetchone()
+    cur.close(); db.close()
+    return jsonify(row), 201
 
 # GET /queue/v1/queue/<concertId>/<userId>
 @app.route("/queue/v1/queue/<concert_id>/<user_id>", methods=["GET"])
@@ -130,7 +273,14 @@ def get_position(concert_id, user_id):
     row = cur.fetchone(); cur.close(); db.close()
     if not row: return err("NOT_FOUND", "No queue entry found", 404)
     if expire_if_needed(row):
+        grant_windows_if_needed(concert_id)
         return err("WINDOW_EXPIRED", "Purchase window has expired; please rejoin the queue", 410)
+    grant_windows_if_needed(concert_id)
+    db = get_db(); cur = db.cursor(dictionary=True)
+    cur.execute("SELECT * FROM queue_entry WHERE concertId=%s AND userId=%s ORDER BY joinedAt DESC LIMIT 1",
+                (concert_id, user_id))
+    row = cur.fetchone(); cur.close(); db.close()
+    if not row: return err("NOT_FOUND", "No queue entry found", 404)
     ahead = max((row.get("position") or 1) - 1, 0)
     row["estimatedWaitMins"] = 0 if row.get("status") == "WINDOW_GRANTED" else math.ceil(ahead / 10)
     return jsonify(row)
@@ -159,8 +309,7 @@ def update_entry(concert_id, user_id):
                        WHERE concertId=%s AND userId=%s""",
                     (granted_at, expires_at, concert_id, user_id))
         db.commit()
-        mq_publish("queue.window.granted", {"userId": user_id, "concertId": concert_id,
-                                             "windowExpiresAt": expires_at.isoformat()})
+        publish_window_granted(user_id, concert_id, expires_at)
     else:
         cur.execute("UPDATE queue_entry SET status=%s, updatedAt=NOW() WHERE concertId=%s AND userId=%s",
                     (new_status, concert_id, user_id))
@@ -174,6 +323,7 @@ def update_entry(concert_id, user_id):
             })
     affected = cur.rowcount; cur.close(); db.close()
     if affected == 0: return err("NOT_FOUND", "Queue entry not found", 404)
+    grant_windows_if_needed(concert_id)
     return jsonify({"updated": True, "status": new_status})
 
 # DELETE /queue/v1/queue/<concertId>/<userId>
@@ -183,6 +333,7 @@ def leave_queue(concert_id, user_id):
     cur.execute("DELETE FROM queue_entry WHERE concertId=%s AND userId=%s", (concert_id, user_id))
     db.commit(); affected = cur.rowcount; cur.close(); db.close()
     if affected == 0: return err("NOT_FOUND", "Queue entry not found", 404)
+    grant_windows_if_needed(concert_id)
     return jsonify({"deleted": True})
 
 @app.route("/health")

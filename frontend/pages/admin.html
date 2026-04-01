@@ -95,10 +95,31 @@ body { background: var(--black); }
   color: var(--pink); margin-bottom: 16px; letter-spacing: -0.01em;
 }
 
+.config-zone {
+  border: 2px solid rgba(58,180,242,0.2);
+  border-radius: var(--radius-lg); padding: 28px;
+  background: rgba(58,180,242,0.05); margin-bottom: 32px;
+}
+.config-zone-title {
+  font-family: var(--font-display); font-size: 1.3rem; font-weight: 900;
+  color: var(--blue); margin-bottom: 12px; letter-spacing: -0.01em;
+}
+.config-rows {
+  display: grid; gap: 12px; margin: 24px 0;
+}
+.config-row {
+  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto;
+  gap: 12px; align-items: end;
+  padding: 16px; background: var(--white); border-radius: var(--radius);
+  border: 2px solid rgba(17,17,17,0.08);
+}
+.config-row .btn { white-space: nowrap; }
+
 @media(max-width:900px){
   .admin-wrap { grid-template-columns: 1fr; }
   .admin-sidebar { display: none; }
   .kpi-row { grid-template-columns: 1fr 1fr; }
+  .config-row { grid-template-columns: 1fr; }
 }
 </style>
 </head>
@@ -120,6 +141,7 @@ body { background: var(--black); }
       <div class="sidebar-label">Concerts</div>
       <button class="sidebar-link" onclick="showPanel('concerts',this)"><span class="link-icon">🎤</span> All Concerts</button>
       <button class="sidebar-link" onclick="showPanel('create',this)"><span class="link-icon">➕</span> Create Concert</button>
+      <button class="sidebar-link" onclick="showPanel('configure',this)"><span class="link-icon">🛠</span> Configure Concert</button>
       <button class="sidebar-link" onclick="showPanel('cancel',this)"><span class="link-icon">❌</span> Cancel Concert</button>
     </div>
     <div class="sidebar-section" style="margin-top:16px">
@@ -186,6 +208,29 @@ body { background: var(--black); }
       </div>
     </div>
 
+    <!-- Configure concert -->
+    <div class="panel" id="panel-configure">
+      <div class="section-label mb-24">Configure Concert</div>
+      <p style="max-width:700px;color:#666;margin-bottom:32px;line-height:1.7;font-size:0.9rem">Set up seat categories, pricing, and ticket inventory for a concert after it has been created. This is the step that makes a new concert purchasable.</p>
+      <div class="config-zone">
+        <div class="config-zone-title">Seats, Prices, and Tickets</div>
+        <div class="form-group" style="max-width:520px">
+          <label class="form-label">Select Concert</label>
+          <select class="form-select" id="cfg-concert" onchange="loadConfigPreview()">
+            <option value="">Choose concert to configure…</option>
+          </select>
+        </div>
+        <div id="cfg-preview" class="text-sm text-muted" style="margin-bottom:20px">Choose a concert to configure its categories.</div>
+        <div class="config-rows" id="config-rows"></div>
+        <div class="flex-c gap-12" style="margin-bottom:20px">
+          <button class="btn btn-outline" onclick="addConfigRow()" style="border-radius:100px">+ Add Category</button>
+          <button class="btn btn-outline" onclick="loadConfigPreview()" style="border-radius:100px">Reset</button>
+        </div>
+        <div id="config-alert"></div>
+        <button class="btn btn-black" id="cfg-save-btn" onclick="configureConcert()" style="border-radius:var(--radius)">Save Configuration →</button>
+      </div>
+    </div>
+
     <!-- Cancel concert -->
     <div class="panel" id="panel-cancel">
       <div class="section-label mb-24">Cancel Concert — S3 Flow</div>
@@ -246,6 +291,7 @@ function showPanel(n,el){
   document.getElementById(`panel-${n}`).classList.add('active'); el.classList.add('active');
   if(n==='health') loadHealth();
   if(n==='concerts') loadConcerts();
+  if(n==='configure') loadConfigConcertOptions();
   if(n==='cancel') loadCancelOptions();
   if(n==='queue') loadQueueDepth();
 }
@@ -300,8 +346,183 @@ async function loadConcerts(){
       <td class="text-sm text-muted">${c.venue?.split(',')[0]}</td>
       <td class="text-sm">${c.availableSeats?.toLocaleString()}/${c.totalSeats?.toLocaleString()}</td>
       <td>${Util.tag(c.status)}</td>
-      <td><button class="btn btn-sm btn-black" onclick="window.location.href='concert-detail.html?id=${c.concertId}'" style="border-radius:100px">View</button></td>
+      <td>
+        <button class="btn btn-sm btn-black" onclick="window.location.href='concert-detail.html?id=${c.concertId}'" style="border-radius:100px">View</button>
+        <button class="btn btn-sm btn-outline" onclick="openConfigureFor('${c.concertId}')" style="border-radius:100px;margin-left:8px">Configure</button>
+      </td>
     </tr>`).join('');
+}
+
+async function loadConfigConcertOptions(selectedId=''){
+  const sel=document.getElementById('cfg-concert');
+  sel.innerHTML='<option value="">Choose concert to configure…</option>';
+  const d=await API.concerts.list();
+  (d.concerts||d||[]).forEach(c=>{
+    const o=document.createElement('option');
+    o.value=c.concertId;
+    o.textContent=`${c.name} (${c.totalSeats||0} seats)`;
+    sel.appendChild(o);
+  });
+  if(selectedId){
+    sel.value=selectedId;
+    await loadConfigPreview();
+  } else {
+    document.getElementById('cfg-preview').textContent='Choose a concert to configure its categories.';
+    document.getElementById('config-rows').innerHTML='';
+  }
+}
+
+async function openConfigureFor(concertId){
+  const btn=[...document.querySelectorAll('.sidebar-link')].find(el=>el.textContent.includes('Configure Concert'));
+  showPanel('configure', btn);
+  await loadConfigConcertOptions(concertId);
+}
+
+function buildConfigRow(row={}){
+  const name=row.categoryName||'';
+  const seats=row.totalSeats||'';
+  const price=row.basePrice||'';
+  const ceiling=row.resaleCeiling||'';
+  return `<div class="config-row">
+    <div class="form-group" style="margin:0"><label class="form-label">Category Name</label><input class="form-input cfg-name" value="${name}" placeholder="CAT 1 — FLOOR / PIT"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">Seats</label><input class="form-input cfg-seats" type="number" min="1" value="${seats}" placeholder="1000"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">Base Price</label><input class="form-input cfg-price" type="number" min="0" step="0.01" value="${price}" placeholder="98"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">Resale Cap</label><input class="form-input cfg-cap" type="number" min="0" step="0.01" value="${ceiling}" placeholder="145"></div>
+    <button class="btn btn-sm btn-outline" onclick="this.parentElement.remove()" style="border-radius:100px">Remove</button>
+  </div>`;
+}
+
+function addConfigRow(row={}){
+  document.getElementById('config-rows').insertAdjacentHTML('beforeend', buildConfigRow(row));
+}
+
+function slugifyCategory(name){
+  return (name||'CAT').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,18) || 'CAT';
+}
+
+function makeSeatLabel(prefix, index){
+  const block=Math.floor(index/100)+1;
+  const seat=(index%100)+1;
+  return `${prefix}-${String(block).padStart(2,'0')}-${String(seat).padStart(2,'0')}`;
+}
+
+function toMysqlDateTime(value){
+  if(!value) return null;
+  const dt=new Date(value);
+  if(Number.isNaN(dt.getTime())) return null;
+  const year=dt.getUTCFullYear();
+  if(year<1000) return null;
+  const pad=n=>String(n).padStart(2,'0');
+  return `${year}-${pad(dt.getUTCMonth()+1)}-${pad(dt.getUTCDate())} ${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}:${pad(dt.getUTCSeconds())}`;
+}
+
+async function loadConfigPreview(){
+  const concertId=document.getElementById('cfg-concert').value;
+  const select=document.getElementById('cfg-concert');
+  const rows=document.getElementById('config-rows');
+  rows.innerHTML='';
+  document.getElementById('config-alert').innerHTML='';
+  if(!concertId){
+    select.dataset.existingCount='0';
+    document.getElementById('cfg-preview').textContent='Choose a concert to configure its categories.';
+    return;
+  }
+  const concert=await API.concerts.get(concertId);
+  let categories=[];
+  try{
+    const seatRes=await API.concerts.seats(concertId);
+    categories=seatRes.categories||[];
+  }catch(e){
+    categories=[];
+  }
+  select.dataset.existingCount=String(categories.length);
+  document.getElementById('cfg-preview').textContent=categories.length
+    ? `${concert.name} already has ${categories.length} category(ies). Add only new categories below.`
+    : `${concert.name} currently has no categories configured. Add categories below to make it purchasable.`;
+  if(!categories.length){
+    addConfigRow({ categoryName:'CAT 1 — FLOOR / PIT' });
+    addConfigRow({ categoryName:'CAT 2 — LOWER TIER' });
+  } else {
+    addConfigRow();
+  }
+}
+
+async function configureConcert(){
+  const concertId=document.getElementById('cfg-concert').value;
+  if(!concertId){toast('Select a concert first','warning');return;}
+  const concert=await API.concerts.get(concertId);
+  const effectiveFrom=toMysqlDateTime(concert.eventDate);
+  if(!effectiveFrom){
+    document.getElementById('config-alert').innerHTML='<div class="alert alert-danger">This concert has an invalid event date for pricing. Use a year of 1000 or later, then try again.</div>';
+    toast('Concert date is invalid for pricing','error');
+    return;
+  }
+  const existingCount=Number(document.getElementById('cfg-concert').dataset.existingCount || '0');
+  const rows=[...document.querySelectorAll('#config-rows .config-row')];
+  if(!rows.length){toast('Add at least one category','warning');return;}
+
+  const categories=rows.map((row, index)=>({
+    categoryId:`CAT-${concertId.slice(-6)}-${String(existingCount+index+1).padStart(2,'0')}`,
+    categoryName:row.querySelector('.cfg-name').value.trim(),
+    totalSeats:Number(row.querySelector('.cfg-seats').value),
+    availableSeats:Number(row.querySelector('.cfg-seats').value),
+    basePrice:Number(row.querySelector('.cfg-price').value),
+    resaleCeiling:row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
+  }));
+
+  if(categories.some(c=>!c.categoryName || !Number.isFinite(c.totalSeats) || c.totalSeats <= 0 || !Number.isFinite(c.basePrice) || c.basePrice < 0)){
+    toast('Each category needs a name, positive seats, and base price','warning');
+    return;
+  }
+  if(categories.some(c=>c.resaleCeiling !== null && c.resaleCeiling < c.basePrice)){
+    toast('Resale cap must be greater than or equal to base price','warning');
+    return;
+  }
+
+  const tickets=categories.flatMap(category=>{
+    const prefix=slugifyCategory(category.categoryName).slice(0,6);
+    return Array.from({length: category.totalSeats}, (_, index)=>({
+      concertId,
+      categoryId: category.categoryId,
+      seatNumber: makeSeatLabel(prefix, index),
+    }));
+  });
+
+  const btn=document.getElementById('cfg-save-btn');
+  btn.disabled=true;
+  btn.textContent='Saving…';
+  try{
+    await API.concerts.createSeats(concertId,{ categories: categories.map(c=>({
+      categoryId:c.categoryId,
+      categoryName:c.categoryName,
+      totalSeats:c.totalSeats,
+      availableSeats:c.availableSeats,
+      basePrice:c.basePrice,
+    }))});
+
+    await Promise.all(categories.map(category=>API.pricing.create(concertId,{
+      categoryId: category.categoryId,
+      basePrice: category.basePrice,
+      resaleCeiling: category.resaleCeiling,
+      currency: concert.currency || 'SGD',
+      effectiveFrom,
+    })));
+
+    await API.tickets.create({ tickets });
+
+    document.getElementById('config-alert').innerHTML=`<div class="alert alert-success">Configured ${categories.length} categories and generated ${tickets.length} tickets for this concert.</div>`;
+    toast('Concert configuration saved','success');
+    loadDashboard();
+    loadConcerts();
+    loadCancelOptions();
+    loadConfigConcertOptions(concertId);
+  }catch(e){
+    document.getElementById('config-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Configuration failed'}</div>`;
+    toast(e.message||'Configuration failed','error');
+  }finally{
+    btn.disabled=false;
+    btn.textContent='Save Configuration →';
+  }
 }
 
 async function loadCancelOptions(){
@@ -343,11 +564,25 @@ async function execCancel(){
 
 async function createConcert(){
   const payload={name:document.getElementById('c-name').value,artistName:document.getElementById('c-artist').value,venue:document.getElementById('c-venue').value,eventDate:document.getElementById('c-date').value,currency:document.getElementById('c-cur').value,status:'ACTIVE'};
-  if(!payload.name||!payload.venue||!payload.eventDate){toast('Fill in all fields','warning');return;}
+  if(!payload.name||!payload.artistName||!payload.venue||!payload.eventDate){toast('Fill in all fields','warning');return;}
+  if(!toMysqlDateTime(payload.eventDate)){
+    document.getElementById('create-alert').innerHTML='<div class="alert alert-danger">Use a valid date with year 1000 or later.</div>';
+    toast('Use a valid concert date','warning');
+    return;
+  }
   try{
-    await API.concerts.create(payload);
-    toast('Concert created!','success');
-    document.getElementById('create-alert').innerHTML='<div class="alert alert-success">Concert created successfully.</div>';
+    const created=await API.concerts.create(payload);
+    toast('Concert created! Now configure seats and prices.','success');
+    document.getElementById('create-alert').innerHTML='<div class="alert alert-success">Concert created successfully. Next, use Configure Concert to add seat categories and prices.</div>';
+    document.getElementById('c-name').value='';
+    document.getElementById('c-artist').value='';
+    document.getElementById('c-venue').value='';
+    document.getElementById('c-date').value='';
+    document.getElementById('c-cur').value='SGD';
+    loadDashboard();
+    loadConcerts();
+    loadCancelOptions();
+    openConfigureFor(created.concertId);
   }catch(e){
     document.getElementById('create-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Creation failed'}</div>`;
   }
