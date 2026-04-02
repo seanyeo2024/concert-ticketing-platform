@@ -97,9 +97,35 @@
   margin-bottom: 18px; letter-spacing: 0.02em;
 }
 
+.seat-grid {
+  align-items: stretch;
+}
+.seat-row {
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.seat-row-lbl {
+  width: 28px;
+  font-size: 0.72rem;
+  color: #777;
+}
+.seat {
+  width: 34px;
+  height: 34px;
+  font-size: 0.72rem;
+}
+
 @media(max-width:900px) {
   .checkout-grid { grid-template-columns: 1fr; }
   .order-panel { position: static; }
+  .seat-row {
+    gap: 6px;
+  }
+  .seat {
+    width: 30px;
+    height: 30px;
+    font-size: 0.68rem;
+  }
 }
 </style>
 </head>
@@ -196,38 +222,60 @@
 const user=Auth.require(); renderNav();
 const concertId=Util.getParam('id'), catId=Util.getParam('cat');
 if(!concertId) window.location.href='index.html';
-let selectedTicket=null, currentCat=catId, allTickets=[], priceData=null, concert=null;
+let selectedTicket=null, currentCat=catId, allTickets=[], priceData=null, concert=null, categories=[];
 
 async function init(){
-  try{ concert=await API.concerts.get(concertId); document.getElementById('o-concert').textContent=concert.name; }catch{}
-  if(catId) await loadCat(catId);
-  await loadPrice();
-  renderCatToggle();
+  try{
+    concert=await API.concerts.get(concertId);
+    document.getElementById('o-concert').textContent=concert.name;
+    const catRes=await API.concerts.seats(concertId);
+    categories=catRes.categories||[];
+    if(!categories.length){
+      document.getElementById('cat-toggle').innerHTML='';
+      document.getElementById('seat-map').innerHTML=`<div style="text-align:center;padding:60px;font-family:var(--font-display);font-size:2rem;font-weight:900;color:#aaa">No ticket categories configured</div>`;
+      document.getElementById('pay-btn').disabled=true;
+      return;
+    }
+    if(!currentCat || !categories.some(c=>c.categoryId===currentCat)){
+      currentCat=categories[0].categoryId;
+    }
+    renderCatToggle();
+    await loadCat(currentCat);
+    await loadPrice();
+  }catch{
+    document.getElementById('cat-toggle').innerHTML='';
+    document.getElementById('seat-map').innerHTML=`<div style="text-align:center;padding:60px;font-family:var(--font-display);font-size:2rem;font-weight:900;color:#aaa">Could not load live seat inventory</div>`;
+    document.getElementById('pay-btn').disabled=true;
+    toast('Could not load seat selection','error');
+  }
 }
 
 async function loadCat(cid){
   currentCat=cid;
   const d=await API.tickets.list(concertId,'AVAILABLE');
   allTickets=(d.tickets||[]).filter(t=>!cid||t.categoryId===cid);
-  if(!allTickets.length) allTickets=genDemoSeats(cid);
+  selectedTicket=null;
+  document.getElementById('o-seat').textContent='—';
+  document.getElementById('pay-btn').disabled=true;
   renderMap();
 }
 
 async function loadPrice(){
   if(!currentCat)return;
-  try{ priceData=await API.pricing.get(concertId,currentCat); document.getElementById('o-total').textContent=`SGD ${priceData.basePrice}`; document.getElementById('o-cat').textContent=currentCat; }catch{}
-}
-
-function genDemoSeats(cat){
-  const seats=[];
-  for(let r=1;r<=5;r++) for(let c=1;c<=10;c++) if(Math.random()>0.35) seats.push({ticketId:`TKT-D-${r}${c}`,seatNumber:`F-0${r}-${String(c).padStart(2,'0')}`,categoryId:cat,status:'AVAILABLE'});
-  return seats;
+  const cat=categories.find(c=>c.categoryId===currentCat);
+  try{
+    priceData=await API.pricing.get(concertId,currentCat);
+    document.getElementById('o-total').textContent=`SGD ${priceData.basePrice}`;
+  }catch{
+    priceData=null;
+    document.getElementById('o-total').textContent='—';
+  }
+  document.getElementById('o-cat').textContent=cat?.categoryName||currentCat;
 }
 
 function renderCatToggle(){
-  const cats=[{id:'CAT-C001-01',label:'Floor'},{id:'CAT-C001-02',label:'Lower'},{id:'CAT-C001-03',label:'Upper'},{id:'CAT-C001-04',label:'Gallery'}];
   const wrap=document.getElementById('cat-toggle');
-  wrap.innerHTML=cats.map(c=>`<button class="cat-btn ${c.id===currentCat?'active':''}" onclick="changeCat('${c.id}',this)">${c.label}</button>`).join('');
+  wrap.innerHTML=categories.map(c=>`<button class="cat-btn ${c.categoryId===currentCat?'active':''}" onclick="changeCat('${c.categoryId}',this)">${c.categoryName}</button>`).join('');
 }
 
 async function changeCat(cid,el){
@@ -239,13 +287,19 @@ async function changeCat(cid,el){
 
 function renderMap(){
   const map=document.getElementById('seat-map');
-  const rows={};
-  allTickets.forEach(t=>{ const r=t.seatNumber.split('-').slice(0,2).join('-'); if(!rows[r])rows[r]=[]; rows[r].push(t); });
-  if(!Object.keys(rows).length){map.innerHTML=`<div style="text-align:center;padding:60px;font-family:var(--font-display);font-size:2rem;font-weight:900;color:#aaa">No seats available</div>`;return;}
-  map.innerHTML=Object.entries(rows).map(([rk,seats])=>`
+  const seats=[...allTickets].sort((a,b)=>String(a.seatNumber).localeCompare(String(b.seatNumber), undefined, { numeric:true }));
+  if(!seats.length){
+    map.innerHTML=`<div style="text-align:center;padding:60px;font-family:var(--font-display);font-size:2rem;font-weight:900;color:#aaa">No seats available in this category</div>`;
+    return;
+  }
+  const chunkSize=15;
+  const rows=Array.from({ length: Math.ceil(seats.length / chunkSize) }, (_, index) =>
+    seats.slice(index * chunkSize, (index + 1) * chunkSize)
+  );
+  map.innerHTML=rows.map((rowSeats,rowIndex)=>`
     <div class="seat-row">
-      <span class="seat-row-lbl">${rk.split('-')[1]}</span>
-      ${seats.map(t=>`<div class="seat seat-av" id="s-${t.ticketId}" onclick="selectSeat('${t.ticketId}','${t.seatNumber}')" title="${t.seatNumber}">${t.seatNumber.split('-')[2]}</div>`).join('')}
+      <span class="seat-row-lbl">${rowIndex + 1}</span>
+      ${rowSeats.map((t,seatIndex)=>`<div class="seat seat-av" id="s-${t.ticketId}" onclick="selectSeat('${t.ticketId}','${t.seatNumber}')" title="${t.seatNumber}">${seatIndex + 1}</div>`).join('')}
     </div>`).join('');
 }
 
@@ -259,16 +313,35 @@ function selectSeat(tid,sn){
 
 async function pay(){
   if(!selectedTicket){toast('Select a seat first','warning');return;}
+  if(!priceData){toast('Price data is unavailable for this category','warning');return;}
   const btn=document.getElementById('pay-btn'); btn.disabled=true; btn.textContent='Processing…';
   try{
-    const r=await API.purchase.complete(concertId,{userId:user.userId,ticketId:selectedTicket.ticketId,stripeToken:'tok_visa_simulated'});
+    const liveTicket=await API.tickets.get(concertId, selectedTicket.ticketId);
+    if(!liveTicket || liveTicket.ticketId!==selectedTicket.ticketId){
+      await loadCat(currentCat);
+      throw { message:'That seat is no longer available. The seat map has been refreshed.', status:404 };
+    }
+    if(liveTicket.status!=='AVAILABLE'){
+      await loadCat(currentCat);
+      throw { message:`That seat is ${liveTicket.status.toLowerCase()}. Please choose another seat.`, status:409 };
+    }
+
+    const r=await API.purchase.complete(concertId,{userId:user.userId,ticketId:liveTicket.ticketId,stripeToken:'tok_visa_simulated'});
     document.getElementById('c-ticket').textContent=r.ticketId||selectedTicket.ticketId;
     document.getElementById('c-seat').textContent=selectedTicket.seatNumber;
     document.getElementById('c-pay').textContent=`${Util.formatPrice(r.amount||priceData?.basePrice||0,'SGD')} · ${r.paymentId}`;
     openModal('success-modal');
     toast('Ticket purchased!','success');
   }catch(e){
-    toast(e.message||'Purchase failed','error');
+    if(e.status===404){
+      await loadCat(currentCat);
+      toast(e.message||'Selected ticket could not be found. The seat map was refreshed.','error');
+    }else if(e.status===409){
+      await loadCat(currentCat);
+      toast(e.message||'That seat was taken. Please choose another.','error');
+    }else{
+      toast(e.message||'Purchase failed','error');
+    }
     btn.disabled=false; btn.textContent='Complete Purchase →';
     if(e.status===410) window.location.href=`queue.html?id=${concertId}`;
   }

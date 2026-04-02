@@ -101,7 +101,7 @@ const API = (() => {
     payment:      'http://localhost:5104/payment/v1',
     qr:           'http://localhost:5105/qr/v1',
     notification: 'http://localhost:5106/notification/v1',
-    purchase:     'http://localhost:510/purchase/v1',
+    purchase:     'http://localhost:5110/purchase/v1',
     resale:       'http://localhost:5111/resale/v1',
     cancellation: 'http://localhost:5112/cancellation/v1',
   };
@@ -111,7 +111,13 @@ const API = (() => {
     if (body) opts.body = JSON.stringify(body);
     const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(4000) });
     const data = await res.json().catch(()=>({}));
-    if (!res.ok) throw data.error || data;
+    if (!res.ok) {
+      const err = data.error || data || {};
+      if (typeof err === 'object' && err !== null) {
+        err.status = res.status;
+      }
+      throw err;
+    }
     return data;
   }
 
@@ -161,7 +167,7 @@ const API = (() => {
       byUser: async id => { try { return await req(`${BASE.notification}/notification/user/${id}`); } catch { return { notifications: SEED.notifications.filter(n=>n.userId===id) }; } },
     },
     purchase: {
-      complete: async (cid,p) => { try { return await req(`${BASE.purchase}/window/${cid}`,'POST',p); } catch { return { success:true, ticketId:p.ticketId, paymentId:`PAY-${Math.random().toString(36).slice(2,8).toUpperCase()}`, amount:388, currency:'SGD' }; } },
+      complete: (cid,p) => req(`${BASE.purchase}/window/${cid}`,'POST',p),
     },
     resale: {
       list: async p => { try { return await req(`${BASE.resale}/list`,'POST',p); } catch { return { success:true, listingId:`LST-DEMO`, resalePrice:p.resalePrice }; } },

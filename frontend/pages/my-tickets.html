@@ -131,6 +131,7 @@
         <button class="tab" onclick="switchTab('past',this)">Past</button>
         <button class="tab" onclick="switchTab('reselling',this)">Reselling</button>
         <button class="tab" onclick="switchTab('refunded',this)">Refunded</button>
+        <button class="tab" onclick="switchTab('all',this)">All</button>
       </div>
     </div>
   </div>
@@ -183,15 +184,20 @@
 <script>
 const user=Auth.require(); renderNav('tickets');
 let allTickets=[], activeTab='upcoming', resaleTarget=null;
-const STATUS_TABS={ upcoming:['CONFIRMED','PENDING'], past:['USED'], reselling:['RESALE_LISTED','RESALE_PENDING'], refunded:['REFUNDED'] };
-const CONCERT_NAMES={ 'CONC-000001':'Taylor Swift — The Eras Tour','CONC-000002':'Coldplay — Music of the Spheres','CONC-000003':'Bruno Mars — 24K Magic','CONC-000004':'BTS — Yet to Come','CONC-000005':'Ed Sheeran — Mathematics Tour' };
-const EMOJIS={ 'CONC-000001':'🌟','CONC-000002':'🎸','CONC-000003':'🎷','CONC-000004':'💜','CONC-000005':'🎵' };
+const STATUS_TABS={ upcoming:['CONFIRMED','PENDING'], past:['USED'], reselling:['RESALE_LISTED','RESALE_PENDING'], refunded:['REFUNDED'], all:null };
+let concertIndex={};
 
 async function load(){
   allTickets=SEED.tickets.filter(t=>t.ownerId===user.userId);
+  concertIndex=Object.fromEntries((SEED.concerts||[]).map(c=>[c.concertId,c]));
   render();
   try{
-    const ids=['CONC-000001','CONC-000002','CONC-000003','CONC-000004','CONC-000005'];
+    const concertsRes=await API.concerts.list();
+    const concerts=concertsRes.concerts||concertsRes||[];
+    if(concerts.length){
+      concertIndex=Object.fromEntries(concerts.map(c=>[c.concertId,c]));
+    }
+    const ids=Object.keys(concertIndex);
     const res=await Promise.allSettled(ids.map(id=>API.tickets.list(id,'ALL')));
     const live=res.flatMap(r=>r.value?.tickets||[]).filter(t=>t.ownerId===user.userId);
     if(live.length){allTickets=live;render();}
@@ -204,8 +210,8 @@ function switchTab(tab,el){
 }
 
 function render(){
-  const statuses=STATUS_TABS[activeTab]||[];
-  const list=allTickets.filter(t=>statuses.includes(t.status));
+  const statuses=STATUS_TABS[activeTab];
+  const list=statuses ? allTickets.filter(t=>statuses.includes(t.status)) : [...allTickets];
   const wrap=document.getElementById('ticket-list');
   if(!list.length){
     wrap.innerHTML=`<div class="empty-state"><h2>No tickets here</h2><p class="mt-16 text-muted">${activeTab==='upcoming'?'Browse concerts to find your next show.':'Nothing to show in this tab.'}</p>${activeTab==='upcoming'?'<a href="index.html" class="btn btn-black mt-24" style="border-radius:100px">Browse Lineup →</a>':''}</div>`;
@@ -214,11 +220,11 @@ function render(){
   wrap.innerHTML=list.map(t=>`
     <div class="tkt-card">
       <div class="tkt-stub">
-        <span class="tkt-stub-emoji">${EMOJIS[t.concertId]||'🎫'}</span>
+        <span class="tkt-stub-emoji">${concertIndex[t.concertId]?.emoji||'🎫'}</span>
         <span class="tkt-stub-cat">${t.categoryId?.split('-').pop()||'GEN'}</span>
       </div>
       <div class="tkt-body">
-        <div class="tkt-title">${CONCERT_NAMES[t.concertId]||t.concertId}</div>
+        <div class="tkt-title">${concertIndex[t.concertId]?.name||t.concertId}</div>
         <div class="tkt-meta">
           <span>🪑 ${t.seatNumber}</span>
           <span>🆔 ${t.ticketId}</span>
@@ -240,7 +246,7 @@ function render(){
 }
 
 async function viewQR(tid,cid,seat){
-  document.getElementById('qr-sub').textContent=`${CONCERT_NAMES[cid]||cid} · Seat ${seat}`;
+  document.getElementById('qr-sub').textContent=`${concertIndex[cid]?.name||cid} · Seat ${seat}`;
   document.getElementById('qr-area').innerHTML=`<div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:#666">Loading…</div>`;
   document.getElementById('qr-data').textContent='';
   openModal('qr-modal');
