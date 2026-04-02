@@ -416,6 +416,14 @@ function toMysqlDateTime(value){
   return `${year}-${pad(dt.getUTCMonth()+1)}-${pad(dt.getUTCDate())} ${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}:${pad(dt.getUTCSeconds())}`;
 }
 
+function countBy(items, key){
+  return items.reduce((acc, item) => {
+    const value = item[key];
+    acc[value] = (acc[value] || 0) + 1;
+    return acc;
+  }, {});
+}
+
 async function loadConfigPreview(){
   const concertId=document.getElementById('cfg-concert').value;
   const select=document.getElementById('cfg-concert');
@@ -508,7 +516,19 @@ async function configureConcert(){
       effectiveFrom,
     })));
 
-    await API.tickets.create({ tickets });
+    const ticketCreate = await API.tickets.create({ tickets });
+    const liveTicketsRes = await API.tickets.list(concertId,'ALL');
+    const liveTickets = (liveTicketsRes.tickets || []).filter(t => categories.some(c => c.categoryId === t.categoryId));
+    const expectedByCategory = countBy(tickets, 'categoryId');
+    const liveByCategory = countBy(liveTickets, 'categoryId');
+    const missingCategories = categories.filter(c => (liveByCategory[c.categoryId] || 0) < (expectedByCategory[c.categoryId] || 0));
+
+    if ((ticketCreate.created || 0) < tickets.length || missingCategories.length) {
+      const details = missingCategories.length
+        ? ` Missing inventory for: ${missingCategories.map(c => c.categoryName).join(', ')}.`
+        : '';
+      throw new Error(`Ticket inventory verification failed.${details}`);
+    }
 
     document.getElementById('config-alert').innerHTML=`<div class="alert alert-success">Configured ${categories.length} categories and generated ${tickets.length} tickets for this concert.</div>`;
     toast('Concert configuration saved','success');

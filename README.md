@@ -1,249 +1,14 @@
 # Concert Ticketing Platform
 
-Microservices-based concert ticketing demo for IS213/ESD. The project combines a static multi-page frontend, Flask-based backend services, RabbitMQ eventing, and MySQL per-service databases to model primary sales, resale, queueing, QR issuance, and concert cancellation.
+Concert Ticketing Management System (CTMS) is a microservices-based demo platform for browsing concerts, joining a queue, selecting seats, purchasing tickets, listing resale tickets, and cancelling concerts. The repo includes a static frontend, multiple Flask services, MySQL databases, and RabbitMQ for event-driven flows.
 
-## What Is In This Repository
-
-This repository contains:
-
-- A static frontend in `frontend/` with pages for browsing concerts, joining queues, selecting seats, buying tickets, managing resale, viewing profiles, and basic admin actions.
-- Atomic Flask services in `services/` for pricing, queue management, ticket inventory, payment, QR issuance, and notifications.
-- Composite/orchestrator Flask services in `services/` for purchase flow, resale flow, and concert cancellation.
-- Docker Compose infrastructure for RabbitMQ and one MySQL database per atomic service.
-- SQL seed files in `database/seeds/` for the concert and ticket inventory datasets.
-- RabbitMQ bootstrap config in `infra/rabbitmq/`.
-
-There is also a nested duplicate copy of the project at `concert-ticketing-platform/concert-ticketing-platform/`. The top-level `concert-ticketing-platform/` appears to be the main working copy.
-
-## Tech Stack
+## Stack
 
 - Frontend: HTML, CSS, vanilla JavaScript
 - Backend: Python, Flask, Flask-CORS
 - Databases: MySQL 8
-- Messaging: RabbitMQ topic exchange
-- Containerization: Docker Compose
-- External/demo integrations: OutSystems Concert API, Stripe, Twilio, SendGrid
-
-## Architecture
-
-### Frontend
-
-The frontend is a demo-first static site. Shared client logic lives in `frontend/assets/js/api.js`.
-
-Important behavior:
-
-- Uses real HTTP endpoints when services are available.
-- Falls back to seeded demo data if backend requests fail.
-- Includes local demo authentication with customer and admin accounts stored in browser storage.
-
-### Atomic services
-
-| Service | Port | Responsibility |
-|---|---:|---|
-| `pricing` | 5001 | Price rules and resale ceilings per concert/category |
-| `queue` | 5002 | Waiting-room queue entries and purchase windows |
-| `ticket_inventory` | 5003 | Ticket records, status transitions, resale inventory |
-| `payment` | 5004 | Purchase/refund records with Stripe-style stubs |
-| `qr` | 5005 | QR generation, validation, and invalidation |
-| `notification` | 5006 | Event consumer and notification log |
-
-### Composite services
-
-| Service | Port | Responsibility |
-|---|---:|---|
-| `purchase_window` | 5010 | Queue validation, ticket lock, payment, confirmation, QR creation |
-| `resale_purchase` | 5011 | Ticket listing and resale purchase transfer flow |
-| `concert_cancellation` | 5012 | Concert cancellation, ticket refunds, QR invalidation |
-
-### External dependency
-
-- Concert service: expected to be hosted separately via OutSystems and called over HTTP through `CONCERT_SERVICE_URL`.
-
-## Main User Flows
-
-### 1. Primary purchase with waiting room
-
-Handled by `purchase_window`:
-
-1. Validate that the user has an active queue window.
-2. Fetch the ticket and confirm it is available.
-3. Fetch pricing.
-4. Lock the ticket as `PENDING`.
-5. Create a payment.
-6. Confirm ticket ownership.
-7. Mark the queue entry as completed.
-8. Generate a QR code.
-9. Publish a `ticket.purchased` event.
-
-### 2. Resale listing and purchase
-
-Handled by `resale_purchase`:
-
-- Sellers can list a `CONFIRMED` ticket for resale.
-- Resale price is validated against the pricing ceiling.
-- Buyers can purchase a `RESALE_LISTED` ticket.
-- The old QR is invalidated and a new QR is issued to the new owner.
-- Resale sale events are published for notifications.
-
-### 3. Concert cancellation
-
-Handled by `concert_cancellation`:
-
-- Marks the concert as `CANCELLED` via the external concert service.
-- Bulk-updates ticket statuses to `REFUNDED`.
-- Invalidates all QRs for the concert.
-- Iterates through recorded payments and creates refunds.
-- Publishes a `concert.cancelled` event.
-
-## Frontend Pages
-
-| Page | Purpose |
-|---|---|
-| `frontend/pages/index.html` | Concert listing / landing page |
-| `frontend/pages/concert-detail.html` | Concert details, category view, join queue |
-| `frontend/pages/queue.html` | Waiting room status and purchase window countdown |
-| `frontend/pages/seat-select.html` | Seat selection and purchase submission |
-| `frontend/pages/resale.html` | Browse resale listings and buy resale tickets |
-| `frontend/pages/my-tickets.html` | View owned tickets, QR, and resale actions |
-| `frontend/pages/profile.html` | Profile, payments, and notification history |
-| `frontend/pages/login.html` | Demo sign-in |
-| `frontend/pages/admin.html` | Admin dashboard, cancellation, queue depth, payments |
-
-## API Surface Summary
-
-### Pricing
-
-- `GET /pricing/v1/concerts/<concertId>/prices`
-- `GET /pricing/v1/concerts/<concertId>/prices/<categoryId>`
-- `GET /pricing/v1/concerts/<concertId>/prices/<categoryId>/ceiling`
-- `POST /pricing/v1/concerts/<concertId>/prices`
-- `PUT /pricing/v1/concerts/<concertId>/prices/<categoryId>`
-
-### Queue
-
-- `POST /queue/v1/queue/<concertId>`
-- `GET /queue/v1/queue/<concertId>/<userId>`
-- `GET /queue/v1/queue/<concertId>`
-- `PUT /queue/v1/queue/<concertId>/<userId>`
-- `DELETE /queue/v1/queue/<concertId>/<userId>`
-
-### Ticket Inventory
-
-- `GET /tickets/v1/tickets/<concertId>`
-- `GET /tickets/v1/tickets/<concertId>/resale`
-- `GET /tickets/v1/tickets/<concertId>/<ticketId>`
-- `POST /tickets/v1/tickets`
-- `PUT /tickets/v1/tickets/<concertId>/<ticketId>`
-- `PUT /tickets/v1/tickets/<concertId>/cancel-all`
-
-### Payment
-
-- `POST /payment/v1/payment`
-- `POST /payment/v1/payment/refund`
-- `GET /payment/v1/payment/<paymentId>`
-- `GET /payment/v1/payment/user/<userId>`
-- `GET /payment/v1/payment/concert/<concertId>`
-
-### QR
-
-- `POST /qr/v1/qr`
-- `GET /qr/v1/qr/<ticketId>`
-- `GET /qr/v1/qr/<ticketId>/validate`
-- `PUT /qr/v1/qr/<ticketId>/invalidate`
-- `PUT /qr/v1/qr/concert/<concertId>/invalidate-all`
-
-### Notification
-
-- `GET /notification/v1/notification/<notificationId>`
-- `GET /notification/v1/notification/user/<userId>`
-
-### Composite flows
-
-- `POST /purchase/v1/window/<concertId>`
-- `POST /resale/v1/list`
-- `POST /resale/v1/purchase`
-- `POST /cancellation/v1/<concertId>`
-
-## Eventing
-
-RabbitMQ is configured as a topic-based event bus. The code currently publishes or consumes these routing keys:
-
-- `ticket.purchased`
-- `ticket.resale.listed`
-- `ticket.resale.sold`
-- `concert.cancelled`
-- `queue.window.granted`
-- `queue.window.expired`
-
-The `notification` service binds a `notification_all` queue to receive all routing keys.
-
-## Data and Demo Behavior
-
-- `database/seeds/ticket_inventory_db.sql` seeds ticket inventory data.
-- `database/seeds/concert_db.sql` contains concert-related seed data.
-- `frontend/assets/js/api.js` also embeds fallback demo data for concerts, categories, prices, tickets, payments, and notifications.
-- Demo login accounts are defined in the frontend:
-  - Customer: `alex@demo.com` / `demo123`
-  - Customer: `jamie@demo.com` / `demo123`
-  - Admin: `admin@demo.com` / `admin123`
-
-## Running The Project
-
-### Prerequisites
-
-- Docker and Docker Compose
-- An accessible OutSystems Concert API endpoint
-- Optional real credentials for Stripe, Twilio, and SendGrid if you want to replace the stubs
-
-### Start with Docker Compose
-
-```bash
-docker-compose up --build
-```
-
-This starts:
-
-- RabbitMQ with management UI on `http://localhost:15672`
-- MySQL containers for pricing, queue, ticket inventory, payment, QR, and notification
-- All Flask services in the repository
-
-### Environment variables expected by Compose
-
-The compose file references variables such as:
-
-- `MYSQL_ROOT_PASSWORD`
-- `MYSQL_USER`
-- `MYSQL_PASSWORD`
-- `RABBITMQ_HOST`
-- `RABBITMQ_PORT`
-- `RABBITMQ_USER`
-- `RABBITMQ_PASSWORD`
-- `RABBITMQ_EXCHANGE`
-- `PRICING_PORT`
-- `QUEUE_PORT`
-- `TICKET_INVENTORY_PORT`
-- `PAYMENT_PORT`
-- `QR_PORT`
-- `NOTIFICATION_PORT`
-- `PURCHASE_WINDOW_PORT`
-- `RESALE_PURCHASE_PORT`
-- `CONCERT_CANCELLATION_PORT`
-- `PURCHASE_WINDOW_SECONDS`
-- `CONCERT_SERVICE_URL`
-- `STRIPE_SECRET_KEY`
-- `QR_HMAC_SECRET`
-- `TWILIO_ACCOUNT_SID`
-- `TWILIO_AUTH_TOKEN`
-- `TWILIO_FROM_NUMBER`
-- `EMAIL_PROVIDER`
-- `SENDGRID_API_KEY`
-- `EMAIL_FROM`
-
-Note: this repository currently does not appear to include a top-level `.env.example`, so you will need to define these values yourself before running Compose successfully.
-
-### Opening the frontend
-
-The frontend pages are plain HTML files. You can open `frontend/pages/index.html` directly in a browser, but the best experience comes when the backend services are running locally on the documented ports.
+- Messaging: RabbitMQ
+- Container runtime: Docker Compose
 
 ## Project Structure
 
@@ -253,12 +18,11 @@ concert-ticketing-platform/
 │   └── seeds/
 ├── frontend/
 │   ├── assets/
-│   │   ├── css/
-│   │   └── js/
 │   └── pages/
 ├── infra/
 │   └── rabbitmq/
 ├── services/
+│   ├── concert/
 │   ├── concert_cancellation/
 │   ├── notification/
 │   ├── payment/
@@ -271,18 +35,228 @@ concert-ticketing-platform/
 └── docker-compose.yml
 ```
 
-## Current Implementation Notes
+## Services
 
-- The payment service contains Stripe-style stubs rather than a full Stripe SDK integration.
-- The notification service contains email and SMS stubs rather than live delivery integrations.
-- The frontend is resilient for demos because it falls back to local seed data when services are unavailable.
-- The notification service starts a background RabbitMQ consumer thread at app startup.
-- Ticket updates use optimistic locking via a `version` field in `ticket_inventory`.
+### Atomic Services
 
-## Suggested Next Improvements
+| Service | Host Port | Responsibility |
+|---|---:|---|
+| `concert` | 5100 | Concert records and seat category configuration |
+| `pricing` | 5101 | Price rules and resale caps |
+| `queue` | 5102 | Queue entries and purchase window allocation |
+| `ticket_inventory` | 5103 | Ticket inventory and ticket state transitions |
+| `payment` | 5104 | Purchase and refund records |
+| `qr` | 5105 | QR generation and invalidation |
+| `notification` | 5106 | Notification event consumer |
 
-- Add a real `.env.example`.
-- Document the OutSystems Concert API contract more explicitly.
-- Replace payment and notification stubs with real integrations.
-- Add automated tests for orchestrator failure and rollback paths.
-- Remove or clarify the duplicated nested project folder.
+### Composite Services
+
+| Service | Host Port | Responsibility |
+|---|---:|---|
+| `purchase_window` | 5110 | Primary purchase orchestration |
+| `resale_purchase` | 5111 | Resale purchase orchestration |
+| `concert_cancellation` | 5112 | Concert cancellation and refund orchestration |
+
+### Infrastructure
+
+| Service | Host Port |
+|---|---:|
+| RabbitMQ AMQP | 5672 |
+| RabbitMQ Management UI | 15672 |
+| MySQL `concert_db` | 3300 |
+| MySQL `pricing_db` | 3301 |
+| MySQL `queue_db` | 3302 |
+| MySQL `ticket_inventory_db` | 3303 |
+| MySQL `payment_db` | 3304 |
+| MySQL `qr_db` | 3305 |
+| MySQL `notification_db` | 3306 |
+
+## Prerequisites
+
+- Docker Desktop with Linux containers enabled
+- Python installed locally if you want to serve the frontend with `python -m http.server`
+
+## Environment Variables
+
+Create a top-level `.env` file in the project root. A working local setup is:
+
+```env
+MYSQL_ROOT_PASSWORD=root
+MYSQL_USER=ctms
+MYSQL_PASSWORD=ctms
+
+RABBITMQ_HOST=rabbitmq
+RABBITMQ_PORT=5672
+RABBITMQ_USER=ctms
+RABBITMQ_PASSWORD=ctms
+RABBITMQ_EXCHANGE=ctms_topic
+
+CONCERT_PORT=5100
+PRICING_PORT=5101
+QUEUE_PORT=5102
+TICKET_INVENTORY_PORT=5103
+PAYMENT_PORT=5104
+QR_PORT=5105
+NOTIFICATION_PORT=5106
+PURCHASE_WINDOW_PORT=5110
+RESALE_PURCHASE_PORT=5111
+CONCERT_CANCELLATION_PORT=5112
+
+PURCHASE_WINDOW_SECONDS=300
+MAX_ACTIVE_WINDOWS=5
+CONCERT_SERVICE_URL=http://concert:5000
+
+STRIPE_SECRET_KEY=dummy
+QR_HMAC_SECRET=dev-secret
+TWILIO_ACCOUNT_SID=dummy
+TWILIO_AUTH_TOKEN=dummy
+TWILIO_FROM_NUMBER=+10000000000
+EMAIL_PROVIDER=sendgrid
+SENDGRID_API_KEY=dummy
+EMAIL_FROM=demo@example.com
+```
+
+## Startup
+
+### 1. Start the backend stack
+
+From the project root:
+
+```bat
+cd c:\Users\Matth\Documents\IS213\concert-ticketing-platform
+docker compose up --build
+```
+
+If you need a clean reset of the databases:
+
+```bat
+docker compose down -v
+docker compose up --build
+```
+
+### 2. Serve the frontend
+
+Open a second terminal:
+
+```bat
+cd c:\Users\Matth\Documents\IS213\concert-ticketing-platform\frontend
+python -m http.server 8080
+```
+
+Open the app at:
+
+- `http://localhost:8080/pages/index.html`
+
+Useful pages:
+
+- Landing page: `http://localhost:8080/pages/index.html`
+- Login: `http://localhost:8080/pages/login.html`
+- Admin: `http://localhost:8080/pages/admin.html`
+- My Tickets: `http://localhost:8080/pages/my-tickets.html`
+- Resale: `http://localhost:8080/pages/resale.html`
+
+## Health Checks
+
+- Concert: `http://localhost:5100/health`
+- Pricing: `http://localhost:5101/health`
+- Queue: `http://localhost:5102/health`
+- Ticket Inventory: `http://localhost:5103/health`
+- Payment: `http://localhost:5104/health`
+- QR: `http://localhost:5105/health`
+- Notification: `http://localhost:5106/health`
+- Purchase Window: `http://localhost:5110/health`
+- Resale Purchase: `http://localhost:5111/health`
+- Concert Cancellation: `http://localhost:5112/health`
+- RabbitMQ UI: `http://localhost:15672`
+
+## Demo Accounts
+
+- Customer: `alex@demo.com` / `demo123`
+- Customer: `jamie@demo.com` / `demo123`
+- Admin: `admin@demo.com` / `admin123`
+
+## Main Flows
+
+### Customer Flow
+
+1. Log in as a customer.
+2. Browse concerts from the landing page.
+3. Open a concert and join the queue.
+4. Wait until a purchase window is granted.
+5. Select a real available seat.
+6. Complete payment.
+7. View the ticket from `My Tickets`.
+
+### Admin Flow
+
+1. Log in as `admin@demo.com`.
+2. Create a concert from the admin page.
+3. Open `Configure Concert` for that concert.
+4. Add one or more seat categories.
+5. Set seat count, base price, and resale cap for each category.
+6. Save configuration.
+
+The configure flow creates:
+
+- Seat categories in the concert service
+- Pricing rules in the pricing service
+- Ticket inventory records in the ticket inventory service
+
+The admin page also verifies that ticket inventory was actually created before showing success.
+
+### Concert Cancellation Flow
+
+1. Open the admin page.
+2. Use the cancellation section to cancel a concert.
+3. The cancellation service updates the concert status, invalidates QRs, refunds payments, and publishes a cancellation event.
+
+## Queue Behavior
+
+The queue service auto-grants purchase windows locally.
+
+- `MAX_ACTIVE_WINDOWS=5` by default
+- Up to `min(MAX_ACTIVE_WINDOWS, availableSeats)` users can hold an active purchase window at the same time
+- Expired windows are released automatically
+- Waiting users are promoted when slots open
+
+If a queue request returns `410 GONE`, that means the purchase window expired and the user must rejoin.
+
+## Notes and Limitations
+
+- The frontend should be served over HTTP. Opening the HTML files directly from disk can cause browser issues.
+- The payment, email, and SMS integrations are stubbed for local demo use.
+- If you re-run queue or purchase tests many times, old queue data may remain in MySQL until you reset the stack with `docker compose down -v`.
+- The services are designed for a local demo environment, not production deployment.
+
+## Troubleshooting
+
+### `port is already allocated`
+
+Another process is already using that host port. Either stop the conflicting process or change the host port in `.env`, then restart Docker Compose.
+
+### RabbitMQ boot failure from invalid password hash
+
+Use the provided `infra/rabbitmq/definitions.json` and make sure `.env` uses:
+
+```env
+RABBITMQ_USER=ctms
+RABBITMQ_PASSWORD=ctms
+RABBITMQ_EXCHANGE=ctms_topic
+```
+
+### Frontend is still calling old ports
+
+Hard refresh the browser with `Ctrl + F5` after frontend changes.
+
+### Queue position looks wrong
+
+If queue values seem unexpectedly large, stale queue rows may still exist in the local database. Reset with:
+
+```bat
+docker compose down -v
+docker compose up --build
+```
+
+### Purchase says ticket not found
+
+This usually means the concert was not fully configured or the selected ticket inventory was not created correctly. Reconfigure the concert from the admin page and verify ticket inventory creation succeeds.

@@ -253,9 +253,16 @@ def get_seats(concert_id):
     )
     rows = cur.fetchall()
     cur.close()
-    db.close()
     if not rows:
-        return err("CONCERT_NOT_FOUND", "Seat categories not found", 404)
+        cur = db.cursor(dictionary=True)
+        cur.execute("SELECT concertId FROM concert WHERE concertId=%s", (concert_id,))
+        concert = cur.fetchone()
+        cur.close()
+        db.close()
+        if not concert:
+            return err("CONCERT_NOT_FOUND", "Concert not found", 404)
+        return jsonify({"concertId": concert_id, "categories": []})
+    db.close()
     return jsonify({"concertId": concert_id, "categories": rows})
 
 
