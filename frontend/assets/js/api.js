@@ -228,14 +228,14 @@ function renderNav(active='') {
    .map(l=>`<a href="${l.href}" class="nav-link ${active===l.key?'active':''}">${l.label}</a>`)
    .join('');
   const userArea = user
-    ? `<div class="flex-c gap-16">
-         <span class="nav-link" style="color:var(--cream);font-size:0.8rem">${user.name}</span>
+    ? `<div class="nav-user-meta">
+         <span class="nav-user-name">${user.name}</span>
          <a href="profile.html" class="nav-user-pill">PROFILE</a>
-         <button onclick="Auth.logout()" class="btn btn-sm" style="background:transparent;border-color:rgba(255,255,255,0.3);color:var(--cream);padding:6px 14px;font-size:0.75rem">EXIT ✕</button>
+         <button onclick="Auth.logout()" class="btn btn-sm nav-logout-btn">LOGOUT</button>
        </div>`
     : `<a href="login.html" class="btn btn-yellow btn-sm">SIGN IN →</a>`;
   const el = document.getElementById('navbar');
-  if (el) el.innerHTML = `<div class="container"><a href="index.html" class="nav-brand">Solstitix <span>●</span> TICKETS</a><nav class="nav-links">${links}</nav><div class="nav-actions">${userArea}</div></div>`;
+  if (el) el.innerHTML = `<div class="container"><a href="index.html" class="nav-brand"><img src="../assets/logo.svg" alt="Solstitix logo" class="nav-brand-logo"> <span>Solstitix</span></a><nav class="nav-links">${links}</nav><div class="nav-actions">${userArea}</div></div>`;
 }
 
 /* ── Utilities ──────────────────────────────────────────────── */

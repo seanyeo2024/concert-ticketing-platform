@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Profile — Solstitix</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
 <link rel="stylesheet" href="../assets/css/global.css">
 <style>
 /* ── Profile hero ─────────────────────── */
@@ -45,6 +46,16 @@
 }
 .profile-email { font-size: 0.82rem; color: #555; margin-top: 8px; }
 .role-tag { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; }
+.role-tag .tag {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.16);
+  color: var(--cream);
+}
+.role-tag .tag.tag-active {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: var(--black);
+}
 
 /* ── Tabs bar ─────────────────────────── */
 .tabs-bar {

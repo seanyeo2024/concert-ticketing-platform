@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Solstitix — Concert Tickets</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
 <link rel="stylesheet" href="../assets/css/global.css">
 <style>
 /* ── Hero ───────────────────────────────── */
@@ -14,6 +15,39 @@
   overflow: hidden;
   background: var(--cream);
   padding-top: var(--nav-h);
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  width: min(48vw, 680px);
+  aspect-ratio: 1;
+  left: 50%;
+  top: calc(50% + (var(--nav-h) / 2));
+  background: url('../assets/logo.svg') center/contain no-repeat;
+  opacity: 0.07;
+  filter: sepia(1) hue-rotate(165deg) saturate(0.5) blur(0.6px);
+  transform: translate(-50%, -50%) rotate(-8deg);
+  pointer-events: none;
+  z-index: 1;
+  animation: heroLogoFloat 14s ease-in-out infinite;
+}
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(17,17,17,0.045), transparent 18%),
+    radial-gradient(circle at 52% 40%, rgba(245,197,24,0.13), transparent 24%);
+  pointer-events: none;
+  z-index: 1;
+}
+@keyframes heroLogoFloat {
+  0%, 100% {
+    transform: translate(-50%, -50%) rotate(-8deg) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -53%) rotate(-4deg) scale(1.035);
+  }
 }
 .hero-left {
   padding: 72px 56px 72px;
@@ -237,9 +271,70 @@
 .lineup-arrow  { color: var(--teal); font-size: 1.2rem; margin-left: 12px; }
 
 @media (max-width:900px) {
-  .hero { grid-template-columns:1fr; }
+  .hero {
+    grid-template-columns:1fr;
+    min-height: auto;
+  }
+  .hero::before {
+    width: 420px;
+    left: 50%;
+    top: calc(var(--nav-h) + 180px);
+    opacity: 0.06;
+  }
+  .hero-left { padding: 48px 24px 56px; }
   .hero-right { display:none; }
   .hero-blob-1 { width: 300px; height: 300px; }
+  .lineup-row {
+    flex-direction: column;
+    border-bottom: none;
+  }
+  .lineup-entry {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1.5px solid rgba(255,255,255,0.08);
+  }
+  .lineup-entry:last-child { border-bottom: none; }
+}
+
+@media (max-width:640px) {
+  .hero::before {
+    width: 320px;
+    left: 50%;
+    top: calc(var(--nav-h) + 140px);
+    opacity: 0.05;
+  }
+  .hero-left { padding: 36px 20px 48px; }
+  .hero-meta {
+    gap: 20px;
+    align-items: flex-start;
+  }
+  .hero-stat-sep {
+    display: none;
+  }
+  .search-wrap {
+    width: 100%;
+    flex-wrap: wrap;
+    border-radius: 24px;
+    padding: 4px;
+  }
+  .search-wrap input {
+    min-width: 0;
+    width: 100%;
+  }
+  .search-wrap button {
+    width: 100%;
+    margin: 0;
+  }
+  .listings-title-row {
+    align-items: stretch;
+  }
+  .lineup-entry {
+    padding: 18px 20px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .lineup-detail { text-align: left; }
 }
 </style>
 </head>
@@ -260,7 +355,7 @@
   <div class="hero-left">
     <div class="hero-eyebrow">
       <span class="hero-eyebrow-dot"></span>
-      Singapore &nbsp;·&nbsp; 2025 Season
+      Singapore &nbsp;·&nbsp; 2026 &nbsp;·&nbsp; IS213 ESD Project
     </div>
     <h1 class="hero-title">Live<br><em>Music</em><br><span class="accent">Awaits.</span></h1>
     <p class="hero-desc">The ultimate alignment of star power and true value. Your gateway to Singapore’s greatest performances, day or night. REST-assured, your next big moment is written in the stars.</p>

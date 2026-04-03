@@ -3,12 +3,18 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sign In — Solstitix</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
 <link rel="stylesheet" href="../assets/css/global.css">
 <style>
-body { background: var(--black); overflow: hidden; }
+body {
+  background: var(--black);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
 
 .login-wrap {
-  min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr;
+  min-height: 100vh; min-height: 100svh;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   position: relative;
 }
 
@@ -23,6 +29,12 @@ body { background: var(--black); overflow: hidden; }
   font-family: var(--font-display); font-size: 1.5rem; font-weight: 900;
   letter-spacing: -0.03em; display: flex; align-items: center; gap: 8px;
   position: relative; z-index: 2;
+}
+.login-brand-logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 .login-brand-dot {
   width: 10px; height: 10px; border-radius: 50%;
@@ -76,6 +88,7 @@ body { background: var(--black); overflow: hidden; }
   padding: 60px;
   display: flex; flex-direction: column; justify-content: center;
   position: relative; overflow: hidden;
+  isolation: isolate;
 }
 .r-blob {
   position: absolute; width: 400px; height: 400px;
@@ -84,7 +97,98 @@ body { background: var(--black); overflow: hidden; }
   top: -100px; right: -100px;
   animation: blobFloat 11s ease-in-out infinite;
 }
-.login-form-wrap { max-width: 400px; width: 100%; position: relative; z-index: 2; }
+.login-right::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 20%, rgba(245,197,24,0.08), transparent 22%),
+    radial-gradient(circle at 82% 74%, rgba(58,180,242,0.09), transparent 28%),
+    linear-gradient(135deg, rgba(255,255,255,0.02), transparent 48%);
+  z-index: 0;
+}
+.login-right::after {
+  content: '';
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  left: var(--glow-x, 72%);
+  top: var(--glow-y, 38%);
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(62,207,178,0.16) 0%, rgba(62,207,178,0.06) 28%, transparent 65%);
+  filter: blur(22px);
+  opacity: 0.9;
+  pointer-events: none;
+  z-index: 0;
+  transition: left 0.18s ease-out, top 0.18s ease-out;
+}
+.login-form-wrap {
+  max-width: 480px; width: 100%; position: relative; z-index: 3;
+  margin-inline: auto;
+}
+.login-art {
+  position: absolute;
+  inset: 40px;
+  pointer-events: none;
+  z-index: 1;
+}
+.login-art-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(2px);
+  opacity: 0.9;
+}
+.login-art-orb.one {
+  width: 320px;
+  height: 320px;
+  top: 2%;
+  right: -40px;
+  background: radial-gradient(circle at 35% 35%, rgba(62,207,178,0.26), rgba(62,207,178,0.08) 55%, transparent 75%);
+  animation: blobFloat 14s ease-in-out infinite reverse;
+}
+.login-art-orb.two {
+  width: 220px;
+  height: 220px;
+  bottom: 10%;
+  left: 8%;
+  background: radial-gradient(circle at 40% 40%, rgba(58,180,242,0.24), rgba(58,180,242,0.08) 55%, transparent 76%);
+  animation: blobFloat 10s ease-in-out infinite;
+}
+.login-art-orb.three {
+  width: 180px;
+  height: 180px;
+  bottom: -20px;
+  right: 12%;
+  background: radial-gradient(circle at 40% 40%, rgba(245,197,24,0.22), rgba(245,197,24,0.06) 55%, transparent 76%);
+  animation: blobFloat 12s ease-in-out infinite 1s;
+}
+.login-art-stars {
+  position: absolute;
+  inset: 0;
+}
+.login-art-star {
+  position: absolute;
+  color: rgba(255,255,255,0.18);
+  animation: starSpin 16s linear infinite;
+}
+.login-art-star.one {
+  top: 18%;
+  right: 30%;
+  font-size: 1.2rem;
+}
+.login-art-star.two {
+  top: 54%;
+  right: 10%;
+  font-size: 1.8rem;
+  color: rgba(245,197,24,0.28);
+}
+.login-art-star.three {
+  bottom: 24%;
+  right: 54%;
+  font-size: 1rem;
+  color: rgba(58,180,242,0.32);
+  animation-direction: reverse;
+}
 .login-title {
   font-family: var(--font-display); font-size: 3rem; font-weight: 900;
   color: var(--cream); letter-spacing: -0.03em; margin-bottom: 4px;
@@ -124,11 +228,46 @@ body { background: var(--black); overflow: hidden; }
 .login-form .form-input:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(58,180,242,0.15); }
 .login-form .form-label { color: #666; }
 
-@media (max-width: 768px) {
-  body { overflow: auto; }
+@media (max-width: 1200px) {
+  .login-left, .login-right { padding: 40px; }
+  .login-headline { font-size: clamp(3rem, 6vw, 5.25rem); }
+  .login-art {
+    inset: 32px;
+  }
+}
+
+@media (max-width: 960px) {
   .login-wrap { grid-template-columns: 1fr; }
   .login-left { display: none; }
-  .login-right { min-height: 100vh; }
+  .login-right {
+    min-height: 100vh;
+    min-height: 100svh;
+    padding: 32px 20px 40px;
+    overflow: visible;
+  }
+  .login-form-wrap {
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  .login-art { display: none; }
+  .login-right::after {
+    left: 50%;
+    top: 18%;
+    width: 360px;
+    height: 360px;
+    opacity: 0.55;
+  }
+}
+
+@media (max-width: 640px) {
+  .login-title { font-size: 2.4rem; }
+  .login-sub { margin-bottom: 24px; }
+  .demo-box { padding: 16px; }
+  .demo-row {
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .demo-fill { flex-shrink: 0; }
 }
 </style>
 </head>
@@ -139,7 +278,7 @@ body { background: var(--black); overflow: hidden; }
 
   <!-- Left panel -->
   <div class="login-left">
-    <div class="login-brand">Solstitix <span class="login-brand-dot"></span></div>
+    <div class="login-brand"><img src="../assets/logo.svg" alt="Solstitix logo" class="login-brand-logo"> Solstitix</div>
     <div>
       <div class="login-headline">Your<br><em>Ticket</em><br>to the<br><span class="pink">Show.</span></div>
     </div>
@@ -172,6 +311,16 @@ body { background: var(--black); overflow: hidden; }
   <!-- Right panel -->
   <div class="login-right">
     <div class="r-blob"></div>
+    <div class="login-art" aria-hidden="true">
+      <div class="login-art-stars">
+        <span class="login-art-star one">✦</span>
+        <span class="login-art-star two">✶</span>
+        <span class="login-art-star three">✦</span>
+      </div>
+      <div class="login-art-orb one"></div>
+      <div class="login-art-orb two"></div>
+      <div class="login-art-orb three"></div>
+    </div>
     <div class="login-form-wrap">
       <div class="login-title"><em>Sign</em> In</div>
       <div class="login-sub">Concert Ticketing Management System</div>
@@ -224,6 +373,16 @@ body { background: var(--black); overflow: hidden; }
 <script src="../assets/js/api.js"></script>
 <script>
 if (Auth.isLoggedIn()) window.location.href='index.html';
+const loginRight=document.querySelector('.login-right');
+if(loginRight && window.matchMedia('(min-width: 961px)').matches){
+  loginRight.addEventListener('pointermove', e => {
+    const rect=loginRight.getBoundingClientRect();
+    const x=((e.clientX-rect.left)/rect.width)*100;
+    const y=((e.clientY-rect.top)/rect.height)*100;
+    loginRight.style.setProperty('--glow-x', `${x}%`);
+    loginRight.style.setProperty('--glow-y', `${y}%`);
+  });
+}
 function fill(e,p){ document.getElementById('email').value=e; document.getElementById('pw').value=p; }
 function doLogin(){
   const email=document.getElementById('email').value.trim();
