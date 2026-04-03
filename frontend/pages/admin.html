@@ -3,9 +3,13 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Admin — Solstitix</title>
+<link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
 <link rel="stylesheet" href="../assets/css/global.css">
 <style>
-body { background: var(--black); }
+body {
+  background: var(--black);
+  overflow-x: hidden;
+}
 
 /* ── Layout ─────────────────────────── */
 .admin-wrap {
@@ -47,7 +51,7 @@ body { background: var(--black); }
 
 /* ── Main content ─────────────────────── */
 .admin-main {
-  padding: 48px; background: var(--cream); overflow-y: auto;
+  padding: 48px; background: var(--cream); overflow: visible; min-width: 0;
 }
 .panel { display: none; }
 .panel.active { display: block; }
@@ -118,8 +122,20 @@ body { background: var(--black); }
 @media(max-width:900px){
   .admin-wrap { grid-template-columns: 1fr; }
   .admin-sidebar { display: none; }
+  .admin-main { padding: 32px 20px 40px; }
   .kpi-row { grid-template-columns: 1fr 1fr; }
   .config-row { grid-template-columns: 1fr; }
+}
+
+@media(max-width:640px){
+  .kpi-row { grid-template-columns: 1fr; }
+  .health-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .cancel-zone,
+  .config-zone { padding: 20px; }
 }
 </style>
 </head>
