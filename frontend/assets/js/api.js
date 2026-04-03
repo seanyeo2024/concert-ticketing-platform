@@ -219,13 +219,19 @@ function toast(msg, type='info', duration=3200) {
 /* ── Navbar ─────────────────────────────────────────────────── */
 function renderNav(active='') {
   const user = Auth.getUser();
-  const links = [
+  const navItems = [
     { href:'index.html',      label:'LINEUP',     key:'concerts' },
     { href:'resale.html',     label:'RESALE',     key:'resale'   },
     { href:'my-tickets.html', label:'MY TICKETS', key:'tickets',  auth:true },
     { href:'admin.html',      label:'ADMIN',      key:'admin',    adminOnly:true },
-  ].filter(l=>(!l.auth||user)&&(!l.adminOnly||user?.role==='admin'))
+  ].filter(l=>(!l.auth||user)&&(!l.adminOnly||user?.role==='admin'));
+  const links = navItems
    .map(l=>`<a href="${l.href}" class="nav-link ${active===l.key?'active':''}">${l.label}</a>`)
+   .join('');
+  const mobileLinks = [
+    ...navItems,
+    ...(user ? [{ href:'profile.html', label:'PROFILE', key:'profile' }] : []),
+  ].map(l=>`<a href="${l.href}" class="nav-mobile-link ${active===l.key?'active':''}">${l.label}</a>`)
    .join('');
   const userArea = user
     ? `<div class="nav-user-meta">
@@ -234,8 +240,38 @@ function renderNav(active='') {
          <button onclick="Auth.logout()" class="btn btn-sm nav-logout-btn">LOGOUT</button>
        </div>`
     : `<a href="login.html" class="btn btn-yellow btn-sm">SIGN IN →</a>`;
+  const mobileAccountArea = user
+    ? `<div class="nav-mobile-account">
+         <span class="nav-user-name">${user.name}</span>
+         <a href="profile.html" class="nav-user-pill">PROFILE</a>
+         <button onclick="Auth.logout()" class="btn btn-sm nav-logout-btn">LOGOUT</button>
+       </div>`
+    : `<div class="nav-mobile-account"><a href="login.html" class="btn btn-yellow btn-sm">SIGN IN →</a></div>`;
   const el = document.getElementById('navbar');
-  if (el) el.innerHTML = `<div class="container"><a href="index.html" class="nav-brand"><img src="../assets/logo.svg" alt="Solstitix logo" class="nav-brand-logo"> <span>Solstitix</span></a><nav class="nav-links">${links}</nav><div class="nav-actions">${userArea}</div></div>`;
+  if (el) {
+    el.classList.remove('menu-open');
+    el.innerHTML = `<div class="container"><a href="index.html" class="nav-brand"><img src="../assets/logo.svg" alt="Solstitix logo" class="nav-brand-logo"> <span>Solstitix</span></a><nav class="nav-links">${links}</nav><div class="nav-actions">${userArea}</div><button class="nav-menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false"><span></span></button><div class="nav-mobile-menu"><nav class="nav-mobile-links">${mobileLinks}</nav>${mobileAccountArea}</div></div>`;
+    const toggle = el.querySelector('.nav-menu-toggle');
+    const closeMenu = () => {
+      el.classList.remove('menu-open');
+      toggle?.setAttribute('aria-expanded', 'false');
+    };
+    toggle?.addEventListener('click', () => {
+      const isOpen = el.classList.toggle('menu-open');
+      toggle.setAttribute('aria-expanded', String(isOpen));
+    });
+    el.querySelectorAll('.nav-mobile-menu a, .nav-mobile-menu button').forEach(node => {
+      node.addEventListener('click', closeMenu);
+    });
+    document.addEventListener('click', e => {
+      if (!el.classList.contains('menu-open')) return;
+      if (el.contains(e.target)) return;
+      closeMenu();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeMenu();
+    });
+  }
 }
 
 /* ── Utilities ──────────────────────────────────────────────── */
