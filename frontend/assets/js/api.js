@@ -1,5 +1,5 @@
 /* ============================================================
-   api.js — CTMS Shared JS Layer
+   api.js — Solstitix Shared JS Layer
    Demo-first: all calls fall back to seed data if service down
    ============================================================ */
 
@@ -158,8 +158,8 @@ const API = (() => {
       byConcert:async id => { try { return await req(`${BASE.payment}/payment/concert/${id}`); } catch { return { payments: SEED.payments.filter(p=>p.concertId===id) }; } },
     },
     qr: {
-      generate:     async p  => { try { return await req(`${BASE.qr}/qr`,'POST',p); } catch { return { qrId:`QR-DEMO`, qrData:`CTMS|${p.ticketId}|${p.userId}|${p.concertId}|demo1234`, isValid:true }; } },
-      get:          async id => { try { return await req(`${BASE.qr}/qr/${id}`); } catch { return { qrData:`CTMS|${id}|DEMO|CONC|demo1234`, isValid:true }; } },
+      generate:     async p  => { try { return await req(`${BASE.qr}/qr`,'POST',p); } catch { return { qrId:`QR-DEMO`, qrData:`Solstitix|${p.ticketId}|${p.userId}|${p.concertId}|demo1234`, isValid:true }; } },
+      get:          async id => { try { return await req(`${BASE.qr}/qr/${id}`); } catch { return { qrData:`Solstitix|${id}|DEMO|CONC|demo1234`, isValid:true }; } },
       invalidate:   (id,p)   => req(`${BASE.qr}/qr/${id}/invalidate`,'PUT',p).catch(()=>{}),
       invalidateAll:cid      => req(`${BASE.qr}/qr/concert/${cid}/invalidate-all`,'PUT',{}).catch(()=>{}),
     },
@@ -235,7 +235,7 @@ function renderNav(active='') {
        </div>`
     : `<a href="login.html" class="btn btn-yellow btn-sm">SIGN IN →</a>`;
   const el = document.getElementById('navbar');
-  if (el) el.innerHTML = `<div class="container"><a href="index.html" class="nav-brand">CTMS <span>●</span> TICKETS</a><nav class="nav-links">${links}</nav><div class="nav-actions">${userArea}</div></div>`;
+  if (el) el.innerHTML = `<div class="container"><a href="index.html" class="nav-brand">Solstitix <span>●</span> TICKETS</a><nav class="nav-links">${links}</nav><div class="nav-actions">${userArea}</div></div>`;
 }
 
 /* ── Utilities ──────────────────────────────────────────────── */

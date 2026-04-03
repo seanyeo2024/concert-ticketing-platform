@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Concert — CTMS</title>
+<title>Concert — Solstitix</title>
 <link rel="stylesheet" href="../assets/css/global.css">
 <style>
 /* ── Banner ─────────────────────────────── */
@@ -294,7 +294,7 @@ async function init(){
   try{
     concert=await API.concerts.get(concertId);
     if(!concert){window.location.href='index.html';return;}
-    document.title=`${concert.name} — CTMS`;
+    document.title=`${concert.name} — Solstitix`;
     renderBanner();
     let catRes={ categories: [] }, priceRes={ prices: [] };
     try {
