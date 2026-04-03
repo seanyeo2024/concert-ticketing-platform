@@ -258,9 +258,18 @@ body { background: var(--black); }
 const user=Auth.require(); renderNav();
 const concertId=Util.getParam('id'), catId=Util.getParam('cat');
 if(!concertId) window.location.href='index.html';
-let poll, cdInterval, windowExpires;
+let poll, cdInterval, windowExpires, expiredHandled=false;
 
 function showPhase(n){ document.querySelectorAll('.phase').forEach(p=>p.classList.remove('active')); document.getElementById(`phase-${n}`)?.classList.add('active'); }
+function stopTimers(){ clearInterval(poll); clearInterval(cdInterval); poll=null; cdInterval=null; }
+function showExpiredState(message='Your window expired. Rejoin the queue to try again.'){
+  if(expiredHandled) return;
+  expiredHandled=true;
+  stopTimers();
+  const box=document.querySelector('#phase-expired p');
+  if(box) box.textContent=message;
+  showPhase('expired');
+}
 
 async function loadConcert(){
   try{
@@ -273,10 +282,13 @@ async function loadConcert(){
 }
 
 async function pollQueue(){
+  if(expiredHandled) return;
   try{
     const q=await API.queue.status(concertId,user.userId);
+    if(q.status==='EXPIRED'){ showExpiredState(); return; }
     if(q.status==='WINDOW_GRANTED'){
       clearInterval(poll);
+      poll=null;
       windowExpires=new Date(q.windowExpiresAt||(Date.now()+600000));
       document.getElementById('expires-time').textContent=windowExpires.toLocaleTimeString('en-SG');
       showPhase('window'); startCountdown(); return;
@@ -286,14 +298,20 @@ async function pollQueue(){
     document.getElementById('q-pos').textContent=pos;
     document.getElementById('q-ahead').textContent=ahead;
     document.getElementById('q-wait').textContent=ahead<=0?'Soon':`~${Math.ceil(ahead*0.5)}m`;
-  }catch(e){ if(e.status===410){ clearInterval(poll); showPhase('expired'); } }
+  }catch(e){
+    if(e.status===410){
+      showExpiredState();
+      return;
+    }
+    toast(e.message||'Could not refresh queue status','error');
+  }
 }
 
 function startCountdown(){
   clearInterval(cdInterval);
   cdInterval=setInterval(()=>{
     const diff=Math.max(0,Math.floor((windowExpires-Date.now())/1000));
-    if(!diff){ clearInterval(cdInterval); showPhase('expired'); return; }
+    if(!diff){ showExpiredState(); return; }
     const m=String(Math.floor(diff/60)).padStart(2,'0'), s=String(diff%60).padStart(2,'0');
     const el=document.getElementById('countdown');
     el.textContent=`${m}:${s}`; el.classList.toggle('urgent',diff<120);
@@ -302,12 +320,23 @@ function startCountdown(){
 }
 
 function goSelect(){ window.location.href=`seat-select.html?id=${concertId}&cat=${catId||''}`; }
-async function leaveQ(){ if(!confirm('Leave the queue? You will lose your position.'))return; await API.queue.leave(concertId,user.userId); window.location.href=`concert-detail.html?id=${concertId}`; }
+async function leaveQ(){ if(!confirm('Leave the queue? You will lose your position.'))return; stopTimers(); await API.queue.leave(concertId,user.userId); window.location.href=`concert-detail.html?id=${concertId}`; }
 async function rejoin(){
-  try{ await API.queue.join(concertId,{userId:user.userId}); showPhase('waiting'); startPoll(); toast('Back in the queue!','success'); }
+  try{
+    stopTimers();
+    expiredHandled=false;
+    await API.queue.join(concertId,{userId:user.userId});
+    showPhase('waiting');
+    startPoll();
+    toast('Back in the queue!','success');
+  }
   catch(e){ toast(e.message||'Could not rejoin','error'); }
 }
-function startPoll(){ pollQueue(); poll=setInterval(pollQueue,10000); }
+function startPoll(){
+  stopTimers();
+  pollQueue();
+  if(!expiredHandled) poll=setInterval(pollQueue,10000);
+}
 loadConcert(); startPoll();
 </script>
 </body>

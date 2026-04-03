@@ -327,7 +327,12 @@ async function pay(){
       throw { message:`That seat is ${liveTicket.status.toLowerCase()}. Please choose another seat.`, status:409 };
     }
 
-    const r=await API.purchase.complete(concertId,{userId:user.userId,ticketId:liveTicket.ticketId,stripeToken:'tok_visa_simulated'});
+    const r=await API.purchase.complete(concertId,{
+      userId:user.userId,
+      ticketId:liveTicket.ticketId,
+      seatNumber:liveTicket.seatNumber || selectedTicket.seatNumber,
+      stripeToken:'tok_visa_simulated'
+    });
     document.getElementById('c-ticket').textContent=r.ticketId||selectedTicket.ticketId;
     document.getElementById('c-seat').textContent=selectedTicket.seatNumber;
     document.getElementById('c-pay').textContent=`${Util.formatPrice(r.amount||priceData?.basePrice||0,'SGD')} · ${r.paymentId}`;

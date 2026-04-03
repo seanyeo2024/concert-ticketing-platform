@@ -6,7 +6,7 @@ Also publishes: queue.window.granted, queue.window.expired → RabbitMQ
 """
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import mysql.connector, os, uuid, sys, math, requests
+import mysql.connector, os, uuid, sys, math, requests, time
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
@@ -34,6 +34,10 @@ def get_db():
 def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "queue", "timestamp": datetime.utcnow().isoformat()}}), status
+
+
+def is_retryable_db_error(exc):
+    return getattr(exc, "errno", None) in {1205, 1213}
 
 
 def ensure_schema():
@@ -214,6 +218,15 @@ def grant_windows_if_needed(concert_id):
     rebalance_waiting_positions(concert_id)
 
 
+def safe_grant_windows_if_needed(concert_id):
+    try:
+        grant_windows_if_needed(concert_id)
+    except mysql.connector.Error as exc:
+        if not is_retryable_db_error(exc):
+            raise
+        print(f"[QUEUE] Skipping grant_windows_if_needed for {concert_id} due to retryable DB lock error: {exc}")
+
+
 def expire_if_needed(row):
     expires_at = row.get("windowExpiresAt")
     if row.get("status") == "WINDOW_GRANTED" and expires_at and datetime.utcnow() > expires_at:
@@ -244,20 +257,39 @@ def join_queue(concert_id):
     data = request.get_json() or {}
     user_id = data.get("userId")
     if not user_id: return err("MISSING_USER_ID", "userId is required")
-    db = get_db(); cur = db.cursor(dictionary=True)
-    cur.execute("SELECT queueId FROM queue_entry WHERE concertId=%s AND userId=%s AND status IN ('WAITING','WINDOW_GRANTED','COMPLETED')",
-                (concert_id, user_id))
-    if cur.fetchone():
-        cur.close(); db.close()
-        return err("ALREADY_IN_QUEUE", "User already has an active queue entry for this concert", 400)
-    cur.execute("SELECT COUNT(*)+1 AS pos FROM queue_entry WHERE concertId=%s AND status='WAITING'", (concert_id,))
-    position = cur.fetchone()["pos"]
-    queue_id = f"Q-{uuid.uuid4().hex[:8].upper()}"
-    cur.execute("""INSERT INTO queue_entry (queueId,concertId,userId,position,status,joinedAt,updatedAt)
-                   VALUES (%s,%s,%s,%s,'WAITING',NOW(),NOW())""",
-                (queue_id, concert_id, user_id, position))
-    db.commit(); cur.close(); db.close()
-    grant_windows_if_needed(concert_id)
+    attempts = 3
+    queue_id = None
+    for attempt in range(attempts):
+        db = None
+        cur = None
+        try:
+            db = get_db()
+            cur = db.cursor(dictionary=True)
+            cur.execute("SELECT queueId FROM queue_entry WHERE concertId=%s AND userId=%s AND status IN ('WAITING','WINDOW_GRANTED','COMPLETED')",
+                        (concert_id, user_id))
+            if cur.fetchone():
+                return err("ALREADY_IN_QUEUE", "User already has an active queue entry for this concert", 400)
+            cur.execute("SELECT COUNT(*)+1 AS pos FROM queue_entry WHERE concertId=%s AND status='WAITING'", (concert_id,))
+            position = cur.fetchone()["pos"]
+            queue_id = f"Q-{uuid.uuid4().hex[:8].upper()}"
+            cur.execute("""INSERT INTO queue_entry (queueId,concertId,userId,position,status,joinedAt,updatedAt)
+                           VALUES (%s,%s,%s,%s,'WAITING',NOW(),NOW())""",
+                        (queue_id, concert_id, user_id, position))
+            db.commit()
+            break
+        except mysql.connector.Error as exc:
+            if db:
+                db.rollback()
+            if not is_retryable_db_error(exc) or attempt == attempts - 1:
+                return err("QUEUE_DB_BUSY", "Queue is busy right now. Please try again.", 503)
+            time.sleep(0.2 * (attempt + 1))
+        finally:
+            if cur:
+                cur.close()
+            if db:
+                db.close()
+
+    safe_grant_windows_if_needed(concert_id)
     db = get_db(); cur = db.cursor(dictionary=True)
     cur.execute("SELECT * FROM queue_entry WHERE queueId=%s", (queue_id,))
     row = cur.fetchone()
@@ -273,9 +305,9 @@ def get_position(concert_id, user_id):
     row = cur.fetchone(); cur.close(); db.close()
     if not row: return err("NOT_FOUND", "No queue entry found", 404)
     if expire_if_needed(row):
-        grant_windows_if_needed(concert_id)
+        safe_grant_windows_if_needed(concert_id)
         return err("WINDOW_EXPIRED", "Purchase window has expired; please rejoin the queue", 410)
-    grant_windows_if_needed(concert_id)
+    safe_grant_windows_if_needed(concert_id)
     db = get_db(); cur = db.cursor(dictionary=True)
     cur.execute("SELECT * FROM queue_entry WHERE concertId=%s AND userId=%s ORDER BY joinedAt DESC LIMIT 1",
                 (concert_id, user_id))
@@ -323,7 +355,7 @@ def update_entry(concert_id, user_id):
             })
     affected = cur.rowcount; cur.close(); db.close()
     if affected == 0: return err("NOT_FOUND", "Queue entry not found", 404)
-    grant_windows_if_needed(concert_id)
+    safe_grant_windows_if_needed(concert_id)
     return jsonify({"updated": True, "status": new_status})
 
 # DELETE /queue/v1/queue/<concertId>/<userId>
@@ -333,7 +365,7 @@ def leave_queue(concert_id, user_id):
     cur.execute("DELETE FROM queue_entry WHERE concertId=%s AND userId=%s", (concert_id, user_id))
     db.commit(); affected = cur.rowcount; cur.close(); db.close()
     if affected == 0: return err("NOT_FOUND", "Queue entry not found", 404)
-    grant_windows_if_needed(concert_id)
+    safe_grant_windows_if_needed(concert_id)
     return jsonify({"deleted": True})
 
 @app.route("/health")
