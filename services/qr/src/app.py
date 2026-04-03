@@ -5,8 +5,10 @@ DB:   qr_db (MySQL)
 """
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import mysql.connector, os, uuid, hmac, hashlib
+import mysql.connector, os, uuid, hmac, hashlib, base64, io
 from datetime import datetime
+import qrcode
+from qrcode.image.pure import PyPNGImage
 
 app = Flask(__name__)
 CORS(app)
@@ -38,7 +40,7 @@ def ensure_schema():
           concertId VARCHAR(36) NOT NULL,
           userId VARCHAR(36) NOT NULL,
           qrData TEXT NOT NULL,
-          qrImageUrl VARCHAR(500) NOT NULL,
+          qrImageUrl MEDIUMTEXT NOT NULL,
           isValid TINYINT(1) NOT NULL DEFAULT 1,
           invalidatedAt DATETIME NULL,
           invalidReason VARCHAR(100) NULL,
@@ -55,17 +57,38 @@ def ensure_schema():
 
 ensure_schema()
 
+
 def make_qr_data(ticket_id, user_id, concert_id):
     payload = f"CTMS|{ticket_id}|{user_id}|{concert_id}"
     sig = hmac.new(HMAC_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:8]
     return f"{payload}|{sig}"
+
+
+def generate_qr_base64(qr_data):
+    """Generate a QR code image and return it as a base64 data URL."""
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(qr_data)
+    qr.make(fit=True)
+    img = qr.make_image(image_factory=PyPNGImage)
+    buf = io.BytesIO()
+    img.save(buf)
+    buf.seek(0)
+    b64 = base64.b64encode(buf.read()).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
 
 # POST /qr/v1/qr  — generate
 @app.route("/qr/v1/qr", methods=["POST"])
 def generate_qr():
     data = request.get_json()
     required = ["ticketId", "userId", "concertId"]
-    if not all(k in data for k in required): return err("MISSING_FIELDS", f"Required: {required}")
+    if not all(k in data for k in required):
+        return err("MISSING_FIELDS", f"Required: {required}")
     db = get_db(); cur = db.cursor()
     cur.execute(
         """
@@ -77,7 +100,7 @@ def generate_qr():
     )
     qr_id = f"QR-{uuid.uuid4().hex[:8].upper()}"
     qr_data = make_qr_data(data["ticketId"], data["userId"], data["concertId"])
-    image_url = f"/qr/v1/qr/{data['ticketId']}/image"
+    image_url = generate_qr_base64(qr_data)
     cur.execute("""INSERT INTO qr_record (qrId,ticketId,concertId,userId,qrData,qrImageUrl,isValid)
                    VALUES (%s,%s,%s,%s,%s,%s,1)""",
                 (qr_id, data["ticketId"], data["concertId"], data["userId"], qr_data, image_url))
