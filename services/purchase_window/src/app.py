@@ -30,33 +30,86 @@ def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "purchase_window", "timestamp": datetime.utcnow().isoformat()}}), status
 
+
+def safe_json(response):
+    try:
+        return response.json()
+    except Exception:
+        return {"raw": response.text}
+
 def rollback_ticket(concert_id, ticket_id, version):
     try:
         requests.put(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/{ticket_id}",
                      json={"status": "AVAILABLE", "ownerId": None, "version": version}, timeout=5)
     except Exception: pass
 
+
+def resolve_ticket(concert_id, ticket_id, seat_number):
+    ticket_res = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/{ticket_id}", timeout=5)
+    if ticket_res.status_code == 200:
+        return ticket_res.json(), None
+
+    if not seat_number:
+        return None, "Ticket not found"
+
+    available_res = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}?status=AVAILABLE", timeout=5)
+    if available_res.status_code != 200:
+        return None, "Ticket not found"
+
+    tickets = available_res.json().get("tickets", [])
+    fallback = next((row for row in tickets if str(row.get("seatNumber")) == str(seat_number)), None)
+    if not fallback:
+        return None, "Ticket not found"
+
+    return fallback, f"Recovered ticket by seat number {seat_number}"
+
 # POST /purchase/v1/window/<concertId>
 @app.route("/purchase/v1/window/<concert_id>", methods=["POST"])
 def purchase(concert_id):
-    data = request.get_json()
+    data = request.get_json() or {}
     user_id   = data.get("userId")
     ticket_id = data.get("ticketId")
+    seat_number = data.get("seatNumber")
     stripe_token = data.get("stripeToken", "tok_simulated")
     if not all([user_id, ticket_id]):
         return err("MISSING_FIELDS", "userId and ticketId are required")
 
     # Step 1 — verify queue window is WINDOW_GRANTED and not expired
     q = requests.get(f"{QUEUE_URL}/queue/v1/queue/{concert_id}/{user_id}", timeout=5)
-    if q.status_code == 410: return err("WINDOW_EXPIRED", "Purchase window expired; rejoin the queue", 410)
-    if q.status_code != 200: return err("QUEUE_ERROR", "Could not verify queue status", 503)
-    if q.json().get("status") != "WINDOW_GRANTED":
-        return err("NO_WINDOW", "No active purchase window for this user", 403)
+    if q.status_code == 410:
+        return jsonify({"error": {
+            "code": "WINDOW_EXPIRED",
+            "message": "Purchase window expired; rejoin the queue",
+            "queueStatusCode": q.status_code,
+            "queueResponse": safe_json(q),
+            "service": "purchase_window",
+            "timestamp": datetime.utcnow().isoformat()
+        }}), 410
+    if q.status_code != 200:
+        return jsonify({"error": {
+            "code": "QUEUE_ERROR",
+            "message": "Could not verify queue status",
+            "queueStatusCode": q.status_code,
+            "queueResponse": safe_json(q),
+            "service": "purchase_window",
+            "timestamp": datetime.utcnow().isoformat()
+        }}), 503
+    queue_payload = safe_json(q)
+    if queue_payload.get("status") != "WINDOW_GRANTED":
+        return jsonify({"error": {
+            "code": "NO_WINDOW",
+            "message": "No active purchase window for this user",
+            "queueStatusCode": q.status_code,
+            "queueResponse": queue_payload,
+            "service": "purchase_window",
+            "timestamp": datetime.utcnow().isoformat()
+        }}), 403
 
     # Step 2 — get ticket and verify AVAILABLE
-    t = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/{ticket_id}", timeout=5)
-    if t.status_code != 200: return err("TICKET_NOT_FOUND", "Ticket not found", 404)
-    ticket = t.json()
+    ticket, resolution_note = resolve_ticket(concert_id, ticket_id, seat_number)
+    if not ticket:
+        return err("TICKET_NOT_FOUND", "Ticket not found", 404)
+    ticket_id = ticket["ticketId"]
     if ticket["status"] != "AVAILABLE":
         return err("TICKET_UNAVAILABLE", f"Ticket is {ticket['status']}, not AVAILABLE", 409)
     current_version = ticket["version"]
@@ -118,6 +171,7 @@ def purchase(concert_id):
     return jsonify({"success": True, "ticketId": ticket_id, "paymentId": payment_data["paymentId"],
                     "amount": amount, "currency": currency,
                     "qrImageUrl": qr_data.get("qrImageUrl"),
+                    "resolutionNote": resolution_note,
                     "message": "Ticket purchased successfully!"}), 201
 
 @app.route("/health")

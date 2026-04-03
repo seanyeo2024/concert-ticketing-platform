@@ -137,9 +137,9 @@ const API = (() => {
       create: (cid,p)           => req(`${BASE.pricing}/concerts/${cid}/prices`, 'POST', p),
     },
     queue: {
-      join:   async (cid,p)    => { try { return await req(`${BASE.queue}/queue/${cid}`,'POST',p); } catch { return { queueId:`Q-DEMO`,position:Math.ceil(Math.random()*50)+1,status:'WAITING' }; } },
-      status: async (cid,uid)  => { try { return await req(`${BASE.queue}/queue/${cid}/${uid}`); } catch { return { status:'WAITING', position:Math.ceil(Math.random()*30)+1, estimatedWaitMins:15 }; } },
-      depth:  async cid        => { try { return await req(`${BASE.queue}/queue/${cid}`); } catch { return { breakdown:[{status:'WAITING',count:142},{status:'WINDOW_GRANTED',count:3}] }; } },
+      join:   (cid,p)          => req(`${BASE.queue}/queue/${cid}`,'POST',p),
+      status: (cid,uid)        => req(`${BASE.queue}/queue/${cid}/${uid}`),
+      depth:  cid              => req(`${BASE.queue}/queue/${cid}`),
       update: (cid,uid,p)      => req(`${BASE.queue}/queue/${cid}/${uid}`,'PUT',p).catch(()=>{}),
       leave:  (cid,uid)        => req(`${BASE.queue}/queue/${cid}/${uid}`,'DELETE').catch(()=>{}),
     },

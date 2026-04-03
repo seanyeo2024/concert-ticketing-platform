@@ -48,15 +48,6 @@ def ensure_schema():
         )
         """
     )
-    cur.execute("SELECT COUNT(*) FROM price_rule")
-    if cur.fetchone()[0] == 0:
-        seed_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "../../../database/seeds/pricing_db.sql")
-        )
-        with open(seed_path, "r", encoding="utf-8") as f:
-            sql = f.read()
-        for statement in [stmt.strip() for stmt in sql.split(";") if stmt.strip()]:
-            cur.execute(statement)
     db.commit()
     cur.close()
     db.close()
