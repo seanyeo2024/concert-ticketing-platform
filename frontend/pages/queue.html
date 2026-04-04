@@ -258,7 +258,7 @@ body { background: var(--black); }
 const user=Auth.require(); renderNav();
 const concertId=Util.getParam('id'), catId=Util.getParam('cat');
 if(!concertId) window.location.href='index.html';
-let poll, cdInterval, windowExpires;
+let poll, cdInterval, windowExpires, expiredHandled=false;
 
 function parseUtcDate(value){
   if(!value) return null;
