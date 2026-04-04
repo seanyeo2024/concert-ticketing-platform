@@ -255,9 +255,7 @@ async function viewQR(tid,cid,seat){
     const qr=await API.qr.get(tid);
     document.getElementById('qr-data').textContent=qr.qrData;
     document.getElementById('qr-area').innerHTML=`
-      <div style="width:180px;height:180px;background:var(--cream);border-radius:12px;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.1)">
-        <div style="font-family:var(--font-display);font-size:0.85rem;color:var(--black);text-align:center;padding:16px;letter-spacing:0.02em;line-height:1.4;font-weight:900">QR renders<br>in production<br><span style="font-size:2rem;display:block;margin-top:8px">📱</span></div>
-      </div>
+      <img src="${qr.qrImageUrl}" style="width:180px;height:180px;border-radius:12px;border:2px solid rgba(255,255,255,0.1)" alt="QR Code"/>
       <div style="font-size:0.65rem;color:#555;letter-spacing:0.06em;text-transform:uppercase">${qr.isValid?'✓ Valid':'✕ Invalid'}</div>`;
   }catch{
     document.getElementById('qr-area').innerHTML=`<div style="color:var(--pink);font-family:var(--font-display);font-size:1.5rem;font-weight:900">QR Not Found</div>`;
