@@ -1,0 +1,83 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: concert-service
+    url: http://concert:5000
+    routes:
+      - name: concert-routes
+        paths:
+          - /concerts
+        strip_path: false
+
+  - name: pricing-service
+    url: http://pricing:5001
+    routes:
+      - name: pricing-routes
+        paths:
+          - /pricing/v1
+        strip_path: false
+
+  - name: queue-service
+    url: http://queue:5002
+    routes:
+      - name: queue-routes
+        paths:
+          - /queue/v1
+        strip_path: false
+
+  - name: ticket-inventory-service
+    url: http://ticket_inventory:5003
+    routes:
+      - name: ticket-inventory-routes
+        paths:
+          - /tickets/v1
+        strip_path: false
+
+  - name: payment-service
+    url: http://payment:5004
+    routes:
+      - name: payment-routes
+        paths:
+          - /payment/v1
+        strip_path: false
+
+  - name: qr-service
+    url: http://qr:5005
+    routes:
+      - name: qr-routes
+        paths:
+          - /qr/v1
+        strip_path: false
+
+  - name: notification-service
+    url: http://notification:5006
+    routes:
+      - name: notification-routes
+        paths:
+          - /notification/v1
+        strip_path: false
+
+  - name: purchase-window-service
+    url: http://purchase_window:5010
+    routes:
+      - name: purchase-window-routes
+        paths:
+          - /purchase/v1
+        strip_path: false
+
+  - name: resale-purchase-service
+    url: http://resale_purchase:5011
+    routes:
+      - name: resale-purchase-routes
+        paths:
+          - /resale/v1
+        strip_path: false
+
+  - name: concert-cancellation-service
+    url: http://concert_cancellation:5012
+    routes:
+      - name: concert-cancellation-routes
+        paths:
+          - /cancellation/v1
+        strip_path: false

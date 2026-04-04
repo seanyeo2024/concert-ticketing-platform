@@ -91,6 +91,9 @@ RABBITMQ_USER=ctms
 RABBITMQ_PASSWORD=ctms
 RABBITMQ_EXCHANGE=ctms_topic
 
+KONG_PROXY_PORT=8000
+KONG_ADMIN_PORT=8001
+
 CONCERT_PORT=5100
 PRICING_PORT=5101
 QUEUE_PORT=5102
@@ -102,7 +105,7 @@ PURCHASE_WINDOW_PORT=5110
 RESALE_PURCHASE_PORT=5111
 CONCERT_CANCELLATION_PORT=5112
 
-PURCHASE_WINDOW_SECONDS=300
+PURCHASE_WINDOW_SECONDS=600
 MAX_ACTIVE_WINDOWS=5
 CONCERT_SERVICE_URL=http://concert:5000
 
@@ -146,6 +149,7 @@ python -m http.server 8080
 Open the app at:
 
 - `http://localhost:8080/pages/index.html`
+- Browser API traffic now goes through Kong at `http://localhost:8000`
 
 Useful pages:
 
@@ -157,6 +161,8 @@ Useful pages:
 
 ## Health Checks
 
+- Kong Proxy example: `http://localhost:8000/concerts`
+- Kong Admin API: `http://localhost:8001`
 - Concert: `http://localhost:5100/health`
 - Pricing: `http://localhost:5101/health`
 - Queue: `http://localhost:5102/health`
@@ -214,7 +220,7 @@ The admin page also verifies that ticket inventory was actually created before s
 
 The queue service auto-grants purchase windows locally.
 
-- `MAX_ACTIVE_WINDOWS=5` by default
+- `MAX_ACTIVE_WINDOWS=10` by default
 - Up to `min(MAX_ACTIVE_WINDOWS, availableSeats)` users can hold an active purchase window at the same time
 - Expired windows are released automatically
 - Waiting users are promoted when slots open
@@ -225,8 +231,56 @@ If a queue request returns `410 GONE`, that means the purchase window expired an
 
 - The frontend should be served over HTTP. Opening the HTML files directly from disk can cause browser issues.
 - The payment, email, and SMS integrations are stubbed for local demo use.
+- Kong runs in DB-less mode using `infra/kong/kong.yml`.
 - If you re-run queue or purchase tests many times, old queue data may remain in MySQL until you reset the stack with `docker compose down -v`.
 - The services are designed for a local demo environment, not production deployment.
+
+## Kong Gateway
+
+Kong is configured as the browser-facing API gateway for this project.
+
+- Proxy URL: `http://localhost:8000`
+- Admin API: `http://localhost:8001`
+- Declarative config: `infra/kong/kong.yml`
+
+The frontend now sends API requests through Kong for these route prefixes:
+
+- `/concerts`
+- `/pricing/v1`
+- `/queue/v1`
+- `/tickets/v1`
+- `/payment/v1`
+- `/qr/v1`
+- `/notification/v1`
+- `/purchase/v1`
+- `/resale/v1`
+- `/cancellation/v1`
+
+### Quick Tests
+
+After `docker compose up --build`, verify that Kong is proxying requests:
+
+```bat
+curl http://localhost:8000/concerts
+curl http://localhost:8000/pricing/v1/concerts/CONC-000001/prices
+curl http://localhost:8000/tickets/v1/tickets/CONC-000001
+```
+
+To inspect what Kong loaded:
+
+```bat
+curl http://localhost:8001/services
+curl http://localhost:8001/routes
+```
+
+### End-to-End Browser Test
+
+1. Start Docker Compose.
+2. Serve `frontend/` with `python -m http.server 8080`.
+3. Open `http://localhost:8080/pages/index.html`.
+4. Open browser DevTools and go to `Network`.
+5. Refresh the page and confirm API requests go to `http://localhost:8000/...`.
+6. Browse a concert, join a queue, and complete a purchase attempt.
 
 ## Troubleshooting
 
