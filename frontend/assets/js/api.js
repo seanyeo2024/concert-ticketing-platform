@@ -93,23 +93,24 @@ const SEED = {
 
 /* ── API client ─────────────────────────────────────────────── */
 const API = (() => {
+  const GATEWAY = window.CTMS_GATEWAY_URL || 'http://localhost:8000';
   const BASE = {
-    concert:      'http://localhost:5100',
-    pricing:      'http://localhost:5101/pricing/v1',
-    queue:        'http://localhost:5102/queue/v1',
-    tickets:      'http://localhost:5103/tickets/v1',
-    payment:      'http://localhost:5104/payment/v1',
-    qr:           'http://localhost:5105/qr/v1',
-    notification: 'http://localhost:5106/notification/v1',
-    purchase:     'http://localhost:5110/purchase/v1',
-    resale:       'http://localhost:5111/resale/v1',
-    cancellation: 'http://localhost:5112/cancellation/v1',
+    concert:      GATEWAY,
+    pricing:      `${GATEWAY}/pricing/v1`,
+    queue:        `${GATEWAY}/queue/v1`,
+    tickets:      `${GATEWAY}/tickets/v1`,
+    payment:      `${GATEWAY}/payment/v1`,
+    qr:           `${GATEWAY}/qr/v1`,
+    notification: `${GATEWAY}/notification/v1`,
+    purchase:     `${GATEWAY}/purchase/v1`,
+    resale:       `${GATEWAY}/resale/v1`,
+    cancellation: `${GATEWAY}/cancellation/v1`,
   };
 
   async function req(url, method='GET', body=null) {
     const opts = { method, headers:{'Content-Type':'application/json'} };
     if (body) opts.body = JSON.stringify(body);
-    const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(4000) });
+    const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(10000) });
     const data = await res.json().catch(()=>({}));
     if (!res.ok) {
       const err = data.error || data || {};
