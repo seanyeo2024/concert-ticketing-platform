@@ -110,6 +110,8 @@ def get_entry(concert_id, user_id):
         "concertId": row.get("concertId"),
         "userId": row.get("userId"),
         "status": row.get("status"),
+        "sessionToken": row.get("sessionToken") or None,
+        "sessionExpiresAt": row.get("sessionExpiresAt") or None,
         "windowGrantedAt": row.get("windowGrantedAt") or None,
         "windowExpiresAt": row.get("windowExpiresAt") or None,
         "joinedAt": row.get("joinedAt") or None,
@@ -126,6 +128,8 @@ def save_entry(row):
             "concertId": row["concertId"],
             "userId": row["userId"],
             "status": row["status"],
+            "sessionToken": row.get("sessionToken") or "",
+            "sessionExpiresAt": row.get("sessionExpiresAt") or "",
             "windowGrantedAt": row.get("windowGrantedAt") or "",
             "windowExpiresAt": row.get("windowExpiresAt") or "",
             "joinedAt": row.get("joinedAt") or "",
@@ -161,6 +165,17 @@ def format_row(concert_id, row):
     payload = dict(row)
     payload["position"] = compute_position(concert_id, row)
     return payload
+
+
+def token_response(row):
+    return {
+        "valid": True,
+        "concertId": row["concertId"],
+        "userId": row["userId"],
+        "sessionToken": row.get("sessionToken"),
+        "expiresAt": row.get("sessionExpiresAt") or row.get("windowExpiresAt"),
+        "status": row["status"],
+    }
 
 
 def publish_window_expired(row):
@@ -268,6 +283,8 @@ def grant_windows_if_needed_locked(concert_id):
         expires_at = granted_at + timedelta(seconds=WINDOW_SECONDS)
         expires_at_epoch = granted_at_epoch + WINDOW_SECONDS
         row["status"] = "WINDOW_GRANTED"
+        row["sessionToken"] = f"qs_{uuid.uuid4().hex}"
+        row["sessionExpiresAt"] = expires_at.isoformat()
         row["windowGrantedAt"] = granted_at.isoformat()
         row["windowExpiresAt"] = expires_at.isoformat()
         row["updatedAt"] = updated_at
@@ -307,6 +324,8 @@ def join_queue(concert_id):
             "concertId": concert_id,
             "userId": user_id,
             "status": "WAITING",
+            "sessionToken": None,
+            "sessionExpiresAt": None,
             "windowGrantedAt": None,
             "windowExpiresAt": None,
             "joinedAt": timestamp,
@@ -374,6 +393,8 @@ def update_entry(concert_id, user_id):
         pipe.zrem(granted_key(concert_id), user_id)
 
         if new_status == "WAITING":
+            row["sessionToken"] = None
+            row["sessionExpiresAt"] = None
             row["windowGrantedAt"] = None
             row["windowExpiresAt"] = None
             pipe.zadd(waiting_key(concert_id), {user_id: iso_to_epoch(row.get("joinedAt"))})
@@ -381,12 +402,19 @@ def update_entry(concert_id, user_id):
             granted_at = datetime.utcnow()
             expires_at = granted_at + timedelta(seconds=WINDOW_SECONDS)
             expires_at_epoch = now_epoch() + WINDOW_SECONDS
+            row["sessionToken"] = f"qs_{uuid.uuid4().hex}"
+            row["sessionExpiresAt"] = expires_at.isoformat()
             row["windowGrantedAt"] = granted_at.isoformat()
             row["windowExpiresAt"] = expires_at.isoformat()
             pipe.zadd(granted_key(concert_id), {user_id: expires_at_epoch})
             publish_window_granted(user_id, concert_id, expires_at)
         elif new_status == "EXPIRED":
+            row["sessionToken"] = None
+            row["sessionExpiresAt"] = None
             publish_window_expired(row)
+        else:
+            row["sessionToken"] = None
+            row["sessionExpiresAt"] = None
 
         pipe.execute()
         save_entry(row)
@@ -411,6 +439,63 @@ def leave_queue(concert_id, user_id):
 def health():
     redis_client.ping()
     return jsonify({"status": "ok", "service": "queue", "backend": "redis"})
+
+
+@app.route("/queue/v1/session/validate", methods=["POST"])
+def validate_session():
+    data = request.get_json() or {}
+    concert_id = data.get("concertId")
+    user_id = data.get("userId")
+    session_token = data.get("sessionToken")
+    if not all([concert_id, user_id, session_token]):
+        return err("MISSING_FIELDS", "concertId, userId, and sessionToken are required")
+
+    with queue_lock(concert_id):
+        reconcile_queue_state_locked(concert_id)
+        expire_granted_windows_locked(concert_id)
+        row = get_entry(concert_id, user_id)
+        if not row or row["status"] != "WINDOW_GRANTED":
+            return jsonify({"valid": False, "reason": "NO_ACTIVE_WINDOW"}), 403
+        if row.get("sessionToken") != session_token:
+            return jsonify({"valid": False, "reason": "INVALID_SESSION_TOKEN"}), 403
+        expires_at_epoch = iso_to_epoch(row.get("sessionExpiresAt") or row.get("windowExpiresAt"))
+        if expires_at_epoch <= now_epoch():
+            row["status"] = "EXPIRED"
+            row["sessionToken"] = None
+            row["sessionExpiresAt"] = None
+            row["updatedAt"] = now_iso()
+            save_entry(row)
+            redis_client.zrem(granted_key(concert_id), user_id)
+            publish_window_expired(row)
+            return jsonify({"valid": False, "reason": "SESSION_EXPIRED"}), 410
+        return jsonify(token_response(row))
+
+
+@app.route("/queue/v1/session/consume", methods=["POST"])
+def consume_session():
+    data = request.get_json() or {}
+    concert_id = data.get("concertId")
+    user_id = data.get("userId")
+    session_token = data.get("sessionToken")
+    if not all([concert_id, user_id, session_token]):
+        return err("MISSING_FIELDS", "concertId, userId, and sessionToken are required")
+
+    with queue_lock(concert_id):
+        reconcile_queue_state_locked(concert_id)
+        expire_granted_windows_locked(concert_id)
+        row = get_entry(concert_id, user_id)
+        if not row or row["status"] != "WINDOW_GRANTED":
+            return err("NO_ACTIVE_WINDOW", "No active purchase window for this user", 403)
+        if row.get("sessionToken") != session_token:
+            return err("INVALID_SESSION_TOKEN", "Queue session token is invalid", 403)
+        row["status"] = "COMPLETED"
+        row["sessionToken"] = None
+        row["sessionExpiresAt"] = None
+        row["updatedAt"] = now_iso()
+        save_entry(row)
+        redis_client.zrem(granted_key(concert_id), user_id)
+        grant_windows_if_needed_locked(concert_id)
+    return jsonify({"consumed": True, "status": "COMPLETED"})
 
 
 if __name__ == "__main__":
