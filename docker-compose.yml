@@ -73,6 +73,7 @@ services:
       - "3302:3306"
     volumes:
       - mysql_queue_data:/var/lib/mysql
+      - ./database/seeds/queue_db.sql:/docker-entrypoint-initdb.d/seed.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -110,6 +111,7 @@ services:
       - "3304:3306"
     volumes:
       - mysql_payment_data:/var/lib/mysql
+      - ./database/seeds/payment_db.sql:/docker-entrypoint-initdb.d/seed.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -128,6 +130,7 @@ services:
       - "3305:3306"
     volumes:
       - mysql_qr_data:/var/lib/mysql
+      - ./database/seeds/qr_db.sql:/docker-entrypoint-initdb.d/seed.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -143,9 +146,10 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - mysql_notification_data:/var/lib/mysql
+      - ./database/seeds/notification_db.sql:/docker-entrypoint-initdb.d/seed.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -345,6 +349,21 @@ services:
       - qr
       - concert
       - rabbitmq
+    restart: unless-stopped
+
+  resale_ticket:
+    build: ./services/resale_ticket
+    container_name: ctms_resale_ticket
+    ports:
+      - "${RESALE_TICKET_PORT}:5013"
+    environment:
+      TICKET_INVENTORY_SERVICE_URL: http://ticket_inventory:5003
+      PRICING_SERVICE_URL: http://pricing:5001
+      RESALE_PURCHASE_SERVICE_URL: http://resale_purchase:5011
+    depends_on:
+      - ticket_inventory
+      - pricing
+      - resale_purchase
     restart: unless-stopped
 
   concert_cancellation:

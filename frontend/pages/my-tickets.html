@@ -184,12 +184,34 @@
 <script src="../assets/js/api.js"></script>
 <script>
 const user=Auth.require(); renderNav('tickets');
-let allTickets=[], activeTab='upcoming', resaleTarget=null;
+let allTickets=[], refundedHistory=[], activeTab='upcoming', resaleTarget=null;
 const STATUS_TABS={ upcoming:['CONFIRMED','PENDING'], past:['USED'], reselling:['RESALE_LISTED','RESALE_PENDING'], refunded:['REFUNDED'], all:null };
 let concertIndex={};
 
+async function syncTransferredTicket() {
+  const refreshTicketId = Util.getParam('refreshTicket');
+  const refreshConcertId = Util.getParam('refreshConcert');
+  const expectedOwner = Util.getParam('owner');
+  if (!refreshTicketId || !refreshConcertId) return;
+
+  // Poll briefly so buyer sees the transferred ticket even under short backend propagation delay.
+  for (let i = 0; i < 8; i++) {
+    try {
+      const t = await API.tickets.get(refreshConcertId, refreshTicketId);
+      if (t && t.ownerId === (expectedOwner || user.userId)) {
+        const idx = allTickets.findIndex(x=>x.ticketId===refreshTicketId);
+        if (idx >= 0) allTickets[idx] = t;
+        else allTickets.push(t);
+        return;
+      }
+    } catch {}
+    await new Promise(r=>setTimeout(r, 500));
+  }
+}
+
 async function load(){
   allTickets=SEED.tickets.filter(t=>t.ownerId===user.userId);
+  refundedHistory=[];
   concertIndex=Object.fromEntries((SEED.concerts||[]).map(c=>[c.concertId,c]));
   render();
   try{
@@ -201,7 +223,33 @@ async function load(){
     const ids=Object.keys(concertIndex);
     const res=await Promise.allSettled(ids.map(id=>API.tickets.list(id,'ALL')));
     const live=res.flatMap(r=>r.value?.tickets||[]).filter(t=>t.ownerId===user.userId);
-    if(live.length){allTickets=live;render();}
+    allTickets=live;
+
+    // Build seller-side refund history for completed resale payouts.
+    const payRes=await API.payment.byUser(user.userId);
+    const payouts=(payRes.payments||[]).filter(p=>p.type==='REFUND'&&p.reason==='RESALE_PAYOUT'&&p.status==='SUCCESS');
+    const payoutTickets=await Promise.allSettled(
+      payouts.map(p=>API.tickets.get(p.concertId,p.ticketId).then(t=>({payment:p,ticket:t})))
+    );
+    refundedHistory=payoutTickets.map(r=>{
+      if(r.status!=='fulfilled') return null;
+      const { payment, ticket } = r.value;
+      return {
+        ticketId: payment.ticketId,
+        concertId: payment.concertId,
+        seatNumber: ticket?.seatNumber || '—',
+        categoryId: ticket?.categoryId || 'RESALE',
+        ownerId: user.userId,
+        status: 'REFUNDED',
+        purchasePrice: payment.amount,
+        payoutAt: payment.createdAt,
+        isResalePayout: true,
+      };
+    }).filter(Boolean);
+
+    await syncTransferredTicket();
+
+    render();
   }catch{}
 }
 
@@ -212,7 +260,10 @@ function switchTab(tab,el){
 
 function render(){
   const statuses=STATUS_TABS[activeTab];
-  const list=statuses ? allTickets.filter(t=>statuses.includes(t.status)) : [...allTickets];
+  const baseList=statuses ? allTickets.filter(t=>statuses.includes(t.status)) : [...allTickets];
+  const list = (activeTab==='refunded' || activeTab==='all')
+    ? [...baseList, ...refundedHistory].sort((a,b)=>new Date(b.payoutAt||b.updatedAt||0)-new Date(a.payoutAt||a.updatedAt||0))
+    : baseList;
   const wrap=document.getElementById('ticket-list');
   if(!list.length){
     wrap.innerHTML=`<div class="empty-state"><h2>No tickets here</h2><p class="mt-16 text-muted">${activeTab==='upcoming'?'Browse concerts to find your next show.':'Nothing to show in this tab.'}</p>${activeTab==='upcoming'?'<a href="index.html" class="btn btn-black mt-24" style="border-radius:100px">Browse Lineup →</a>':''}</div>`;
@@ -230,6 +281,7 @@ function render(){
           <span>🪑 ${t.seatNumber}</span>
           <span>🆔 ${t.ticketId}</span>
           ${t.resalePrice?`<span style="color:var(--pink);font-weight:700">Listed @ SGD ${t.resalePrice}</span>`:''}
+          ${t.isResalePayout?`<span style="color:var(--teal);font-weight:700">Resale payout received</span>`:''}
         </div>
         ${Util.tag(t.status)}
       </div>
@@ -283,7 +335,7 @@ async function submitResale(){
   const price=parseFloat(document.getElementById('resale-price').value);
   if(!price||price<=0){toast('Enter a valid price','warning');return;}
   try{
-    await API.resale.list({sellerId:user.userId,ticketId:resaleTarget.tid,concertId:resaleTarget.cid,resalePrice:price});
+    await API.resaleTicket.list({sellerId:user.userId,ticketId:resaleTarget.tid,concertId:resaleTarget.cid,resalePrice:price});
     const t=allTickets.find(x=>x.ticketId===resaleTarget.tid);
     if(t){t.status='RESALE_LISTED';t.resalePrice=price;}
     toast('Ticket listed for resale!','success');
@@ -296,8 +348,14 @@ async function submitResale(){
 async function cancelListing(tid){
   if(!confirm('Cancel this listing?'))return;
   const t=allTickets.find(x=>x.ticketId===tid);
-  if(t){t.status='CONFIRMED';t.resalePrice=null;}
-  toast('Listing cancelled','success'); render();
+  try{
+    await API.resaleTicket.unlist({sellerId:user.userId,ticketId:tid,concertId:t?.concertId});
+    if(t){t.status='CONFIRMED';t.resalePrice=null;}
+    toast('Listing cancelled','success');
+    render();
+  }catch(e){
+    toast(e.message||'Could not cancel listing','error');
+  }
 }
 
 load();

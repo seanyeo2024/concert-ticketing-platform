@@ -19,7 +19,8 @@ except ImportError:
     def mq_publish(rk, payload): print(f"[MQ STUB] {rk}: {payload}")
 
 WINDOW_SECONDS = int(os.environ.get("PURCHASE_WINDOW_SECONDS", 600))
-MAX_ACTIVE_WINDOWS = int(os.environ.get("MAX_ACTIVE_WINDOWS", 5))
+max_windows_str = os.environ.get("MAX_ACTIVE_WINDOWS", "5").strip()
+MAX_ACTIVE_WINDOWS = int(max_windows_str) if max_windows_str else 5
 CONCERT_URL = os.environ.get("CONCERT_SERVICE_URL", "http://localhost:5000")
 
 def get_db():
@@ -323,7 +324,16 @@ def queue_depth(concert_id):
     db = get_db(); cur = db.cursor(dictionary=True)
     cur.execute("SELECT status, COUNT(*) AS count FROM queue_entry WHERE concertId=%s GROUP BY status", (concert_id,))
     rows = cur.fetchall(); cur.close(); db.close()
-    return jsonify({"concertId": concert_id, "breakdown": rows})
+    queue_depth = sum(int(r.get("count", 0)) for r in rows)
+    waiting = sum(int(r.get("count", 0)) for r in rows if r.get("status") == "WAITING")
+    window_granted = sum(int(r.get("count", 0)) for r in rows if r.get("status") == "WINDOW_GRANTED")
+    return jsonify({
+        "concertId": concert_id,
+        "queueDepth": queue_depth,
+        "waitingCount": waiting,
+        "windowGrantedCount": window_granted,
+        "breakdown": rows,
+    })
 
 # PUT /queue/v1/queue/<concertId>/<userId>  — update status
 @app.route("/queue/v1/queue/<concert_id>/<user_id>", methods=["PUT"])

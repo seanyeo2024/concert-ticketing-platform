@@ -94,16 +94,17 @@ const SEED = {
 /* ── API client ─────────────────────────────────────────────── */
 const API = (() => {
   const BASE = {
-    concert:      'http://localhost:5100',
-    pricing:      'http://localhost:5101/pricing/v1',
-    queue:        'http://localhost:5102/queue/v1',
-    tickets:      'http://localhost:5103/tickets/v1',
-    payment:      'http://localhost:5104/payment/v1',
-    qr:           'http://localhost:5105/qr/v1',
-    notification: 'http://localhost:5106/notification/v1',
-    purchase:     'http://localhost:5110/purchase/v1',
-    resale:       'http://localhost:5111/resale/v1',
-    cancellation: 'http://localhost:5112/cancellation/v1',
+    concert:      'http://localhost:5000',
+    pricing:      'http://localhost:5001/pricing/v1',
+    queue:        'http://localhost:5002/queue/v1',
+    tickets:      'http://localhost:5003/tickets/v1',
+    payment:      'http://localhost:5004/payment/v1',
+    qr:           'http://localhost:5005/qr/v1',
+    notification: 'http://localhost:5006/notification/v1',
+    purchase:     'http://localhost:5010/purchase/v1',
+    resale:       'http://localhost:5011/resale/v1',
+    resaleTicket: 'http://localhost:5013/resale-ticket/v1',
+    cancellation: 'http://localhost:5012/cancellation/v1',
   };
 
   async function req(url, method='GET', body=null) {
@@ -169,9 +170,26 @@ const API = (() => {
     purchase: {
       complete: (cid,p) => req(`${BASE.purchase}/window/${cid}`,'POST',p),
     },
+    resaleTicket: {
+      listings: async cid => {
+        // Marketplace listings are sourced from ticket inventory service.
+        return req(`${BASE.tickets}/tickets/${cid}/resale`);
+      },
+      list: async p => {
+        return await req(`${BASE.resale}/list`, 'POST', p);
+      },
+      unlist: async p => {
+        return await req(`${BASE.resaleTicket}/unlist`, 'PUT', p);
+      },
+      purchase: async p => {
+        return await req(`${BASE.resale}/purchase`, 'POST', p);
+      },
+    },
     resale: {
-      list: async p => { try { return await req(`${BASE.resale}/list`,'POST',p); } catch { return { success:true, listingId:`LST-DEMO`, resalePrice:p.resalePrice }; } },
-      buy:  async p => { try { return await req(`${BASE.resale}/purchase`,'POST',p); } catch { return { success:true, ticketId:p.ticketId, paymentId:`PAY-RESALE` }; } },
+      list: async p => API.resaleTicket.list(p),
+      buy:  async p => API.resaleTicket.purchase(p),
+      unlist: async p => API.resaleTicket.unlist(p),
+      listings: async cid => API.resaleTicket.listings(cid),
     },
     cancellation: {
       cancel: async (cid,p) => { try { return await req(`${BASE.cancellation}/${cid}`,'POST',p); } catch { return { success:true, ticketsRefunded:37570, paymentsRefunded:37570 }; } },

@@ -38,7 +38,17 @@ def cancel_concert(concert_id):
     c = requests.put(f"{CONCERT_URL}/concerts/{concert_id}",
                      json={"status": "CANCELLED", "cancellationReason": reason}, timeout=10)
     if c.status_code not in (200, 201):
-        return err("CONCERT_UPDATE_FAILED", "Could not cancel concert in Concert Service", 500)
+        if c.status_code == 404:
+            return err("CONCERT_NOT_FOUND", f"Concert {concert_id} was not found", 404)
+        message = "Could not cancel concert in Concert Service"
+        try:
+            payload = c.json()
+            upstream = payload.get("error", {}).get("message")
+            if upstream:
+                message = f"Concert Service rejected cancellation: {upstream}"
+        except Exception:
+            pass
+        return err("CONCERT_UPDATE_FAILED", message, c.status_code)
 
     # Step 2+3 — bulk update all confirmed tickets to REFUNDED
     bulk = requests.put(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/cancel-all",

@@ -41,21 +41,22 @@ concert-ticketing-platform/
 
 | Service | Host Port | Responsibility |
 |---|---:|---|
-| `concert` | 5100 | Concert records and seat category configuration |
-| `pricing` | 5101 | Price rules and resale caps |
-| `queue` | 5102 | Queue entries and purchase window allocation |
-| `ticket_inventory` | 5103 | Ticket inventory and ticket state transitions |
-| `payment` | 5104 | Purchase and refund records |
-| `qr` | 5105 | QR generation and invalidation |
-| `notification` | 5106 | Notification event consumer |
+| `concert` | 5000 | Concert records and seat category configuration |
+| `pricing` | 5001 | Price rules and resale caps |
+| `queue` | 5002 | Queue entries and purchase window allocation |
+| `ticket_inventory` | 5003 | Ticket inventory and ticket state transitions |
+| `payment` | 5004 | Purchase and refund records |
+| `qr` | 5005 | QR generation and invalidation |
+| `notification` | 5006 | Notification event consumer |
 
 ### Composite Services
 
 | Service | Host Port | Responsibility |
 |---|---:|---|
-| `purchase_window` | 5110 | Primary purchase orchestration |
-| `resale_purchase` | 5111 | Resale purchase orchestration |
-| `concert_cancellation` | 5112 | Concert cancellation and refund orchestration |
+| `purchase_window` | 5010 | Primary purchase orchestration |
+| `resale_purchase` | 5011 | Resale listing and purchase orchestration |
+| `resale_ticket` | 5013 | Resale marketplace gateway (browse/list/unlist/purchase) |
+| `concert_cancellation` | 5012 | Concert cancellation and refund orchestration |
 
 ### Infrastructure
 
@@ -69,7 +70,7 @@ concert-ticketing-platform/
 | MySQL `ticket_inventory_db` | 3303 |
 | MySQL `payment_db` | 3304 |
 | MySQL `qr_db` | 3305 |
-| MySQL `notification_db` | 3306 |
+| MySQL `notification_db` | 3307 |
 
 ## Prerequisites
 
@@ -87,20 +88,23 @@ MYSQL_PASSWORD=ctms
 
 RABBITMQ_HOST=rabbitmq
 RABBITMQ_PORT=5672
+RABBITMQ_HOST_PORT=5673
+RABBITMQ_MGMT_HOST_PORT=15673
 RABBITMQ_USER=ctms
 RABBITMQ_PASSWORD=ctms
 RABBITMQ_EXCHANGE=ctms_topic
 
-CONCERT_PORT=5100
-PRICING_PORT=5101
-QUEUE_PORT=5102
-TICKET_INVENTORY_PORT=5103
-PAYMENT_PORT=5104
-QR_PORT=5105
-NOTIFICATION_PORT=5106
-PURCHASE_WINDOW_PORT=5110
-RESALE_PURCHASE_PORT=5111
-CONCERT_CANCELLATION_PORT=5112
+CONCERT_PORT=5000
+PRICING_PORT=5001
+QUEUE_PORT=5002
+TICKET_INVENTORY_PORT=5003
+PAYMENT_PORT=5004
+QR_PORT=5005
+NOTIFICATION_PORT=5006
+PURCHASE_WINDOW_PORT=5010
+RESALE_PURCHASE_PORT=5011
+CONCERT_CANCELLATION_PORT=5012
+RESALE_TICKET_PORT=5013
 
 PURCHASE_WINDOW_SECONDS=300
 MAX_ACTIVE_WINDOWS=5
@@ -157,17 +161,25 @@ Useful pages:
 
 ## Health Checks
 
-- Concert: `http://localhost:5100/health`
-- Pricing: `http://localhost:5101/health`
-- Queue: `http://localhost:5102/health`
-- Ticket Inventory: `http://localhost:5103/health`
-- Payment: `http://localhost:5104/health`
-- QR: `http://localhost:5105/health`
-- Notification: `http://localhost:5106/health`
-- Purchase Window: `http://localhost:5110/health`
-- Resale Purchase: `http://localhost:5111/health`
-- Concert Cancellation: `http://localhost:5112/health`
-- RabbitMQ UI: `http://localhost:15672`
+- Concert: `http://localhost:5000/health`
+- Pricing: `http://localhost:5001/health`
+- Queue: `http://localhost:5002/health`
+- Ticket Inventory: `http://localhost:5003/health`
+- Payment: `http://localhost:5004/health`
+- QR: `http://localhost:5005/health`
+- Notification: `http://localhost:5006/health`
+- Purchase Window: `http://localhost:5010/health`
+- Resale Purchase: `http://localhost:5011/health`
+- Resale Ticket Gateway: `http://localhost:5013/health`
+- Concert Cancellation: `http://localhost:5012/health`
+- RabbitMQ UI: `http://localhost:15673`
+
+## Resale Ticket Gateway (New Composite)
+
+- List marketplace tickets: `GET /resale-ticket/v1/listings/<concertId>`
+- Seller list ticket: `POST /resale-ticket/v1/list`
+- Seller unlist ticket: `PUT /resale-ticket/v1/unlist`
+- Buyer purchase ticket: `POST /resale-ticket/v1/purchase`
 
 ## Demo Accounts
 

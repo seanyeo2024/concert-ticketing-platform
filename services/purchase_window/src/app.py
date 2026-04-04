@@ -129,19 +129,31 @@ def purchase(concert_id):
     pending_version = current_version + 1
 
     # Step 5 — charge payment
-    pay = requests.post(f"{PAYMENT_URL}/payment/v1/payment",
-                        json={"userId": user_id, "ticketId": ticket_id, "concertId": concert_id,
-                              "amount": amount, "currency": currency, "type": "PURCHASE",
-                              "stripeToken": stripe_token}, timeout=10)
-    if pay.status_code != 201:
+    try:
+        pay = requests.post(f"{PAYMENT_URL}/payment/v1/payment",
+                            json={"userId": user_id, "ticketId": ticket_id, "concertId": concert_id,
+                                  "amount": amount, "currency": currency, "type": "PURCHASE",
+                                  "stripeToken": stripe_token}, timeout=10)
+        if pay.status_code != 201:
+            rollback_ticket(concert_id, ticket_id, pending_version)
+            return err("PAYMENT_FAILED", "Payment was declined", 402)
+        payment_data = pay.json()
+    except requests.exceptions.Timeout:
         rollback_ticket(concert_id, ticket_id, pending_version)
-        return err("PAYMENT_FAILED", "Payment was declined", 402)
-    payment_data = pay.json()
+        return err("PAYMENT_TIMEOUT", "Payment request timed out; ticket lock released", 503)
+    except requests.exceptions.RequestException as e:
+        rollback_ticket(concert_id, ticket_id, pending_version)
+        return err("PAYMENT_ERROR", f"Payment service error: {str(e)}", 503)
 
     # Step 6 — confirm ticket ownership
-    requests.put(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/{ticket_id}",
-                 json={"status": "CONFIRMED", "ownerId": user_id,
-                       "purchasePrice": amount, "version": pending_version}, timeout=5)
+    try:
+        requests.put(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/{ticket_id}",
+                     json={"status": "CONFIRMED", "ownerId": user_id,
+                           "purchasePrice": amount, "version": pending_version}, timeout=5)
+    except requests.exceptions.RequestException:
+        # Non-critical; if this fails, ticket stays PENDING but payment succeeded
+        print(f"[WARN] Could not confirm ticket {ticket_id} after payment succeeded")
+        pass
 
     # Step 7 — mark queue COMPLETED (non-critical)
     try:

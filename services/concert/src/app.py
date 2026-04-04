@@ -62,7 +62,6 @@ def ensure_schema():
           categoryId VARCHAR(36) PRIMARY KEY,
           concertId VARCHAR(36) NOT NULL,
           categoryName VARCHAR(100) NOT NULL,
-          basePrice DECIMAL(10,2) NULL,
           totalSeats INT NOT NULL DEFAULT 0,
           availableSeats INT NOT NULL DEFAULT 0,
           createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -72,9 +71,6 @@ def ensure_schema():
         )
         """
     )
-    cur.execute("SHOW COLUMNS FROM seat_category LIKE 'basePrice'")
-    if not cur.fetchone():
-        cur.execute("ALTER TABLE seat_category ADD COLUMN basePrice DECIMAL(10,2) NULL AFTER categoryName")
 
     cur.execute("SELECT COUNT(*) FROM concert")
     has_rows = cur.fetchone()[0] > 0

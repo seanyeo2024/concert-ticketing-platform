@@ -28,6 +28,23 @@ def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "resale_purchase", "timestamp": datetime.utcnow().isoformat()}}), status
 
+
+def issue_buyer_qr(ticket_id, buyer_id, concert_id, retries=3):
+    last_error = None
+    for _ in range(retries):
+        try:
+            qr = requests.post(
+                f"{QR_URL}/qr/v1/qr",
+                json={"ticketId": ticket_id, "userId": buyer_id, "concertId": concert_id},
+                timeout=5,
+            )
+            if qr.status_code == 201:
+                return qr.json()
+            last_error = qr.text
+        except requests.RequestException as exc:
+            last_error = str(exc)
+    return {"error": last_error or "QR generation failed"}
+
 # ── S2a: Seller lists ticket ──────────────────────────────────────────────────
 # POST /resale/v1/list
 @app.route("/resale/v1/list", methods=["POST"])
@@ -46,11 +63,18 @@ def list_ticket():
         return err("INVALID_STATUS", f"Ticket must be CONFIRMED to list; current: {ticket['status']}", 400)
 
     # Step 2 — validate resale price against ceiling
-    pr = requests.get(f"{PRICING_URL}/pricing/v1/concerts/{data['concertId']}/prices/{ticket['categoryId']}/ceiling", timeout=5)
-    if pr.status_code == 200:
-        ceiling = pr.json().get("resaleCeiling")
-        if ceiling and float(data["resalePrice"]) > float(ceiling):
-            return err("PRICE_EXCEEDS_CEILING", f"Resale price cannot exceed {ceiling}", 400)
+    try:
+        pr = requests.get(
+            f"{PRICING_URL}/pricing/v1/concerts/{data['concertId']}/prices/{ticket['categoryId']}/ceiling",
+            timeout=5,
+        )
+        if pr.status_code == 200:
+            ceiling = pr.json().get("resaleCeiling")
+            if ceiling and float(data["resalePrice"]) > float(ceiling):
+                return err("PRICE_EXCEEDS_CEILING", f"Resale price cannot exceed {ceiling}", 400)
+    except requests.RequestException:
+        # Do not block listing when pricing service is temporarily unavailable.
+        pass
 
     # Step 3 — update ticket to RESALE_LISTED
     listing_id = f"LST-{data['ticketId']}-001"
@@ -91,11 +115,18 @@ def purchase_resale():
     current_version = ticket["version"]
 
     # Step 2 — validate price ceiling
-    pr = requests.get(f"{PRICING_URL}/pricing/v1/concerts/{data['concertId']}/prices/{ticket['categoryId']}/ceiling", timeout=5)
-    if pr.status_code == 200:
-        ceiling = pr.json().get("resaleCeiling")
-        if ceiling and float(resale_price) > float(ceiling):
-            return err("PRICE_EXCEEDS_CEILING", "Listed price exceeds allowed ceiling", 400)
+    try:
+        pr = requests.get(
+            f"{PRICING_URL}/pricing/v1/concerts/{data['concertId']}/prices/{ticket['categoryId']}/ceiling",
+            timeout=5,
+        )
+        if pr.status_code == 200:
+            ceiling = pr.json().get("resaleCeiling")
+            if ceiling and float(resale_price) > float(ceiling):
+                return err("PRICE_EXCEEDS_CEILING", "Listed price exceeds allowed ceiling", 400)
+    except requests.RequestException:
+        # Do not block purchase when pricing service is temporarily unavailable.
+        pass
 
     # Step 3 — lock → RESALE_PENDING
     lock = requests.put(f"{TICKET_URL}/tickets/v1/tickets/{data['concertId']}/{data['ticketId']}",
@@ -124,25 +155,56 @@ def purchase_resale():
     except Exception: pass
 
     # Step 6 — invalidate seller's QR
+    seller_qr_invalidated = False
     try:
-        requests.put(f"{QR_URL}/qr/v1/qr/{data['ticketId']}/invalidate",
-                     json={"reason": "RESALE_TRANSFER"}, timeout=5)
-    except Exception: pass
+        invalidate = requests.put(
+            f"{QR_URL}/qr/v1/qr/{data['ticketId']}/invalidate",
+            json={"reason": "RESALE_TRANSFER"},
+            timeout=5,
+        )
+        seller_qr_invalidated = invalidate.status_code in (200, 409)
+    except Exception:
+        seller_qr_invalidated = False
 
-    # Step 7 — confirm ticket to buyer
-    requests.put(f"{TICKET_URL}/tickets/v1/tickets/{data['concertId']}/{data['ticketId']}",
-                 json={"status": "CONFIRMED", "ownerId": data["buyerId"],
-                       "resalePrice": None, "resaleListingId": None,
-                       "version": pending_version}, timeout=5)
+    # Step 7 — confirm ticket to buyer (with retry on version conflict)
+    confirm_retries = 0
+    while confirm_retries < 3:
+        try:
+            confirm = requests.put(
+                f"{TICKET_URL}/tickets/v1/tickets/{data['concertId']}/{data['ticketId']}",
+                json={"status": "CONFIRMED", "ownerId": data["buyerId"],
+                      "purchasePrice": resale_price,
+                      "resalePrice": None, "resaleListingId": None,
+                      "version": pending_version},
+                timeout=5,
+            )
+            if confirm.status_code == 200:
+                break
+            elif confirm.status_code == 409:
+                # Version conflict: fetch fresh version and retry
+                confirm_retries += 1
+                if confirm_retries < 3:
+                    try:
+                        fresh_t = requests.get(
+                            f"{TICKET_URL}/tickets/v1/tickets/{data['concertId']}/{data['ticketId']}",
+                            timeout=5,
+                        )
+                        if fresh_t.status_code == 200:
+                            pending_version = fresh_t.json().get("version", pending_version)
+                    except Exception:
+                        pass
+                    continue
+            else:
+                return err("CONFIRM_FAILED", f"Could not confirm ticket to buyer: {confirm.text}", 500)
+        except requests.RequestException as exc:
+            return err("CONFIRM_ERROR", f"Error confirming ticket: {str(exc)}", 500)
+    
+    if confirm_retries >= 3:
+        return err("CONFIRM_CONFLICT", "Could not finalize ticket ownership after 3 retries", 500)
 
     # Step 8 — generate new QR for buyer
-    qr_data = {}
-    try:
-        qr = requests.post(f"{QR_URL}/qr/v1/qr",
-                           json={"ticketId": data["ticketId"], "userId": data["buyerId"],
-                                 "concertId": data["concertId"]}, timeout=5)
-        if qr.status_code == 201: qr_data = qr.json()
-    except Exception: pass
+    qr_data = issue_buyer_qr(data["ticketId"], data["buyerId"], data["concertId"])
+    qr_ready = "qrId" in qr_data
 
     # Step 9 — notify both parties (non-critical)
     try:
@@ -157,6 +219,10 @@ def purchase_resale():
 
     return jsonify({"success": True, "ticketId": data["ticketId"],
                     "newOwner": data["buyerId"], "paymentId": payment_data["paymentId"],
+                    "sellerQrInvalidated": seller_qr_invalidated,
+                    "qrReady": qr_ready,
+                    "qrId": qr_data.get("qrId"),
+                    "qrData": qr_data.get("qrData"),
                     "qrImageUrl": qr_data.get("qrImageUrl"),
                     "message": "Resale ticket purchased successfully!"}), 201
 

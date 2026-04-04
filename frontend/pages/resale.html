@@ -229,7 +229,12 @@ input[type=range] { width: 100%; accent-color: var(--black); }
   <div class="modal" style="text-align:center">
     <div style="font-size:3.5rem;margin-bottom:8px">🎉</div>
     <div style="font-family:var(--font-display);font-size:2.5rem;font-weight:900;letter-spacing:-0.02em;margin-bottom:8px">Ticket is Yours!</div>
-    <p class="text-muted mb-24">Your resale ticket has been transferred. Check your email for the QR code.</p>
+    <p class="text-muted mb-16">Your resale ticket has been transferred. The seller's old QR is invalidated and your new QR is now the only valid one.</p>
+    <div id="buy-success-qr-wrap" style="display:none;background:rgba(17,17,17,0.03);border:1.5px solid rgba(17,17,17,0.08);border-radius:var(--radius-lg);padding:18px;margin:0 auto 20px;max-width:260px">
+      <img id="buy-success-qr" alt="New QR code" style="width:180px;height:180px;border-radius:12px;border:2px solid rgba(17,17,17,0.08);background:#fff" />
+      <div id="buy-success-qr-state" style="margin-top:10px;font-size:0.68rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--teal)"></div>
+    </div>
+    <div id="buy-success-note" class="text-muted" style="font-size:0.85rem;margin-bottom:20px"></div>
     <button class="btn btn-black w-full btn-lg" onclick="window.location.href='my-tickets.html'" style="border-radius:var(--radius)">View My Tickets →</button>
   </div>
 </div>
@@ -245,14 +250,17 @@ const BASE={'CAT-C001-01':388,'CAT-C001-02':248,'CAT-C001-03':158,'CAT-C001-04':
 async function load(){
   const preId=Util.getParam('id');
   if(preId) document.getElementById('f-concert').value=preId;
-  allListings=SEED.resaleListings;
-  applyFilters();
   try{
-    const ids=['CONC-000001','CONC-000002'];
-    const res=await Promise.allSettled(ids.map(id=>API.tickets.resale(id)));
-    const live=res.flatMap(r=>r.value?.listings||[]).filter(t=>t.ownerId!==user?.userId);
-    if(live.length){allListings=live;applyFilters();}
-  }catch{}
+    const concertsRes=await API.concerts.list();
+    const concerts=(concertsRes.concerts||concertsRes||[]).map(c=>c.concertId).filter(Boolean);
+    const res=await Promise.allSettled(concerts.map(id=>API.resaleTicket.listings(id)));
+    const live=res.flatMap(r=>r.value?.listings||[]);
+    allListings=live;
+  }catch{
+    allListings=[];
+    toast('Resale services are unavailable. Please ensure backend containers are running.','warning',4500);
+  }
+  applyFilters();
 }
 
 function updatePriceLabel(v){document.getElementById('price-label').textContent=`SGD ${v}`;}
@@ -292,6 +300,10 @@ function renderListings(list){
     const markup=((t.resalePrice-base)/base*100).toFixed(0);
     const mkCls=parseFloat(markup)>0?'markup-up':'markup-ok';
     const mkLabel=parseFloat(markup)>0?`+${markup}% above face`:'At face value';
+    const isMine = user && t.ownerId===user.userId;
+    const actionHtml = isMine
+      ? `<button class="btn btn-sm btn-outline" disabled style="border-radius:100px;opacity:0.55;cursor:not-allowed">Your Listing</button>`
+      : `<button class="btn btn-sm btn-black" onclick='openBuy(${JSON.stringify(t).replace(/'/g,"&#39;")})' style="border-radius:100px">Buy Now</button>`;
     return `<div class="listing-row">
       <div class="listing-icon">${EMOJIS[t.concertId]||'🎫'}</div>
       <div class="listing-body">
@@ -300,12 +312,13 @@ function renderListings(list){
           <span>🪑 ${t.seatNumber}</span>
           <span>${t.categoryId?.split('-').slice(2).join('-')||'GEN'}</span>
           <span class="${mkCls}">${mkLabel}</span>
+          ${isMine ? '<span class="markup-ok">Your listing</span>' : ''}
         </div>
       </div>
       <div class="listing-price-col">
         <div class="listing-price">SGD ${t.resalePrice}</div>
         <div class="listing-orig">Face: SGD ${base}</div>
-        <button class="btn btn-sm btn-black" onclick='openBuy(${JSON.stringify(t).replace(/'/g,"&#39;")})' style="border-radius:100px">Buy Now</button>
+        ${actionHtml}
       </div>
     </div>`;
   }).join('');
@@ -326,11 +339,30 @@ async function confirmBuy(){
   if(!selectedListing)return;
   const btn=document.getElementById('buy-btn'); btn.disabled=true; btn.textContent='Processing…';
   try{
-    await API.resale.buy({buyerId:user.userId,ticketId:selectedListing.ticketId,concertId:selectedListing.concertId,stripeToken:'tok_visa'});
+    const result=await API.resaleTicket.purchase({buyerId:user.userId,ticketId:selectedListing.ticketId,concertId:selectedListing.concertId,stripeToken:'tok_visa'});
     closeModal('buy-modal');
     openModal('buy-success');
+    const qrWrap=document.getElementById('buy-success-qr-wrap');
+    const qrImg=document.getElementById('buy-success-qr');
+    const qrState=document.getElementById('buy-success-qr-state');
+    const qrNote=document.getElementById('buy-success-note');
+    if(result?.qrImageUrl){
+      qrImg.src=result.qrImageUrl;
+      qrWrap.style.display='block';
+      qrState.textContent=result.qrReady?'VALID QR READY':'QR PENDING';
+    } else {
+      qrWrap.style.display='none';
+    }
+    qrNote.textContent=result?.sellerQrInvalidated
+      ? "The resale service replaced the seller's QR and issued a fresh QR for your ownership record."
+      : 'The ticket was transferred. Refresh My Tickets if the QR preview does not appear immediately.';
     allListings=allListings.filter(t=>t.ticketId!==selectedListing.ticketId);
     applyFilters();
+    
+    // Auto-navigate to My Tickets with context for deterministic sync on the buyer side.
+    setTimeout(()=>{
+      window.location.href=`my-tickets.html?refreshConcert=${selectedListing.concertId}&refreshTicket=${selectedListing.ticketId}&owner=${user.userId}`;
+    }, 2500);
   }catch(e){
     document.getElementById('buy-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Purchase failed'}</div>`;
     btn.disabled=false; btn.textContent='Confirm Purchase →';
