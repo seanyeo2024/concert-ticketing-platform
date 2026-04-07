@@ -92,6 +92,9 @@
 .tkt-card.tone-pending .tkt-stub { background: rgba(245,197,24,0.12); }
 .tkt-card.tone-pending { border-left: 6px solid rgba(245,197,24,0.8); }
 
+.tkt-card.tone-cancelled .tkt-stub { background: rgba(255,107,53,0.12); }
+.tkt-card.tone-cancelled { border-left: 6px solid rgba(255,107,53,0.72); }
+
 .tkt-card.tone-closed .tkt-stub { background: rgba(130,130,130,0.11); }
 .tkt-card.tone-closed { border-left: 6px solid rgba(130,130,130,0.65); }
 
@@ -130,6 +133,7 @@
 .policy-dot.resale-locked { background: rgba(124,77,255,0.9); }
 .policy-dot.market { background: rgba(240,62,138,0.9); }
 .policy-dot.pending { background: rgba(245,197,24,0.95); }
+.policy-dot.cancelled { background: rgba(255,107,53,0.92); }
 .policy-dot.closed { background: rgba(130,130,130,0.9); }
 
 .tkt-body { padding: 20px 24px; }
@@ -192,6 +196,7 @@
       <span class="policy-chip"><span class="policy-dot resale-locked"></span>Resale-bought (resale locked)</span>
       <span class="policy-chip"><span class="policy-dot market"></span>Listed on resale market</span>
       <span class="policy-chip"><span class="policy-dot pending"></span>Pending transaction</span>
+      <span class="policy-chip"><span class="policy-dot cancelled"></span>Cancelled by organizer (inactive)</span>
       <span class="policy-chip"><span class="policy-dot closed"></span>Closed lifecycle (used/refunded)</span>
     </div>
     <div id="ticket-list">
@@ -320,7 +325,8 @@ function switchTab(tab,el){
 }
 
 function policyToneForTicket(ticket,isResaleOwned){
-  if(ticket.status==='USED'||ticket.status==='REFUNDED') return 'tone-closed';
+  if(ticket.status==='REFUNDED') return ticket.isResalePayout ? 'tone-closed' : 'tone-cancelled';
+  if(ticket.status==='USED') return 'tone-closed';
   if(ticket.status==='PENDING'||ticket.status==='RESALE_PENDING') return 'tone-pending';
   if(ticket.status==='RESALE_LISTED') return 'tone-market';
   if(isResaleOwned) return 'tone-resale-locked';
@@ -341,6 +347,7 @@ function render(){
   wrap.innerHTML=list.map(t=>{
     const isResaleOwned=resaleOwnedTicketIds.has(t.ticketId);
     const toneClass=policyToneForTicket(t,isResaleOwned);
+    const showResaleLockNotice = activeTab==='upcoming' && isResaleOwned;
     return `
     <div class="tkt-card ${toneClass}">
       <div class="tkt-stub">
@@ -352,11 +359,12 @@ function render(){
         <div class="tkt-meta">
           <span>🪑 ${t.seatNumber}</span>
           <span>🆔 ${t.ticketId}</span>
-          ${isResaleOwned?`<span style="color:var(--pink);font-weight:700">Resale ticket · Cannot be resold</span>`:''}
+          ${showResaleLockNotice?`<span style="color:var(--pink);font-weight:700">Resale ticket · Cannot be resold</span>`:''}
+          ${t.status==='REFUNDED'&&!t.isResalePayout?`<span style="color:var(--orange);font-weight:700">Cancelled by organizer (inactive)</span>`:''}
           ${t.resalePrice?`<span style="color:var(--pink);font-weight:700">Listed @ SGD ${t.resalePrice}</span>`:''}
           ${t.isResalePayout?`<span style="color:var(--teal);font-weight:700">Resale payout received</span>`:''}
         </div>
-        ${Util.tag(t.status)}${isResaleOwned?` <span class="tag tag-resale">RESALE TICKET</span>`:''}
+        ${Util.tag(t.status)}${t.status==='REFUNDED'&&!t.isResalePayout?` <span class="tag tag-cancelled">CANCELLED</span>`:''}${showResaleLockNotice?` <span class="tag tag-resale">RESALE TICKET</span>`:''}
       </div>
       <div class="tkt-actions">
         <div class="tkt-price">SGD ${t.purchasePrice||'—'}</div>
