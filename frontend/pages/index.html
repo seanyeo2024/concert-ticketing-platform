@@ -428,12 +428,12 @@
       </div>
     </div>
     <div class="listings-controls">
-      <div class="filter-pills">
-        <button class="filter-pill active" onclick="setFilter(this,'ALL')">All</button>
-        <button class="filter-pill" onclick="setFilter(this,'ACTIVE')">On Sale</button>
-        <button class="filter-pill" onclick="setFilter(this,'SOLD_OUT')">Sold Out</button>
-        <button class="filter-pill" onclick="setFilter(this,'POSTPONED')">Postponed</button>
-        <button class="filter-pill" onclick="setFilter(this,'CANCELLED')">Cancelled</button>
+      <div class="filter-pills" id="filter-pills">
+        <button class="filter-pill active" data-filter="ALL" onclick="setFilter(this,'ALL')">All</button>
+        <button class="filter-pill" data-filter="ACTIVE" onclick="setFilter(this,'ACTIVE')">On Sale</button>
+        <button class="filter-pill" data-filter="SOLD_OUT" onclick="setFilter(this,'SOLD_OUT')">Sold Out</button>
+        <button class="filter-pill" data-filter="POSTPONED" onclick="setFilter(this,'POSTPONED')">Postponed</button>
+        <button class="filter-pill" data-filter="CANCELLED" onclick="setFilter(this,'CANCELLED')">Cancelled</button>
       </div>
       <div class="results-line" id="results-line">— concerts</div>
     </div>
@@ -469,7 +469,11 @@ let allConcerts=[], activeFilter='ALL';
 let isLoadingConcerts = true;
 let refreshTimer = null;
 const REFRESH_MS = 12000;
+const PAGE_SIZE = 6;
+let currentPage = 1;
 renderNav('concerts');
+const isAdmin = Auth.isAdmin();
+adjustFiltersForRole();
 
 async function load() {
   isLoadingConcerts = true;
@@ -544,7 +548,8 @@ function applyFilters() {
     `;
     return;
   }
-  const list = allConcerts.filter(c=>{
+  const filtered = allConcerts.filter(c=>{
+    if (!isAdmin && c.status === 'CANCELLED') return false;
     const fOk = activeFilter==='ALL'||c.status===activeFilter;
     const artist = (c.artistName || '').toLowerCase();
     const concert = (c.name || '').toLowerCase();
@@ -552,13 +557,19 @@ function applyFilters() {
     const sOk = !q||artist.includes(q)||concert.includes(q)||venue.includes(q);
     return fOk&&sOk;
   });
-  document.getElementById('results-line').textContent = `${list.length} concert${list.length!==1?'s':''}`;
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const pageList = filtered.slice(start, start + PAGE_SIZE);
+  document.getElementById('results-line').textContent = `${total} concert${total!==1?'s':''}`;
   const grid = document.getElementById('concert-grid');
-  if(!list.length){
+  if(!pageList.length){
     grid.innerHTML=`<div class="empty-state"><h2>No concerts found</h2><p class="text-muted mt-16">Try adjusting your filters</p></div>`;
+    renderPager(totalPages);
     return;
   }
-  grid.innerHTML = list.map((c,i)=>{
+  grid.innerHTML = pageList.map((c,i)=>{
     const topClass = CC_TOPS[i % CC_TOPS.length];
     const totalSeats = Number(c.totalSeats || 0);
     const availableSeats = Number(c.availableSeats || 0);
@@ -585,6 +596,7 @@ function applyFilters() {
       </div>
     </div>`;
   }).join('');
+  renderPager(totalPages);
 }
 
 function renderLineup() {
@@ -607,6 +619,50 @@ function renderLineup() {
 }
 
 load();
+
+function adjustFiltersForRole(){
+  if(isAdmin) return;
+  const pills = document.getElementById('filter-pills');
+  const cancelled = pills?.querySelector('[data-filter=\"CANCELLED\"]');
+  if(cancelled) cancelled.remove();
+  if(activeFilter === 'CANCELLED') {
+    activeFilter = 'ALL';
+    const allBtn = pills?.querySelector('[data-filter=\"ALL\"]');
+    if(allBtn) setFilter(allBtn, 'ALL');
+  }
+}
+
+function renderPager(totalPages){
+  let pager = document.getElementById('concert-pager');
+  if(!pager){
+    pager = document.createElement('div');
+    pager.id = 'concert-pager';
+    pager.style.display = 'flex';
+    pager.style.gap = '10px';
+    pager.style.justifyContent = 'center';
+    pager.style.margin = '16px 0 60px';
+    document.querySelector('.concerts-grid .container')?.appendChild(pager);
+  }
+  if(totalPages <= 1){
+    pager.innerHTML = '';
+    return;
+  }
+  pager.innerHTML = `
+    <button class="btn btn-outline" ${currentPage===1?'disabled':''} onclick="prevPage()" style="border-radius:100px">← Prev</button>
+    <div style="align-self:center;font-size:0.85rem;color:#666">Page ${currentPage} of ${totalPages}</div>
+    <button class="btn btn-black" ${currentPage===totalPages?'disabled':''} onclick="nextPage()" style="border-radius:100px">Next →</button>
+  `;
+}
+
+function nextPage(){
+  currentPage += 1;
+  applyFilters();
+}
+
+function prevPage(){
+  currentPage = Math.max(1, currentPage - 1);
+  applyFilters();
+}
 </script>
 </body>
 </html>
