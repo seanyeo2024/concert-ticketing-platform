@@ -200,6 +200,18 @@ body {
     <!-- Concerts table -->
     <div class="panel" id="panel-concerts">
       <div class="section-label mb-24">All Concerts</div>
+      <div class="flex-c gap-12" style="margin-bottom:16px;align-items:flex-end">
+        <div class="form-group" style="margin:0;min-width:220px">
+          <label class="form-label">Filter by Status</label>
+          <select class="form-select" id="concert-status-filter" onchange="loadConcerts()">
+            <option value="ALL">All Status</option>
+            <option value="ACTIVE">Active</option>
+            <option value="POSTPONED">Postponed</option>
+            <option value="CANCELLED">Cancelled</option>
+            <option value="SOLD_OUT">Sold Out</option>
+          </select>
+        </div>
+      </div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Concert</th><th>Date</th><th>Venue</th><th>Avail</th><th>Status</th><th>Action</th></tr></thead>
@@ -355,7 +367,15 @@ async function loadHealth(){
 async function loadConcerts(){
   const d=await API.concerts.list();
   const cs=d.concerts||d||[];
-  document.getElementById('concerts-tbody').innerHTML=cs.map(c=>`
+  const selectedStatus=document.getElementById('concert-status-filter')?.value || 'ALL';
+  const filtered=selectedStatus==='ALL'
+    ? cs
+    : cs.filter(c=>(c.status||'').toUpperCase()===selectedStatus);
+  if(!filtered.length){
+    document.getElementById('concerts-tbody').innerHTML=`<tr><td colspan="6" style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.1rem;font-weight:700;color:#aaa">No concerts found for ${selectedStatus==='ALL'?'the selected filter':selectedStatus}.</td></tr>`;
+    return;
+  }
+  document.getElementById('concerts-tbody').innerHTML=filtered.map(c=>`
     <tr>
       <td style="font-weight:600">${c.name}</td>
       <td class="text-sm text-muted">${Util.formatDateShort(c.eventDate)}</td>
@@ -394,7 +414,15 @@ async function openConfigureFor(concertId){
   await loadConfigConcertOptions(concertId);
 }
 
-function buildConfigRow(row={}){
+function escapeAttr(value=''){
+  return String(value)
+    .replace(/&/g,'&amp;')
+    .replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
+function buildConfigRowOld(row={}){
   const name=row.categoryName||'';
   const seats=row.totalSeats||'';
   const price=row.basePrice||'';
@@ -405,6 +433,26 @@ function buildConfigRow(row={}){
     <div class="form-group" style="margin:0"><label class="form-label">Base Price</label><input class="form-input cfg-price" type="number" min="0" step="0.01" value="${price}" placeholder="98"></div>
     <div class="form-group" style="margin:0"><label class="form-label">Resale Cap</label><input class="form-input cfg-cap" type="number" min="0" step="0.01" value="${ceiling}" placeholder="145"></div>
     <button class="btn btn-sm btn-outline" onclick="this.parentElement.remove()" style="border-radius:100px">Remove</button>
+  </div>`;
+}
+
+function buildConfigRow(row={}){
+  const name=row.categoryName||'';
+  const seats=row.totalSeats||'';
+  const price=row.basePrice||'';
+  const ceiling=row.resaleCeiling||'';
+  const mode=row.mode||'new';
+  const isExisting=mode==='existing';
+  const locked= isExisting ? 'readonly' : '';
+  const action=isExisting
+    ? '<button class="btn btn-sm btn-outline" type="button" disabled style="border-radius:100px;opacity:.65;cursor:default">Existing</button>'
+    : '<button class="btn btn-sm btn-outline" type="button" onclick="this.parentElement.remove()" style="border-radius:100px">Remove</button>';
+  return `<div class="config-row" data-mode="${mode}" data-category-id="${escapeAttr(row.categoryId||'')}" data-original-name="${escapeAttr(name)}" data-original-seats="${escapeAttr(seats)}" data-original-price="${escapeAttr(price)}" data-original-cap="${escapeAttr(ceiling)}">
+    <div class="form-group" style="margin:0"><label class="form-label">Category Name</label><input class="form-input cfg-name" value="${escapeAttr(name)}" placeholder="CAT 1 - FLOOR / PIT" ${locked}></div>
+    <div class="form-group" style="margin:0"><label class="form-label">Seats</label><input class="form-input cfg-seats" type="number" min="1" value="${escapeAttr(seats)}" placeholder="1000" ${locked}></div>
+    <div class="form-group" style="margin:0"><label class="form-label">Base Price</label><input class="form-input cfg-price" type="number" min="0" step="0.01" value="${escapeAttr(price)}" placeholder="98"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">Resale Cap</label><input class="form-input cfg-cap" type="number" min="0" step="0.01" value="${escapeAttr(ceiling)}" placeholder="145"></div>
+    ${action}
   </div>`;
 }
 
@@ -666,6 +714,183 @@ async function loadConcertPays(){
   document.getElementById('pays-list').innerHTML=pays.length
     ?`<div class="table-wrap"><table><thead><tr><th>Payment ID</th><th>User</th><th>Type</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${pays.map(p=>`<tr><td class="text-sm">${p.paymentId}</td><td class="text-sm">${p.userId}</td><td>${Util.tag(p.type)}</td><td>SGD ${p.amount}</td><td>${Util.tag(p.status)}</td><td class="text-xs text-muted">${Util.formatDateShort(p.createdAt)}</td></tr>`).join('')}</tbody></table></div>`
     :`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No payments</div>`;
+}
+
+async function loadConfigPreview(){
+  const concertId=document.getElementById('cfg-concert').value;
+  const select=document.getElementById('cfg-concert');
+  const rows=document.getElementById('config-rows');
+  rows.innerHTML='';
+  document.getElementById('config-alert').innerHTML='';
+  if(!concertId){
+    select.dataset.existingCount='0';
+    document.getElementById('cfg-preview').textContent='Choose a concert to configure its categories.';
+    return;
+  }
+  const concert=await API.concerts.get(concertId);
+  let categories=[];
+  let prices=[];
+  try{
+    const [seatRes, priceRes]=await Promise.all([
+      API.concerts.seats(concertId),
+      API.pricing.list(concertId),
+    ]);
+    categories=seatRes.categories||[];
+    prices=priceRes.prices||[];
+  }catch(e){
+    categories=[];
+    prices=[];
+  }
+  select.dataset.existingCount=String(categories.length);
+  document.getElementById('cfg-preview').textContent=categories.length
+    ? `${concert.name} already has ${categories.length} category(ies). Existing values are loaded below. Click + Add Category to add more.`
+    : `${concert.name} currently has no categories configured. Click + Add Category to start configuring it.`;
+  categories.forEach(category=>{
+    const price=prices.find(entry=>entry.categoryId===category.categoryId) || {};
+    addConfigRow({
+      ...category,
+      basePrice: price.basePrice ?? category.basePrice ?? '',
+      resaleCeiling: price.resaleCeiling ?? '',
+      mode:'existing',
+    });
+  });
+}
+
+async function configureConcert(){
+  const concertId=document.getElementById('cfg-concert').value;
+  if(!concertId){toast('Select a concert first','warning');return;}
+  const concert=await API.concerts.get(concertId);
+  const effectiveFrom=toMysqlDateTime(concert.eventDate);
+  if(!effectiveFrom){
+    document.getElementById('config-alert').innerHTML='<div class="alert alert-danger">This concert has an invalid event date for pricing. Use a year of 1000 or later, then try again.</div>';
+    toast('Concert date is invalid for pricing','error');
+    return;
+  }
+  const existingCount=Number(document.getElementById('cfg-concert').dataset.existingCount || '0');
+  const rows=[...document.querySelectorAll('#config-rows .config-row')];
+  if(!rows.length){
+    document.getElementById('config-alert').innerHTML='<div class="alert alert-success">No configuration changes to save.</div>';
+    return;
+  }
+  const existingRows=rows.filter(row=>row.dataset.mode==='existing');
+  const newRows=rows.filter(row=>row.dataset.mode!=='existing');
+  const filledRows=newRows.filter(row=>{
+    const name=row.querySelector('.cfg-name').value.trim();
+    const seats=row.querySelector('.cfg-seats').value.trim();
+    const price=row.querySelector('.cfg-price').value.trim();
+    const cap=row.querySelector('.cfg-cap').value.trim();
+    return name || seats || price || cap;
+  });
+  const existingUpdates=existingRows
+    .map(row=>({
+      row,
+      categoryId: row.dataset.categoryId,
+      basePrice: Number(row.querySelector('.cfg-price').value),
+      resaleCeiling: row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
+      originalBasePrice: row.dataset.originalPrice === '' ? null : Number(row.dataset.originalPrice),
+      originalResaleCeiling: row.dataset.originalCap === '' ? null : Number(row.dataset.originalCap),
+    }))
+    .filter(item=>item.basePrice !== item.originalBasePrice || item.resaleCeiling !== item.originalResaleCeiling);
+
+  const categories=filledRows.map((row, index)=>({
+    categoryId:`CAT-${concertId.slice(-6)}-${String(existingCount+index+1).padStart(2,'0')}`,
+    categoryName:row.querySelector('.cfg-name').value.trim(),
+    totalSeats:Number(row.querySelector('.cfg-seats').value),
+    availableSeats:Number(row.querySelector('.cfg-seats').value),
+    basePrice:Number(row.querySelector('.cfg-price').value),
+    resaleCeiling:row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
+  }));
+
+  if(categories.some(c=>!c.categoryName || !Number.isFinite(c.totalSeats) || c.totalSeats <= 0 || !Number.isFinite(c.basePrice) || c.basePrice < 0)){
+    toast('Each category needs a name, positive seats, and base price','warning');
+    return;
+  }
+  if(categories.some(c=>c.resaleCeiling !== null && c.resaleCeiling < c.basePrice)){
+    toast('Resale cap must be greater than or equal to base price','warning');
+    return;
+  }
+  if(existingUpdates.some(c=>!Number.isFinite(c.basePrice) || c.basePrice < 0)){
+    toast('Existing categories need a valid base price','warning');
+    return;
+  }
+  if(existingUpdates.some(c=>c.resaleCeiling !== null && (!Number.isFinite(c.resaleCeiling) || c.resaleCeiling < c.basePrice))){
+    toast('Existing resale cap must be greater than or equal to base price','warning');
+    return;
+  }
+  if(!categories.length && !existingUpdates.length){
+    document.getElementById('config-alert').innerHTML='<div class="alert alert-success">No configuration changes to save.</div>';
+    return;
+  }
+
+  const tickets=categories.flatMap(category=>{
+    const prefix=slugifyCategory(category.categoryName).slice(0,6);
+    return Array.from({length: category.totalSeats}, (_, index)=>({
+      concertId,
+      categoryId: category.categoryId,
+      seatNumber: makeSeatLabel(prefix, index),
+    }));
+  });
+
+  const btn=document.getElementById('cfg-save-btn');
+  btn.disabled=true;
+  btn.textContent='Saving...';
+  try{
+    if(existingUpdates.length){
+      await Promise.all(existingUpdates.map(item=>API.pricing.update(concertId,item.categoryId,{
+        basePrice: item.basePrice,
+        resaleCeiling: item.resaleCeiling,
+        effectiveTo: null,
+      })));
+    }
+
+    if(categories.length){
+      await API.concerts.createSeats(concertId,{ categories: categories.map(c=>({
+        categoryId:c.categoryId,
+        categoryName:c.categoryName,
+        totalSeats:c.totalSeats,
+        availableSeats:c.availableSeats,
+        basePrice:c.basePrice,
+      }))});
+
+      await Promise.all(categories.map(category=>API.pricing.create(concertId,{
+        categoryId: category.categoryId,
+        basePrice: category.basePrice,
+        resaleCeiling: category.resaleCeiling,
+        currency: concert.currency || 'SGD',
+        effectiveFrom,
+      })));
+
+      const ticketCreate = await API.tickets.create({ tickets });
+      const liveTicketsRes = await API.tickets.list(concertId,'ALL');
+      const liveTickets = (liveTicketsRes.tickets || []).filter(t => categories.some(c => c.categoryId === t.categoryId));
+      const expectedByCategory = countBy(tickets, 'categoryId');
+      const liveByCategory = countBy(liveTickets, 'categoryId');
+      const missingCategories = categories.filter(c => (liveByCategory[c.categoryId] || 0) < (expectedByCategory[c.categoryId] || 0));
+
+      if ((ticketCreate.created || 0) < tickets.length || missingCategories.length) {
+        const details = missingCategories.length
+          ? ` Missing inventory for: ${missingCategories.map(c => c.categoryName).join(', ')}.`
+          : '';
+        throw new Error(`Ticket inventory verification failed.${details}`);
+      }
+    }
+
+    const messages=[];
+    if(existingUpdates.length) messages.push(`updated ${existingUpdates.length} existing category pricing rule(s)`);
+    if(categories.length) messages.push(`configured ${categories.length} new category(ies) and generated ${tickets.length} tickets`);
+    document.getElementById('config-alert').innerHTML=`<div class="alert alert-success">${messages.join('; ')}.</div>`;
+    toast('Concert configuration saved','success');
+    loadDashboard();
+    loadConcerts();
+    loadCancelOptions();
+    loadConfigConcertOptions(concertId);
+  }catch(e){
+    document.getElementById('config-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Configuration failed'}</div>`;
+    toast(e.message||'Configuration failed','error');
+  }finally{
+    btn.disabled=false;
+    btn.textContent='Save Configuration ->';
+  }
 }
 
 loadDashboard();
