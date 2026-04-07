@@ -224,6 +224,7 @@ const user=Auth.require(); renderNav();
 const concertId=Util.getParam('id'), catId=Util.getParam('cat');
 if(!concertId) window.location.href='index.html';
 let selectedTicket=null, currentCat=catId, allTickets=[], priceData=null, concert=null, categories=[];
+let isLoadingSeats = true;
 const queueSessionStorageKey=`ctms_queue_session_${concertId}_${user?.userId||'guest'}`;
 
 function getQueueSession(){
@@ -236,6 +237,9 @@ function getQueueSession(){
 
 async function init(){
   try{
+    document.getElementById('cat-toggle').innerHTML='<div style="font-size:0.82rem;color:#888">Loading categories…</div>';
+    isLoadingSeats = true;
+    renderMap();
     concert=await API.concerts.get(concertId);
     document.getElementById('o-concert').textContent=concert.name;
     const catRes=await API.concerts.seats(concertId);
@@ -253,6 +257,7 @@ async function init(){
     await loadCat(currentCat);
     await loadPrice();
   }catch{
+    isLoadingSeats = false;
     document.getElementById('cat-toggle').innerHTML='';
     document.getElementById('seat-map').innerHTML=`<div style="text-align:center;padding:60px;font-family:var(--font-display);font-size:2rem;font-weight:900;color:#aaa">Could not load live seat inventory</div>`;
     document.getElementById('pay-btn').disabled=true;
@@ -262,11 +267,14 @@ async function init(){
 
 async function loadCat(cid){
   currentCat=cid;
+  isLoadingSeats = true;
+  renderMap();
   const d=await API.tickets.list(concertId,'AVAILABLE');
   allTickets=(d.tickets||[]).filter(t=>!cid||t.categoryId===cid);
   selectedTicket=null;
   document.getElementById('o-seat').textContent='—';
   document.getElementById('pay-btn').disabled=true;
+  isLoadingSeats = false;
   renderMap();
 }
 
@@ -297,6 +305,13 @@ async function changeCat(cid,el){
 
 function renderMap(){
   const map=document.getElementById('seat-map');
+  if(isLoadingSeats){
+    map.innerHTML=`
+      <div class="skel" style="height:200px;width:100%;border-radius:var(--radius)"></div>
+      <div style="margin-top:14px;color:#666;font-size:0.85rem;text-align:center">Loading seats…</div>
+    `;
+    return;
+  }
   const seats=[...allTickets].sort((a,b)=>String(a.seatNumber).localeCompare(String(b.seatNumber), undefined, { numeric:true }));
   if(!seats.length){
     map.innerHTML=`<div style="text-align:center;padding:60px;font-family:var(--font-display);font-size:2rem;font-weight:900;color:#aaa">No seats available in this category</div>`;

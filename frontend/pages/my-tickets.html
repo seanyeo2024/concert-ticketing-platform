@@ -244,6 +244,7 @@
 <script>
 const user=Auth.require(); renderNav('tickets');
 let allTickets=[], refundedHistory=[], activeTab='upcoming', resaleTarget=null;
+let isLoadingTickets = true;
 const STATUS_TABS={ upcoming:['CONFIRMED','PENDING'], past:['USED'], reselling:['RESALE_LISTED','RESALE_PENDING'], refunded:['REFUNDED'], all:null };
 let concertIndex={};
 let resaleOwnedTicketIds=new Set();
@@ -270,6 +271,7 @@ async function syncTransferredTicket() {
 }
 
 async function load(){
+  isLoadingTickets = true;
   allTickets=SEED.tickets.filter(t=>t.ownerId===user.userId);
   refundedHistory=[];
   resaleOwnedTicketIds=new Set();
@@ -315,8 +317,12 @@ async function load(){
 
     await syncTransferredTicket();
 
+    isLoadingTickets = false;
     render();
-  }catch{}
+  }catch{
+    isLoadingTickets = false;
+    render();
+  }
 }
 
 function switchTab(tab,el){
@@ -340,6 +346,15 @@ function render(){
     ? [...baseList, ...refundedHistory].sort((a,b)=>new Date(b.payoutAt||b.updatedAt||0)-new Date(a.payoutAt||a.updatedAt||0))
     : baseList;
   const wrap=document.getElementById('ticket-list');
+  if(isLoadingTickets){
+    wrap.innerHTML=`
+      <div class="skel" style="height:110px;margin-bottom:12px;border-radius:var(--radius-lg)"></div>
+      <div class="skel" style="height:110px;margin-bottom:12px;border-radius:var(--radius-lg)"></div>
+      <div class="skel" style="height:110px;border-radius:var(--radius-lg)"></div>
+      <div style="margin-top:16px;color:#666;font-size:0.85rem">Loading your tickets…</div>
+    `;
+    return;
+  }
   if(!list.length){
     wrap.innerHTML=`<div class="empty-state"><h2>No tickets here</h2><p class="mt-16 text-muted">${activeTab==='upcoming'?'Browse concerts to find your next show.':'Nothing to show in this tab.'}</p>${activeTab==='upcoming'?'<a href="index.html" class="btn btn-black mt-24" style="border-radius:100px">Browse Lineup →</a>':''}</div>`;
     return;

@@ -465,14 +465,24 @@
 <script>
 const CC_TOPS = ['cc-top-blue','cc-top-teal','cc-top-yellow','cc-top-pink','cc-top-black'];
 let allConcerts=[], activeFilter='ALL';
+let isLoadingConcerts = true;
 renderNav('concerts');
 
 async function load() {
-  const d = await API.concerts.list();
-  allConcerts = d.concerts || d || [];
-  document.getElementById('hero-concert-count').textContent = String(allConcerts.length).padStart(2,'0');
+  isLoadingConcerts = true;
   applyFilters();
   renderLineup();
+  try {
+    const d = await API.concerts.list();
+    allConcerts = d.concerts || d || [];
+    document.getElementById('hero-concert-count').textContent = String(allConcerts.length).padStart(2,'0');
+  } catch {
+    allConcerts = [];
+  } finally {
+    isLoadingConcerts = false;
+    applyFilters();
+    renderLineup();
+  }
 }
 
 function setFilter(el, f) {
@@ -482,6 +492,16 @@ function setFilter(el, f) {
 
 function applyFilters() {
   const q=(document.getElementById('search-input')?.value||'').toLowerCase();
+  if(isLoadingConcerts){
+    document.getElementById('results-line').textContent = 'Loading concerts…';
+    document.getElementById('concert-grid').innerHTML = `
+      <div class="concert-card"><div class="concert-card-top skel" style="height:200px"></div><div class="concert-card-body"><div class="skel" style="height:28px;width:70%;margin-bottom:10px"></div><div class="skel" style="height:14px;width:50%"></div></div></div>
+      <div class="concert-card"><div class="concert-card-top skel" style="height:200px"></div><div class="concert-card-body"><div class="skel" style="height:28px;width:70%;margin-bottom:10px"></div><div class="skel" style="height:14px;width:50%"></div></div></div>
+      <div class="concert-card"><div class="concert-card-top skel" style="height:200px"></div><div class="concert-card-body"><div class="skel" style="height:28px;width:70%;margin-bottom:10px"></div><div class="skel" style="height:14px;width:50%"></div></div></div>
+      <div style="margin-top:16px;color:#666;font-size:0.85rem;grid-column:1/-1">Loading the lineup…</div>
+    `;
+    return;
+  }
   const list = allConcerts.filter(c=>{
     const fOk = activeFilter==='ALL'||c.status===activeFilter;
     const artist = (c.artistName || '').toLowerCase();
@@ -527,6 +547,10 @@ function applyFilters() {
 
 function renderLineup() {
   const row = document.getElementById('lineup-row');
+  if(isLoadingConcerts){
+    row.innerHTML = '<div class="lineup-entry"><div class="lineup-artist" style="color:#555">Loading…</div></div>';
+    return;
+  }
   const items = allConcerts.slice(0,4);
   if(!items.length){row.innerHTML='<div class="lineup-entry"><div class="lineup-artist" style="color:#555">No concerts</div></div>';return;}
   row.innerHTML = items.map(c=>`

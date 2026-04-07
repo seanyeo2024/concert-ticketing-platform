@@ -287,11 +287,16 @@
 <script src="../assets/js/api.js"></script>
 <script>
 let concertId, concert, categories=[], prices=[], selectedCat=null;
+let isLoadingConcert = true;
+let isLoadingCats = true;
 renderNav('concerts');
 
 async function init(){
   concertId=Util.getParam('id');
   if(!concertId){window.location.href='index.html';return;}
+  isLoadingConcert = true;
+  isLoadingCats = true;
+  renderCats();
   try{
     concert=await API.concerts.get(concertId);
     if(!concert){window.location.href='index.html';return;}
@@ -306,10 +311,17 @@ async function init(){
     }
     categories=catRes.categories||[];
     prices=priceRes.prices||[];
+    isLoadingConcert = false;
+    isLoadingCats = false;
     renderCats();
     const minPrice=Math.min(...prices.map(p=>p.basePrice).filter(Boolean));
     if(isFinite(minPrice)) document.getElementById('b-price-from').textContent=`SGD ${minPrice}`;
-  }catch(e){toast('Could not load concert','error');}
+  }catch(e){
+    isLoadingConcert = false;
+    isLoadingCats = false;
+    renderCats();
+    toast('Could not load concert','error');
+  }
 }
 
 function renderBanner(){
@@ -335,6 +347,16 @@ function renderBanner(){
 
 function renderCats(){
   const list=document.getElementById('cat-list');
+  if(isLoadingCats){
+    list.innerHTML=`
+      <div class="skel" style="height:80px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
+      <div class="skel" style="height:80px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
+      <div class="skel" style="height:80px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
+      <div class="skel" style="height:80px;border-radius:var(--radius-lg)"></div>
+      <div style="margin-top:14px;color:#666;font-size:0.85rem">Loading ticket categories…</div>
+    `;
+    return;
+  }
   if(!categories.length){
     list.innerHTML=`<div class="alert alert-warning">Ticket categories have not been configured for this concert yet.</div>`;
     document.getElementById('order-empty').classList.add('hidden');
