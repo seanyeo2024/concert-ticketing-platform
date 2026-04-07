@@ -70,9 +70,10 @@ def purchase(concert_id):
     user_id   = data.get("userId")
     ticket_id = data.get("ticketId")
     seat_number = data.get("seatNumber")
+    session_token = data.get("sessionToken")
     stripe_token = data.get("stripeToken", "tok_simulated")
-    if not all([user_id, ticket_id]):
-        return err("MISSING_FIELDS", "userId and ticketId are required")
+    if not all([user_id, ticket_id, session_token]):
+        return err("MISSING_FIELDS", "userId, ticketId, and sessionToken are required")
 
     # Step 1 — verify queue window is WINDOW_GRANTED and not expired
     q = requests.get(f"{QUEUE_URL}/queue/v1/queue/{concert_id}/{user_id}", timeout=5)
@@ -101,6 +102,30 @@ def purchase(concert_id):
             "message": "No active purchase window for this user",
             "queueStatusCode": q.status_code,
             "queueResponse": queue_payload,
+            "service": "purchase_window",
+            "timestamp": datetime.utcnow().isoformat()
+        }}), 403
+
+    session_check = requests.post(
+        f"{QUEUE_URL}/queue/v1/session/validate",
+        json={"concertId": concert_id, "userId": user_id, "sessionToken": session_token},
+        timeout=5,
+    )
+    if session_check.status_code == 410:
+        return jsonify({"error": {
+            "code": "WINDOW_EXPIRED",
+            "message": "Purchase window expired; rejoin the queue",
+            "queueStatusCode": session_check.status_code,
+            "queueResponse": safe_json(session_check),
+            "service": "purchase_window",
+            "timestamp": datetime.utcnow().isoformat()
+        }}), 410
+    if session_check.status_code != 200:
+        return jsonify({"error": {
+            "code": "INVALID_QUEUE_SESSION",
+            "message": "Queue session token is invalid",
+            "queueStatusCode": session_check.status_code,
+            "queueResponse": safe_json(session_check),
             "service": "purchase_window",
             "timestamp": datetime.utcnow().isoformat()
         }}), 403
@@ -157,9 +182,13 @@ def purchase(concert_id):
 
     # Step 7 — mark queue COMPLETED (non-critical)
     try:
-        requests.put(f"{QUEUE_URL}/queue/v1/queue/{concert_id}/{user_id}",
-                     json={"status": "COMPLETED"}, timeout=5)
-    except Exception: pass
+        requests.post(
+            f"{QUEUE_URL}/queue/v1/session/consume",
+            json={"concertId": concert_id, "userId": user_id, "sessionToken": session_token},
+            timeout=5,
+        )
+    except Exception:
+        pass
 
     # Step 8 — generate QR (non-critical)
     qr_data = {}

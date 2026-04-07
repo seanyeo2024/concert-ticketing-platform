@@ -259,12 +259,33 @@ const user=Auth.require(); renderNav();
 const concertId=Util.getParam('id'), catId=Util.getParam('cat');
 if(!concertId) window.location.href='index.html';
 let poll, cdInterval, windowExpires, expiredHandled=false;
+const queueSessionStorageKey=`ctms_queue_session_${concertId}_${user?.userId||'guest'}`;
+
+function parseUtcDate(value){
+  if(!value) return null;
+  const normalized=value.endsWith('Z')?value:`${value}Z`;
+  const dt=new Date(normalized);
+  return Number.isNaN(dt.getTime())?null:dt;
+}
 
 function showPhase(n){ document.querySelectorAll('.phase').forEach(p=>p.classList.remove('active')); document.getElementById(`phase-${n}`)?.classList.add('active'); }
 function stopTimers(){ clearInterval(poll); clearInterval(cdInterval); poll=null; cdInterval=null; }
+function persistQueueSession(payload){
+  if(!payload?.sessionToken){
+    sessionStorage.removeItem(queueSessionStorageKey);
+    return;
+  }
+  sessionStorage.setItem(queueSessionStorageKey, JSON.stringify({
+    sessionToken: payload.sessionToken,
+    sessionExpiresAt: payload.sessionExpiresAt || payload.windowExpiresAt,
+    concertId,
+    userId: user.userId,
+  }));
+}
 function showExpiredState(message='Your window expired. Rejoin the queue to try again.'){
   if(expiredHandled) return;
   expiredHandled=true;
+  sessionStorage.removeItem(queueSessionStorageKey);
   stopTimers();
   const box=document.querySelector('#phase-expired p');
   if(box) box.textContent=message;
@@ -287,9 +308,9 @@ async function pollQueue(){
     const q=await API.queue.status(concertId,user.userId);
     if(q.status==='EXPIRED'){ showExpiredState(); return; }
     if(q.status==='WINDOW_GRANTED'){
+      persistQueueSession(q);
       clearInterval(poll);
-      poll=null;
-      windowExpires=new Date(q.windowExpiresAt||(Date.now()+600000));
+      windowExpires=parseUtcDate(q.windowExpiresAt)||new Date(Date.now()+600000);
       document.getElementById('expires-time').textContent=windowExpires.toLocaleTimeString('en-SG');
       showPhase('window'); startCountdown(); return;
     }
@@ -320,11 +341,12 @@ function startCountdown(){
 }
 
 function goSelect(){ window.location.href=`seat-select.html?id=${concertId}&cat=${catId||''}`; }
-async function leaveQ(){ if(!confirm('Leave the queue? You will lose your position.'))return; stopTimers(); await API.queue.leave(concertId,user.userId); window.location.href=`concert-detail.html?id=${concertId}`; }
+async function leaveQ(){ if(!confirm('Leave the queue? You will lose your position.'))return; sessionStorage.removeItem(queueSessionStorageKey); stopTimers(); await API.queue.leave(concertId,user.userId); window.location.href=`concert-detail.html?id=${concertId}`; }
 async function rejoin(){
   try{
     stopTimers();
     expiredHandled=false;
+    sessionStorage.removeItem(queueSessionStorageKey);
     await API.queue.join(concertId,{userId:user.userId});
     showPhase('waiting');
     startPoll();

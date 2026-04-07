@@ -599,7 +599,9 @@ async function execCancel(){
 }
 
 async function createConcert(){
-  const payload={name:document.getElementById('c-name').value,artistName:document.getElementById('c-artist').value,venue:document.getElementById('c-venue').value,eventDate:document.getElementById('c-date').value,currency:document.getElementById('c-cur').value,status:'ACTIVE'};
+  const pad=n=>String(n).padStart(6,'0');
+  const concertId='CONC-'+pad(Date.now()%1000000);
+  const payload={concertId,name:document.getElementById('c-name').value,artistName:document.getElementById('c-artist').value,venue:document.getElementById('c-venue').value,eventDate:document.getElementById('c-date').value,currency:document.getElementById('c-cur').value,status:'ACTIVE'};
   if(!payload.name||!payload.artistName||!payload.venue||!payload.eventDate){toast('Fill in all fields','warning');return;}
   if(!toMysqlDateTime(payload.eventDate)){
     document.getElementById('create-alert').innerHTML='<div class="alert alert-danger">Use a valid date with year 1000 or later.</div>';

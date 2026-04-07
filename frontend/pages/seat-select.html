@@ -224,6 +224,15 @@ const user=Auth.require(); renderNav();
 const concertId=Util.getParam('id'), catId=Util.getParam('cat');
 if(!concertId) window.location.href='index.html';
 let selectedTicket=null, currentCat=catId, allTickets=[], priceData=null, concert=null, categories=[];
+const queueSessionStorageKey=`ctms_queue_session_${concertId}_${user?.userId||'guest'}`;
+
+function getQueueSession(){
+  try{
+    return JSON.parse(sessionStorage.getItem(queueSessionStorageKey)||'null');
+  }catch{
+    return null;
+  }
+}
 
 async function init(){
   try{
@@ -315,6 +324,12 @@ function selectSeat(tid,sn){
 async function pay(){
   if(!selectedTicket){toast('Select a seat first','warning');return;}
   if(!priceData){toast('Price data is unavailable for this category','warning');return;}
+  const queueSession=getQueueSession();
+  if(!queueSession?.sessionToken){
+    toast('Your queue session is missing. Please rejoin the queue.','warning');
+    window.location.href=`queue.html?id=${concertId}&cat=${currentCat||''}`;
+    return;
+  }
   const btn=document.getElementById('pay-btn'); btn.disabled=true; btn.textContent='Processing…';
   try{
     const liveTicket=await API.tickets.get(concertId, selectedTicket.ticketId);
@@ -331,8 +346,10 @@ async function pay(){
       userId:user.userId,
       ticketId:liveTicket.ticketId,
       seatNumber:liveTicket.seatNumber || selectedTicket.seatNumber,
+      sessionToken:queueSession.sessionToken,
       stripeToken:'tok_visa_simulated'
     });
+    sessionStorage.removeItem(queueSessionStorageKey);
     document.getElementById('c-ticket').textContent=r.ticketId||selectedTicket.ticketId;
     document.getElementById('c-seat').textContent=selectedTicket.seatNumber;
     document.getElementById('c-pay').textContent=`${Util.formatPrice(r.amount||priceData?.basePrice||0,'SGD')} · ${r.paymentId}`;

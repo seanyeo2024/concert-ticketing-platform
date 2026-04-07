@@ -1,6 +1,33 @@
-version: "3.8"
-
 services:
+
+  kong:
+    image: kong:3.7
+    container_name: ctms_kong
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+    ports:
+      - "${KONG_PROXY_PORT}:8000"
+      - "${KONG_ADMIN_PORT}:8001"
+    volumes:
+      - ./infra/kong/kong.yml:/usr/local/kong/declarative/kong.yml:ro
+    depends_on:
+      - pricing
+      - queue
+      - ticket_inventory
+      - payment
+      - qr
+      - notification
+      - purchase_window
+      - resale_purchase
+      - resale_ticket
+      - concert_cancellation
+    restart: unless-stopped
 
   # ── Infrastructure ──────────────────────────────────────────────────────────
 
@@ -8,8 +35,8 @@ services:
     image: rabbitmq:3.12-management
     container_name: ctms_rabbitmq
     ports:
-      - "5672:5672"       # AMQP
-      - "15672:15672"     # Management UI  →  http://localhost:15672
+      - "${RABBITMQ_AMQP_HOST_PORT}:5672"       # AMQP
+      - "${RABBITMQ_MANAGEMENT_HOST_PORT}:15672"     # Management UI
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
@@ -22,25 +49,19 @@ services:
       timeout: 5s
       retries: 5
 
-  # One MySQL instance per atomic service (each owns its own DB)
-  mysql_concert:
-    image: mysql:8.0
-    container_name: ctms_mysql_concert
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: concert_db
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+  redis:
+    image: redis:7-alpine
+    container_name: ctms_redis
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "3300:3306"
-    volumes:
-      - mysql_concert_data:/var/lib/mysql
-      - ./database/seeds/concert_db.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+      - "${REDIS_HOST_PORT}:6379"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # ── Databases ───────────────────────────────────────────────────────────────
 
   mysql_pricing:
     image: mysql:8.0
@@ -158,22 +179,6 @@ services:
 
   # ── Atomic Services ─────────────────────────────────────────────────────────
 
-  concert:
-    build: ./services/concert
-    container_name: ctms_concert
-    ports:
-      - "${CONCERT_PORT}:5000"
-    environment:
-      MYSQL_HOST: mysql_concert
-      MYSQL_PORT: 3306
-      MYSQL_DATABASE: concert_db
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    depends_on:
-      mysql_concert:
-        condition: service_healthy
-    restart: unless-stopped
-
   pricing:
     build: ./services/pricing
     container_name: ctms_pricing
@@ -187,8 +192,6 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       CONCERT_SERVICE_URL: ${CONCERT_SERVICE_URL}
     depends_on:
-      concert:
-        condition: service_started
       mysql_pricing:
         condition: service_healthy
     restart: unless-stopped
@@ -199,23 +202,20 @@ services:
     ports:
       - "${QUEUE_PORT}:5002"
     environment:
-      MYSQL_HOST: mysql_queue
-      MYSQL_PORT: 3306
-      MYSQL_DATABASE: queue_db
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       RABBITMQ_HOST: ${RABBITMQ_HOST}
       RABBITMQ_PORT: ${RABBITMQ_PORT}
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
       PURCHASE_WINDOW_SECONDS: ${PURCHASE_WINDOW_SECONDS}
       CONCERT_SERVICE_URL: ${CONCERT_SERVICE_URL}
       MAX_ACTIVE_WINDOWS: ${MAX_ACTIVE_WINDOWS}
     depends_on:
-      mysql_queue:
-        condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
 
@@ -323,7 +323,6 @@ services:
       - ticket_inventory
       - payment
       - qr
-      - concert
       - rabbitmq
     restart: unless-stopped
 
@@ -347,7 +346,6 @@ services:
       - pricing
       - payment
       - qr
-      - concert
       - rabbitmq
     restart: unless-stopped
 
@@ -385,12 +383,10 @@ services:
       - ticket_inventory
       - payment
       - qr
-      - concert
       - rabbitmq
     restart: unless-stopped
 
 volumes:
-  mysql_concert_data:
   mysql_pricing_data:
   mysql_queue_data:
   mysql_ticket_data:
