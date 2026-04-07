@@ -247,6 +247,18 @@ function init(){
     :`<span class="tag">Customer</span>`;
   document.getElementById('s-name').value=user.name;
   document.getElementById('s-email').value=user.email;
+  if(user.role==='admin'){
+    document.querySelectorAll('#tab-bar .tab-btn').forEach((btn,index)=>{
+      if(index < 3) btn.remove();
+    });
+    ['overview','payments','notifications'].forEach(panel=>{
+      document.getElementById(`panel-${panel}`)?.remove();
+    });
+    const settingsBtn=document.querySelector('#tab-bar .tab-btn');
+    settingsBtn?.classList.add('active');
+    document.getElementById('panel-settings')?.classList.add('active');
+    return;
+  }
   loadActivity();
 }
 
