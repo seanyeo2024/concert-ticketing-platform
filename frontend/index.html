@@ -6,10 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Solstitix</title>
   <script>
-    window.location.replace('pages/index.html');
+    try {
+      const user = JSON.parse(localStorage.getItem('ctms_user') || 'null');
+      window.location.replace(user?.role === 'admin' ? 'pages/admin.html' : 'pages/index.html');
+    } catch {
+      window.location.replace('pages/index.html');
+    }
   </script>
 </head>
 <body>
-  <p>Redirecting to <a href="pages/index.html">pages/index.html</a>...</p>
+  <p>Redirecting to the app...</p>
 </body>
 </html>

@@ -157,6 +157,7 @@ const Auth = (() => {
     getUser()    { try { return JSON.parse(localStorage.getItem('ctms_user')); } catch { return null; } },
     isLoggedIn() { return !!localStorage.getItem('ctms_token'); },
     isAdmin()    { return this.getUser()?.role==='admin'; },
+    homePage()   { return this.isAdmin() ? 'admin.html' : 'index.html'; },
     require()    { if (!this.isLoggedIn()) { window.location.href='login.html'; return null; } return this.getUser(); },
     requireAdmin(){ const u=this.require(); if(u?.role!=='admin') { window.location.href='index.html'; return null; } return u; },
   };
@@ -177,12 +178,17 @@ function toast(msg, type='info', duration=3200) {
 /* ── Navbar ─────────────────────────────────────────────────── */
 function renderNav(active='') {
   const user = Auth.getUser();
-  const navItems = [
-    { href:'index.html',      label:'LINEUP',     key:'concerts' },
-    { href:'resale.html',     label:'RESALE',     key:'resale'   },
-    { href:'my-tickets.html', label:'MY TICKETS', key:'tickets',  auth:true },
-    { href:'admin.html',      label:'ADMIN',      key:'admin',    adminOnly:true },
-  ].filter(l=>(!l.auth||user)&&(!l.adminOnly||user?.role==='admin'));
+  const homeHref = Auth.homePage();
+  const navItems = user?.role==='admin'
+    ? [
+        { href:'admin.html', label:'ADMIN', key:'admin' },
+      ]
+    : [
+        { href:'index.html',      label:'LINEUP',     key:'concerts' },
+        { href:'resale.html',     label:'RESALE',     key:'resale'   },
+        { href:'my-tickets.html', label:'MY TICKETS', key:'tickets',  auth:true },
+        { href:'admin.html',      label:'ADMIN',      key:'admin',    adminOnly:true },
+      ].filter(l=>(!l.auth||user)&&(!l.adminOnly||user?.role==='admin'));
   const links = navItems
    .map(l=>`<a href="${l.href}" class="nav-link ${active===l.key?'active':''}">${l.label}</a>`)
    .join('');
@@ -208,7 +214,7 @@ function renderNav(active='') {
   const el = document.getElementById('navbar');
   if (el) {
     el.classList.remove('menu-open');
-    el.innerHTML = `<div class="container"><a href="index.html" class="nav-brand"><img src="../assets/logo.svg" alt="Solstitix logo" class="nav-brand-logo"> <span>Solstitix</span></a><nav class="nav-links">${links}</nav><div class="nav-actions">${userArea}</div><button class="nav-menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false"><span></span></button><div class="nav-mobile-menu"><nav class="nav-mobile-links">${mobileLinks}</nav>${mobileAccountArea}</div></div>`;
+    el.innerHTML = `<div class="container"><a href="${homeHref}" class="nav-brand"><img src="../assets/logo.svg" alt="Solstitix logo" class="nav-brand-logo"> <span>Solstitix</span></a><nav class="nav-links">${links}</nav><div class="nav-actions">${userArea}</div><button class="nav-menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false"><span></span></button><div class="nav-mobile-menu"><nav class="nav-mobile-links">${mobileLinks}</nav>${mobileAccountArea}</div></div>`;
     const toggle = el.querySelector('.nav-menu-toggle');
     const closeMenu = () => {
       el.classList.remove('menu-open');

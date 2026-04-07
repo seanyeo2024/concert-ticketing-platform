@@ -463,6 +463,7 @@
 
 <script src="../assets/js/api.js"></script>
 <script>
+if (Auth.isAdmin()) window.location.href='admin.html';
 const CC_TOPS = ['cc-top-blue','cc-top-teal','cc-top-yellow','cc-top-pink','cc-top-black'];
 let allConcerts=[], activeFilter='ALL';
 let isLoadingConcerts = true;

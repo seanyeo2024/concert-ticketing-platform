@@ -372,7 +372,7 @@ body {
 
 <script src="../assets/js/api.js"></script>
 <script>
-if (Auth.isLoggedIn()) window.location.href='index.html';
+if (Auth.isLoggedIn()) window.location.href=Auth.homePage();
 const loginRight=document.querySelector('.login-right');
 if(loginRight && window.matchMedia('(min-width: 961px)').matches){
   loginRight.addEventListener('pointermove', e => {
@@ -396,7 +396,7 @@ function doLogin(){
     try{
       const u=Auth.login(email,pw);
       toast(`Welcome back, ${u.name}!`,'success');
-      setTimeout(()=>window.location.href='index.html',600);
+      setTimeout(()=>window.location.href=Auth.homePage(),600);
     }catch(e){
       errEl.textContent='Invalid email or password. Please try again.';
       errEl.classList.remove('hidden');
