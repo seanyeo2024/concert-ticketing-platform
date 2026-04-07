@@ -94,6 +94,7 @@ const API = (() => {
       cancelAll: (cid,p)        => req(`${BASE.tickets}/tickets/${cid}/cancel-all`,'PUT',p).catch(()=>({ ticketsRefunded:0 })),
     },
     payment: {
+      config:   async () => { try { return await req(`${BASE.payment}/config`); } catch { return { stripeConfigured:false, frontendMode:'demo-fallback' }; } },
       charge:   async p  => { try { return await req(`${BASE.payment}/payment`,'POST',p); } catch { return { paymentId:`PAY-${Math.random().toString(36).slice(2,8).toUpperCase()}`, status:'SUCCESS', amount:p.amount, currency:p.currency }; } },
       refund:   async p  => { try { return await req(`${BASE.payment}/payment/refund`,'POST',p); } catch { return { paymentId:`PAY-REFUND`, type:'REFUND', status:'SUCCESS' }; } },
       byUser:   async id => { try { return await req(`${BASE.payment}/payment/user/${id}`); } catch { return { payments: SEED.payments.filter(p=>p.userId===id) }; } },
