@@ -147,6 +147,24 @@ def update_ticket(concert_id, ticket_id):
     allowed = ["status", "ownerId", "purchasePrice", "resalePrice", "resaleListingId"]
     updates = {k: data[k] for k in allowed if k in data}
     if not updates: return err("NO_FIELDS", "No updatable fields provided")
+    
+    # Validate numeric fields
+    if "purchasePrice" in updates and updates["purchasePrice"] is not None:
+        try:
+            updates["purchasePrice"] = float(updates["purchasePrice"])
+            if updates["purchasePrice"] < 0:
+                return err("INVALID_PRICE", "purchasePrice cannot be negative", 400)
+        except (ValueError, TypeError):
+            return err("INVALID_PRICE", "purchasePrice must be a number", 400)
+    
+    if "resalePrice" in updates and updates["resalePrice"] is not None:
+        try:
+            updates["resalePrice"] = float(updates["resalePrice"])
+            if updates["resalePrice"] < 0:
+                return err("INVALID_PRICE", "resalePrice cannot be negative", 400)
+        except (ValueError, TypeError):
+            return err("INVALID_PRICE", "resalePrice must be a number", 400)
+    
     set_clause = ", ".join(f"{k}=%s" for k in updates)
     values = list(updates.values()) + [int(version), ticket_id, concert_id]
     cur.execute(f"UPDATE ticket SET {set_clause}, version=version+1, updatedAt=NOW() "

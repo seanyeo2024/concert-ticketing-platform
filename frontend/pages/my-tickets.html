@@ -79,12 +79,62 @@
   text-transform: uppercase; color: #888; text-align: center;
 }
 
-/* Color accent stubs */
-.tkt-card:nth-child(5n+1) .tkt-stub { background: rgba(58,180,242,0.08); }
-.tkt-card:nth-child(5n+2) .tkt-stub { background: rgba(62,207,178,0.08); }
-.tkt-card:nth-child(5n+3) .tkt-stub { background: rgba(245,197,24,0.1); }
-.tkt-card:nth-child(5n+4) .tkt-stub { background: rgba(240,62,138,0.08); }
-.tkt-card:nth-child(5n+5) .tkt-stub { background: rgba(124,77,255,0.08); }
+/* Policy color system: each color has business meaning */
+.tkt-card.tone-primary .tkt-stub { background: rgba(58,180,242,0.1); }
+.tkt-card.tone-primary { border-left: 6px solid rgba(58,180,242,0.7); }
+
+.tkt-card.tone-resale-locked .tkt-stub { background: rgba(124,77,255,0.12); }
+.tkt-card.tone-resale-locked { border-left: 6px solid rgba(124,77,255,0.75); }
+
+.tkt-card.tone-market .tkt-stub { background: rgba(240,62,138,0.11); }
+.tkt-card.tone-market { border-left: 6px solid rgba(240,62,138,0.7); }
+
+.tkt-card.tone-pending .tkt-stub { background: rgba(245,197,24,0.12); }
+.tkt-card.tone-pending { border-left: 6px solid rgba(245,197,24,0.8); }
+
+.tkt-card.tone-cancelled .tkt-stub { background: rgba(255,107,53,0.12); }
+.tkt-card.tone-cancelled { border-left: 6px solid rgba(255,107,53,0.72); }
+
+.tkt-card.tone-closed .tkt-stub { background: rgba(130,130,130,0.11); }
+.tkt-card.tone-closed { border-left: 6px solid rgba(130,130,130,0.65); }
+
+.policy-legend {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1.5px solid rgba(17,17,17,0.09);
+  border-radius: var(--radius-lg);
+  background: var(--white);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+}
+.policy-legend-title {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #666;
+}
+.policy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: #555;
+  white-space: nowrap;
+}
+.policy-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.policy-dot.primary { background: rgba(58,180,242,0.9); }
+.policy-dot.resale-locked { background: rgba(124,77,255,0.9); }
+.policy-dot.market { background: rgba(240,62,138,0.9); }
+.policy-dot.pending { background: rgba(245,197,24,0.95); }
+.policy-dot.cancelled { background: rgba(255,107,53,0.92); }
+.policy-dot.closed { background: rgba(130,130,130,0.9); }
 
 .tkt-body { padding: 20px 24px; }
 .tkt-title {
@@ -140,6 +190,15 @@
 
 <div style="padding:48px 0 80px">
   <div class="container">
+    <div class="policy-legend">
+      <span class="policy-legend-title">Ticket Policy Colors</span>
+      <span class="policy-chip"><span class="policy-dot primary"></span>Primary purchase (resale-eligible)</span>
+      <span class="policy-chip"><span class="policy-dot resale-locked"></span>Resale-bought (resale locked)</span>
+      <span class="policy-chip"><span class="policy-dot market"></span>Listed on resale market</span>
+      <span class="policy-chip"><span class="policy-dot pending"></span>Pending transaction</span>
+      <span class="policy-chip"><span class="policy-dot cancelled"></span>Cancelled by organizer (inactive)</span>
+      <span class="policy-chip"><span class="policy-dot closed"></span>Closed lifecycle (used/refunded)</span>
+    </div>
     <div id="ticket-list">
       <div class="skel" style="height:110px;margin-bottom:12px;border-radius:var(--radius-lg)"></div>
       <div class="skel" style="height:110px;margin-bottom:12px;border-radius:var(--radius-lg)"></div>
@@ -184,12 +243,36 @@
 <script src="../assets/js/api.js"></script>
 <script>
 const user=Auth.require(); renderNav('tickets');
-let allTickets=[], activeTab='upcoming', resaleTarget=null;
+let allTickets=[], refundedHistory=[], activeTab='upcoming', resaleTarget=null;
 const STATUS_TABS={ upcoming:['CONFIRMED','PENDING'], past:['USED'], reselling:['RESALE_LISTED','RESALE_PENDING'], refunded:['REFUNDED'], all:null };
 let concertIndex={};
+let resaleOwnedTicketIds=new Set();
+
+async function syncTransferredTicket() {
+  const refreshTicketId = Util.getParam('refreshTicket');
+  const refreshConcertId = Util.getParam('refreshConcert');
+  const expectedOwner = Util.getParam('owner');
+  if (!refreshTicketId || !refreshConcertId) return;
+
+  // Poll briefly so buyer sees the transferred ticket even under short backend propagation delay.
+  for (let i = 0; i < 8; i++) {
+    try {
+      const t = await API.tickets.get(refreshConcertId, refreshTicketId);
+      if (t && t.ownerId === (expectedOwner || user.userId)) {
+        const idx = allTickets.findIndex(x=>x.ticketId===refreshTicketId);
+        if (idx >= 0) allTickets[idx] = t;
+        else allTickets.push(t);
+        return;
+      }
+    } catch {}
+    await new Promise(r=>setTimeout(r, 500));
+  }
+}
 
 async function load(){
   allTickets=SEED.tickets.filter(t=>t.ownerId===user.userId);
+  refundedHistory=[];
+  resaleOwnedTicketIds=new Set();
   concertIndex=Object.fromEntries((SEED.concerts||[]).map(c=>[c.concertId,c]));
   render();
   try{
@@ -201,7 +284,38 @@ async function load(){
     const ids=Object.keys(concertIndex);
     const res=await Promise.allSettled(ids.map(id=>API.tickets.list(id,'ALL')));
     const live=res.flatMap(r=>r.value?.tickets||[]).filter(t=>t.ownerId===user.userId);
-    if(live.length){allTickets=live;render();}
+    allTickets=live;
+
+    // Build seller-side refund history for completed resale payouts.
+    const payRes=await API.payment.byUser(user.userId);
+    resaleOwnedTicketIds=new Set(
+      (payRes.payments||[])
+        .filter(p=>p.type==='RESALE_PURCHASE'&&p.status==='SUCCESS')
+        .map(p=>p.ticketId)
+    );
+    const payouts=(payRes.payments||[]).filter(p=>p.type==='REFUND'&&p.reason==='RESALE_PAYOUT'&&p.status==='SUCCESS');
+    const payoutTickets=await Promise.allSettled(
+      payouts.map(p=>API.tickets.get(p.concertId,p.ticketId).then(t=>({payment:p,ticket:t})))
+    );
+    refundedHistory=payoutTickets.map(r=>{
+      if(r.status!=='fulfilled') return null;
+      const { payment, ticket } = r.value;
+      return {
+        ticketId: payment.ticketId,
+        concertId: payment.concertId,
+        seatNumber: ticket?.seatNumber || '—',
+        categoryId: ticket?.categoryId || 'RESALE',
+        ownerId: user.userId,
+        status: 'REFUNDED',
+        purchasePrice: payment.amount,
+        payoutAt: payment.createdAt,
+        isResalePayout: true,
+      };
+    }).filter(Boolean);
+
+    await syncTransferredTicket();
+
+    render();
   }catch{}
 }
 
@@ -210,16 +324,32 @@ function switchTab(tab,el){
   el.classList.add('active'); activeTab=tab; render();
 }
 
+function policyToneForTicket(ticket,isResaleOwned){
+  if(ticket.status==='REFUNDED') return ticket.isResalePayout ? 'tone-closed' : 'tone-cancelled';
+  if(ticket.status==='USED') return 'tone-closed';
+  if(ticket.status==='PENDING'||ticket.status==='RESALE_PENDING') return 'tone-pending';
+  if(ticket.status==='RESALE_LISTED') return 'tone-market';
+  if(isResaleOwned) return 'tone-resale-locked';
+  return 'tone-primary';
+}
+
 function render(){
   const statuses=STATUS_TABS[activeTab];
-  const list=statuses ? allTickets.filter(t=>statuses.includes(t.status)) : [...allTickets];
+  const baseList=statuses ? allTickets.filter(t=>statuses.includes(t.status)) : [...allTickets];
+  const list = (activeTab==='refunded' || activeTab==='all')
+    ? [...baseList, ...refundedHistory].sort((a,b)=>new Date(b.payoutAt||b.updatedAt||0)-new Date(a.payoutAt||a.updatedAt||0))
+    : baseList;
   const wrap=document.getElementById('ticket-list');
   if(!list.length){
     wrap.innerHTML=`<div class="empty-state"><h2>No tickets here</h2><p class="mt-16 text-muted">${activeTab==='upcoming'?'Browse concerts to find your next show.':'Nothing to show in this tab.'}</p>${activeTab==='upcoming'?'<a href="index.html" class="btn btn-black mt-24" style="border-radius:100px">Browse Lineup →</a>':''}</div>`;
     return;
   }
-  wrap.innerHTML=list.map(t=>`
-    <div class="tkt-card">
+  wrap.innerHTML=list.map(t=>{
+    const isResaleOwned=resaleOwnedTicketIds.has(t.ticketId);
+    const toneClass=policyToneForTicket(t,isResaleOwned);
+    const showResaleLockNotice = activeTab==='upcoming' && isResaleOwned;
+    return `
+    <div class="tkt-card ${toneClass}">
       <div class="tkt-stub">
         <span class="tkt-stub-emoji">${concertIndex[t.concertId]?.emoji||'🎫'}</span>
         <span class="tkt-stub-cat">${t.categoryId?.split('-').pop()||'GEN'}</span>
@@ -229,21 +359,27 @@ function render(){
         <div class="tkt-meta">
           <span>🪑 ${t.seatNumber}</span>
           <span>🆔 ${t.ticketId}</span>
+          ${showResaleLockNotice?`<span style="color:var(--pink);font-weight:700">Resale ticket · Cannot be resold</span>`:''}
+          ${t.status==='REFUNDED'&&!t.isResalePayout?`<span style="color:var(--orange);font-weight:700">Cancelled by organizer (inactive)</span>`:''}
           ${t.resalePrice?`<span style="color:var(--pink);font-weight:700">Listed @ SGD ${t.resalePrice}</span>`:''}
+          ${t.isResalePayout?`<span style="color:var(--teal);font-weight:700">Resale payout received</span>`:''}
         </div>
-        ${Util.tag(t.status)}
+        ${Util.tag(t.status)}${t.status==='REFUNDED'&&!t.isResalePayout?` <span class="tag tag-cancelled">CANCELLED</span>`:''}${showResaleLockNotice?` <span class="tag tag-resale">RESALE TICKET</span>`:''}
       </div>
       <div class="tkt-actions">
         <div class="tkt-price">SGD ${t.purchasePrice||'—'}</div>
         ${t.status==='CONFIRMED'?`
           <button class="btn btn-sm btn-black" onclick="viewQR('${t.ticketId}','${t.concertId}','${t.seatNumber}')" style="border-radius:100px">QR Code</button>
-          <button class="btn btn-sm btn-outline" onclick="openResale('${t.ticketId}','${t.concertId}','${t.categoryId}',${t.purchasePrice||0})" style="border-radius:100px">Sell</button>`:''}
+          ${isResaleOwned
+            ? `<button class="btn btn-sm btn-outline" disabled title="Policy: resale-purchased tickets cannot be listed for resale again." style="border-radius:100px;opacity:0.55;cursor:not-allowed">Resale Locked</button>`
+            : `<button class="btn btn-sm btn-outline" onclick="openResale('${t.ticketId}','${t.concertId}','${t.categoryId}',${t.purchasePrice||0})" style="border-radius:100px">Sell</button>`}`:''}
         ${t.status==='RESALE_LISTED'?`
           <button class="btn btn-sm btn-black" onclick="viewQR('${t.ticketId}','${t.concertId}','${t.seatNumber}')" style="border-radius:100px">QR Code</button>
           <button class="btn btn-sm" style="border-color:var(--pink);color:var(--pink);border-radius:100px" onclick="cancelListing('${t.ticketId}')">Cancel</button>`:''}
         ${t.status==='USED'?`<button class="btn btn-sm btn-outline" onclick="viewQR('${t.ticketId}','${t.concertId}','${t.seatNumber}')" style="border-radius:100px">View QR</button>`:''}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function viewQR(tid,cid,seat){
@@ -283,7 +419,7 @@ async function submitResale(){
   const price=parseFloat(document.getElementById('resale-price').value);
   if(!price||price<=0){toast('Enter a valid price','warning');return;}
   try{
-    await API.resale.list({sellerId:user.userId,ticketId:resaleTarget.tid,concertId:resaleTarget.cid,resalePrice:price});
+    await API.resaleTicket.list({sellerId:user.userId,ticketId:resaleTarget.tid,concertId:resaleTarget.cid,resalePrice:price});
     const t=allTickets.find(x=>x.ticketId===resaleTarget.tid);
     if(t){t.status='RESALE_LISTED';t.resalePrice=price;}
     toast('Ticket listed for resale!','success');
@@ -296,8 +432,14 @@ async function submitResale(){
 async function cancelListing(tid){
   if(!confirm('Cancel this listing?'))return;
   const t=allTickets.find(x=>x.ticketId===tid);
-  if(t){t.status='CONFIRMED';t.resalePrice=null;}
-  toast('Listing cancelled','success'); render();
+  try{
+    await API.resaleTicket.unlist({sellerId:user.userId,ticketId:tid,concertId:t?.concertId});
+    if(t){t.status='CONFIRMED';t.resalePrice=null;}
+    toast('Listing cancelled','success');
+    render();
+  }catch(e){
+    toast(e.message||'Could not cancel listing','error');
+  }
 }
 
 load();

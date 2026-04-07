@@ -43,6 +43,7 @@ const API = (() => {
     notification: `${GATEWAY}/notification/v1`,
     purchase:     `${GATEWAY}/purchase/v1`,
     resale:       `${GATEWAY}/resale/v1`,
+    resaleTicket: `${GATEWAY}/resale-ticket/v1`,
     cancellation: `${GATEWAY}/cancellation/v1`,
   };
 
@@ -109,9 +110,25 @@ const API = (() => {
     purchase: {
       complete: (cid,p) => req(`${BASE.purchase}/window/${cid}`,'POST',p),
     },
+    resaleTicket: {
+      listings: async cid => {
+        return req(`${BASE.resaleTicket}/listings/${cid}`);
+      },
+      list: async p => {
+        return await req(`${BASE.resaleTicket}/list`, 'POST', p);
+      },
+      unlist: async p => {
+        return await req(`${BASE.resaleTicket}/unlist`, 'PUT', p);
+      },
+      purchase: async p => {
+        return await req(`${BASE.resaleTicket}/purchase`, 'POST', p);
+      },
+    },
     resale: {
-      list: async p => { try { return await req(`${BASE.resale}/list`,'POST',p); } catch { return { success:true, listingId:`LST-DEMO`, resalePrice:p.resalePrice }; } },
-      buy:  async p => { try { return await req(`${BASE.resale}/purchase`,'POST',p); } catch { return { success:true, ticketId:p.ticketId, paymentId:`PAY-RESALE` }; } },
+      list: async p => API.resaleTicket.list(p),
+      buy:  async p => API.resaleTicket.purchase(p),
+      unlist: async p => API.resaleTicket.unlist(p),
+      listings: async cid => API.resaleTicket.listings(cid),
     },
     cancellation: {
       cancel: async (cid,p) => { try { return await req(`${BASE.cancellation}/${cid}`,'POST',p); } catch { return { success:true, ticketsRefunded:37570, paymentsRefunded:37570 }; } },
