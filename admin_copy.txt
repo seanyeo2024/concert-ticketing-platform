@@ -444,17 +444,13 @@ function buildConfigRow(row={}){
   const mode=row.mode||'new';
   const isExisting=mode==='existing';
   const locked= isExisting ? 'readonly' : '';
-  const needsPrice = isExisting && (price === '' || price === null || typeof price === 'undefined');
   const action=isExisting
-    ? '<button class="btn btn-sm btn-outline" type="button" disabled title="This category already exists in the database and cannot be removed here." style="border-radius:100px;opacity:.65;cursor:default">Locked</button>'
+    ? '<button class="btn btn-sm btn-outline" type="button" disabled style="border-radius:100px;opacity:.65;cursor:default">Existing</button>'
     : '<button class="btn btn-sm btn-outline" type="button" onclick="this.parentElement.remove()" style="border-radius:100px">Remove</button>';
-  const priceHint = needsPrice
-    ? '<div class="text-xs text-muted" style="margin-top:6px">No price rule yet — set a base price to create it.</div>'
-    : '';
   return `<div class="config-row" data-mode="${mode}" data-category-id="${escapeAttr(row.categoryId||'')}" data-original-name="${escapeAttr(name)}" data-original-seats="${escapeAttr(seats)}" data-original-price="${escapeAttr(price)}" data-original-cap="${escapeAttr(ceiling)}">
     <div class="form-group" style="margin:0"><label class="form-label">Category Name</label><input class="form-input cfg-name" value="${escapeAttr(name)}" placeholder="CAT 1 - FLOOR / PIT" ${locked}></div>
     <div class="form-group" style="margin:0"><label class="form-label">Seats</label><input class="form-input cfg-seats" type="number" min="1" value="${escapeAttr(seats)}" placeholder="1000" ${locked}></div>
-    <div class="form-group" style="margin:0"><label class="form-label">Base Price</label><input class="form-input cfg-price" type="number" min="0" step="0.01" value="${escapeAttr(price)}" placeholder="98">${priceHint}</div>
+    <div class="form-group" style="margin:0"><label class="form-label">Base Price</label><input class="form-input cfg-price" type="number" min="0" step="0.01" value="${escapeAttr(price)}" placeholder="98"></div>
     <div class="form-group" style="margin:0"><label class="form-label">Resale Cap</label><input class="form-input cfg-cap" type="number" min="0" step="0.01" value="${escapeAttr(ceiling)}" placeholder="145"></div>
     ${action}
   </div>`;
@@ -747,7 +743,7 @@ async function loadConfigPreview(){
   }
   select.dataset.existingCount=String(categories.length);
   document.getElementById('cfg-preview').textContent=categories.length
-    ? `${concert.name} already has ${categories.length} category(ies). Existing categories are locked, but pricing can be updated. Add new categories below.`
+    ? `${concert.name} already has ${categories.length} category(ies). Existing values are loaded below. Click + Add Category to add more.`
     : `${concert.name} currently has no categories configured. Click + Add Category to start configuring it.`;
   categories.forEach(category=>{
     const price=prices.find(entry=>entry.categoryId===category.categoryId) || {};
@@ -758,7 +754,6 @@ async function loadConfigPreview(){
       mode:'existing',
     });
   });
-  addConfigRow();
 }
 
 async function configureConcert(){
@@ -786,18 +781,15 @@ async function configureConcert(){
     const cap=row.querySelector('.cfg-cap').value.trim();
     return name || seats || price || cap;
   });
-  const existingItems=existingRows.map(row=>({
-    row,
-    categoryId: row.dataset.categoryId,
-    basePrice: Number(row.querySelector('.cfg-price').value),
-    resaleCeiling: row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
-    originalBasePrice: row.dataset.originalPrice === '' ? null : Number(row.dataset.originalPrice),
-    originalResaleCeiling: row.dataset.originalCap === '' ? null : Number(row.dataset.originalCap),
-    hasRule: row.dataset.originalPrice !== '' || row.dataset.originalCap !== '',
-  }));
-  const existingMissing=existingItems.filter(item=>!item.hasRule);
-  const existingUpdates=existingItems
-    .filter(item=>item.hasRule)
+  const existingUpdates=existingRows
+    .map(row=>({
+      row,
+      categoryId: row.dataset.categoryId,
+      basePrice: Number(row.querySelector('.cfg-price').value),
+      resaleCeiling: row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
+      originalBasePrice: row.dataset.originalPrice === '' ? null : Number(row.dataset.originalPrice),
+      originalResaleCeiling: row.dataset.originalCap === '' ? null : Number(row.dataset.originalCap),
+    }))
     .filter(item=>item.basePrice !== item.originalBasePrice || item.resaleCeiling !== item.originalResaleCeiling);
 
   const categories=filledRows.map((row, index)=>({
@@ -817,15 +809,15 @@ async function configureConcert(){
     toast('Resale cap must be greater than or equal to base price','warning');
     return;
   }
-  if(existingItems.some(c=>!Number.isFinite(c.basePrice) || c.basePrice < 0)){
+  if(existingUpdates.some(c=>!Number.isFinite(c.basePrice) || c.basePrice < 0)){
     toast('Existing categories need a valid base price','warning');
     return;
   }
-  if(existingItems.some(c=>c.resaleCeiling !== null && (!Number.isFinite(c.resaleCeiling) || c.resaleCeiling < c.basePrice))){
+  if(existingUpdates.some(c=>c.resaleCeiling !== null && (!Number.isFinite(c.resaleCeiling) || c.resaleCeiling < c.basePrice))){
     toast('Existing resale cap must be greater than or equal to base price','warning');
     return;
   }
-  if(!categories.length && !existingUpdates.length && !existingMissing.length){
+  if(!categories.length && !existingUpdates.length){
     document.getElementById('config-alert').innerHTML='<div class="alert alert-success">No configuration changes to save.</div>';
     return;
   }
@@ -848,15 +840,6 @@ async function configureConcert(){
         basePrice: item.basePrice,
         resaleCeiling: item.resaleCeiling,
         effectiveTo: null,
-      })));
-    }
-    if(existingMissing.length){
-      await Promise.all(existingMissing.map(item=>API.pricing.create(concertId,{
-        categoryId: item.categoryId,
-        basePrice: item.basePrice,
-        resaleCeiling: item.resaleCeiling,
-        currency: concert.currency || 'SGD',
-        effectiveFrom,
       })));
     }
 
@@ -893,8 +876,7 @@ async function configureConcert(){
     }
 
     const messages=[];
-    if(existingUpdates.length) messages.push(`updated ${existingUpdates.length} existing pricing rule(s)`);
-    if(existingMissing.length) messages.push(`created ${existingMissing.length} missing pricing rule(s)`);
+    if(existingUpdates.length) messages.push(`updated ${existingUpdates.length} existing category pricing rule(s)`);
     if(categories.length) messages.push(`configured ${categories.length} new category(ies) and generated ${tickets.length} tickets`);
     document.getElementById('config-alert').innerHTML=`<div class="alert alert-success">${messages.join('; ')}.</div>`;
     toast('Concert configuration saved','success');
