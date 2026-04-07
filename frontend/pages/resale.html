@@ -358,11 +358,6 @@ async function confirmBuy(){
       : 'The ticket was transferred. Refresh My Tickets if the QR preview does not appear immediately.';
     allListings=allListings.filter(t=>t.ticketId!==selectedListing.ticketId);
     applyFilters();
-    
-    // Auto-navigate to My Tickets with context for deterministic sync on the buyer side.
-    setTimeout(()=>{
-      window.location.href=`my-tickets.html?refreshConcert=${selectedListing.concertId}&refreshTicket=${selectedListing.ticketId}&owner=${user.userId}`;
-    }, 2500);
   }catch(e){
     document.getElementById('buy-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Purchase failed'}</div>`;
     btn.disabled=false; btn.textContent='Confirm Purchase →';
