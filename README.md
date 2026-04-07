@@ -1,6 +1,6 @@
-# Concert Ticketing Platform
+# Concert Ticketing Platform (CTMS)
 
-Concert Ticketing Management System (CTMS) is a microservices-based demo platform for browsing concerts, joining a queue, selecting seats, purchasing tickets, listing resale tickets, and cancelling concerts. The repo includes a static frontend, multiple Flask services, MySQL databases, and RabbitMQ for event-driven flows.
+CTMS is a microservices-based demo for browsing concerts, joining a queue, selecting seats, purchasing tickets, listing resale tickets, and cancelling concerts. It includes a static frontend, multiple Flask services, MySQL databases, Redis for queue state, RabbitMQ for events, and Kong as the API gateway.
 
 ## Stack
 
@@ -9,14 +9,26 @@ Concert Ticketing Management System (CTMS) is a microservices-based demo platfor
 - Concert Service: OutSystems (cloud-hosted)
 - Databases: MySQL 8
 - Messaging: RabbitMQ
-- Queue Cache: Redis
-- API Gateway: Kong
+- Queue cache: Redis
+- API gateway: Kong
 - Container runtime: Docker Compose
 
-## Concert Service -OutSystems
-- Base URL: https://personal-cqdsnkhp.outsystemscloud.com/ConcertAPI/rest/v1
-- Endpoints: GET/POST /concerts, GET/PUT /concerts/{id}, GET/POST /concerts/{id}/seats, PUT /concerts/{id}/seats/{catId}, GET /health
-- All other services call this URL via the CONCERT_SERVICE_URL environment variable
+## Concert Service (OutSystems)
+
+Base URL (used by `CONCERT_SERVICE_URL`):
+
+```text
+https://personal-cqdsnkhp.outsystemscloud.com/ConcertAPI/rest/v1
+```
+
+Endpoints include:
+- `GET /concerts`
+- `POST /concerts`
+- `GET /concerts/{concertId}`
+- `PUT /concerts/{concertId}`
+- `GET /concerts/{concertId}/seats`
+- `POST /concerts/{concertId}/seats`
+- `PUT /concerts/{concertId}/seats/{categoryId}`
 
 ## Project Structure
 
@@ -29,7 +41,6 @@ concert-ticketing-platform/
 │   └── pages/
 ├── infra/
 │   ├── kong/
-│   │   └── kong.yml
 │   └── rabbitmq/
 ├── services/
 │   ├── concert_cancellation/
@@ -40,6 +51,7 @@ concert-ticketing-platform/
 │   ├── qr/
 │   ├── queue/
 │   ├── resale_purchase/
+│   ├── resale_ticket/
 │   └── ticket_inventory/
 └── docker-compose.yml
 ```
@@ -50,22 +62,22 @@ concert-ticketing-platform/
 
 | Service | Host Port | Responsibility |
 |---|---:|---|
-| `concert (OutSystems)` | NA | Concert records and seat category configuration — hosted on OutSystems |
+| `concert` (OutSystems) | N/A | Concert records and seat categories |
 | `pricing` | 5101 | Price rules and resale caps |
-| `queue` | 5102 | Queue entries and purchase window allocation |
-| `ticket_inventory` | 5103 | Ticket inventory and ticket state transitions |
-| `payment` | 5104 | Purchase and refund records |
+| `queue` | 5102 | Queue entries and purchase windows |
+| `ticket_inventory` | 5103 | Ticket inventory and ticket state |
+| `payment` | 5104 | Purchases and refunds |
 | `qr` | 5105 | QR generation and invalidation |
-| `notification` | 5106 | Notification event consumer |
+| `notification` | 5106 | Notification events |
 
-### Composite Services
+### Composite / Orchestrators
 
 | Service | Host Port | Responsibility |
 |---|---:|---|
-| `purchase_window` | 5010 | Primary purchase orchestration |
-| `resale_purchase` | 5011 | Resale listing and purchase orchestration |
-| `resale_ticket` | 5013 | Resale marketplace gateway (browse/list/unlist/purchase) |
-| `concert_cancellation` | 5012 | Concert cancellation and refund orchestration |
+| `purchase_window` | 5110 | Primary purchase orchestration |
+| `resale_purchase` | 5111 | Resale purchase orchestration |
+| `resale_ticket` | 5113 | Resale marketplace gateway |
+| `concert_cancellation` | 5112 | Cancellation + refunds + QR invalidation |
 
 ### Infrastructure
 
@@ -74,7 +86,7 @@ concert-ticketing-platform/
 | Kong Proxy | 8000 |
 | Kong Admin | 8001 |
 | RabbitMQ AMQP | 5672 |
-| RabbitMQ Management UI | 15672 |
+| RabbitMQ UI | 15672 |
 | Redis | 6379 |
 | MySQL `pricing_db` | 3301 |
 | MySQL `queue_db` | 3302 |
@@ -85,12 +97,12 @@ concert-ticketing-platform/
 
 ## Prerequisites
 
-- Docker Desktop with Linux containers enabled
-- Python installed locally if you want to serve the frontend with `python -m http.server`
+- Docker Desktop (Linux containers enabled)
+- Python installed locally (only needed to serve the static frontend)
 
-## Environment Variables
+## Environment
 
-Create a top-level `.env` file in the project root. A working local setup is:
+Create a top-level `.env` file. A working local setup is:
 
 ```env
 MYSQL_ROOT_PASSWORD=root
@@ -140,67 +152,79 @@ EMAIL_FROM=demo@example.com
 
 ## Startup
 
-### 1. Start the backend stack
-
-From the project root:
+### 1) Start backend services
 
 ```bat
 cd c:\Users\Matth\Documents\IS213\concert-ticketing-platform
 docker compose up --build
 ```
 
-If you need a clean reset of the databases:
+To reset databases and start clean:
 
 ```bat
 docker compose down -v
 docker compose up --build
 ```
 
-### 2. Serve the frontend
-
-Open a second terminal:
+### 2) Serve the frontend
 
 ```bat
 cd c:\Users\Matth\Documents\IS213\concert-ticketing-platform\frontend
 python -m http.server 8080
 ```
 
-Open the app at:
+Open:
 
-- `http://localhost:8080/pages/index.html`
-- Browser API traffic now goes through Kong at `http://localhost:8000`
+```text
+http://localhost:8080/pages/index.html
+```
 
 Useful pages:
 
-- Landing page: `http://localhost:8080/pages/index.html`
-- Login: `http://localhost:8080/pages/login.html`
-- Admin: `http://localhost:8080/pages/admin.html`
-- My Tickets: `http://localhost:8080/pages/my-tickets.html`
-- Resale: `http://localhost:8080/pages/resale.html`
+```text
+http://localhost:8080/pages/login.html
+http://localhost:8080/pages/admin.html
+http://localhost:8080/pages/my-tickets.html
+http://localhost:8080/pages/resale.html
+```
 
-## Health Checks
+## Gateway + Health
 
-- Kong Proxy example: `http://localhost:8000/concerts`
-- Kong Admin API: `http://localhost:8001`
-- Concert (OutSystems): `https://personal-cqdsnkhp.outsystemscloud.com/ConcertAPI/rest/v1/health`
-- Pricing: `http://localhost:5101/health`
-- Queue: `http://localhost:5102/health`
-- Ticket Inventory: `http://localhost:5103/health`
-- Payment: `http://localhost:5104/health`
-- QR: `http://localhost:5105/health`
-- Notification: `http://localhost:5106/health`
-- Purchase Window: `http://localhost:5110/health`
-- Resale Purchase: `http://localhost:5111/health`
-- Resale Ticket Gateway: `http://localhost:5113/health`
-- Concert Cancellation: `http://localhost:5112/health`
-- RabbitMQ UI: `http://localhost:15672`
+Kong routes all browser API traffic:
 
-## Resale Ticket Gateway (New Composite)
+```text
+http://localhost:8000/concerts
+http://localhost:8000/pricing/v1/...
+http://localhost:8000/queue/v1/...
+http://localhost:8000/tickets/v1/...
+http://localhost:8000/payment/v1/...
+http://localhost:8000/qr/v1/...
+http://localhost:8000/notification/v1/...
+http://localhost:8000/purchase/v1/...
+http://localhost:8000/resale/v1/...
+http://localhost:8000/cancellation/v1/...
+```
 
-- List marketplace tickets: `GET /resale-ticket/v1/listings/<concertId>`
-- Seller list ticket: `POST /resale-ticket/v1/list`
-- Seller unlist ticket: `PUT /resale-ticket/v1/unlist`
-- Buyer purchase ticket: `POST /resale-ticket/v1/purchase`
+Service health endpoints:
+
+```text
+http://localhost:5101/health
+http://localhost:5102/health
+http://localhost:5103/health
+http://localhost:5104/health
+http://localhost:5105/health
+http://localhost:5106/health
+http://localhost:5110/health
+http://localhost:5111/health
+http://localhost:5112/health
+http://localhost:5113/health
+```
+
+RabbitMQ UI:
+
+```text
+http://localhost:15672
+```
 
 ## Demo Accounts
 
@@ -213,140 +237,50 @@ Useful pages:
 ### Customer Flow
 
 1. Log in as a customer.
-2. Browse concerts from the landing page.
+2. Browse concerts on the landing page.
 3. Open a concert and join the queue.
-4. Wait until a purchase window is granted.
-5. Select a real available seat.
-6. Complete payment.
-7. View the ticket from `My Tickets`.
+4. Wait for a purchase window.
+5. Select a seat and complete payment.
+6. View tickets in My Tickets.
 
 ### Admin Flow
 
-1. Log in as `admin@demo.com`.
-2. Create a concert from the admin page.
-3. Open `Configure Concert` for that concert.
-4. Add one or more seat categories.
-5. Set seat count, base price, and resale cap for each category.
-6. Save configuration.
+1. Log in as admin.
+2. Create a concert.
+3. Configure seat categories and pricing.
+4. Save configuration to generate inventory.
 
-The configure flow creates:
+### Cancellation Flow
 
-- Seat categories in the concert service
-- Pricing rules in the pricing service
-- Ticket inventory records in the ticket inventory service
-
-The admin page also verifies that ticket inventory was actually created before showing success.
-
-### Concert Cancellation Flow
-
-1. Open the admin page.
-2. Use the cancellation section to cancel a concert.
-3. The cancellation service updates the concert status, invalidates QRs, refunds payments, and publishes a cancellation event.
-
-## Queue Behavior
-
-The queue service auto-grants purchase windows locally.
-
-- `MAX_ACTIVE_WINDOWS=10` by default
-- Up to `min(MAX_ACTIVE_WINDOWS, availableSeats)` users can hold an active purchase window at the same time
-- Expired windows are released automatically
-- Waiting users are promoted when slots open
-
-If a queue request returns `410 GONE`, that means the purchase window expired and the user must rejoin.
-
-## Notes and Limitations
-
-- The frontend should be served over HTTP. Opening the HTML files directly from disk can cause browser issues.
-- The payment, email, and SMS integrations are stubbed for local demo use.
-- Kong runs in DB-less mode using `infra/kong/kong.yml`.
-- If you re-run queue or purchase tests many times, old queue data may remain in MySQL until you reset the stack with `docker compose down -v`.
-- The services are designed for a local demo environment, not production deployment.
-
-## Kong Gateway
-
-Kong is configured as the browser-facing API gateway for this project.
-
-- Proxy URL: `http://localhost:8000`
-- Admin API: `http://localhost:8001`
-- Declarative config: `infra/kong/kong.yml`
-
-The frontend now sends API requests through Kong for these route prefixes:
-
-- `/concerts`
-- `/pricing/v1`
-- `/queue/v1`
-- `/tickets/v1`
-- `/payment/v1`
-- `/qr/v1`
-- `/notification/v1`
-- `/purchase/v1`
-- `/resale/v1`
-- `/cancellation/v1`
-
-### Quick Tests
-
-After `docker compose up --build`, verify that Kong is proxying requests:
-
-```bat
-curl http://localhost:8000/concerts
-curl http://localhost:8000/pricing/v1/concerts/CONC-000001/prices
-curl http://localhost:8000/tickets/v1/tickets/CONC-000001
-```
-
-To inspect what Kong loaded:
-
-```bat
-curl http://localhost:8001/services
-curl http://localhost:8001/routes
-```
-
-### End-to-End Browser Test
-
-1. Start Docker Compose.
-2. Serve `frontend/` with `python -m http.server 8080`.
-3. Open `http://localhost:8080/pages/index.html`.
-4. Open browser DevTools and go to `Network`.
-5. Refresh the page and confirm API requests go to `http://localhost:8000/...`.
-6. Browse a concert, join a queue, and complete a purchase attempt.
+1. Admin cancels a concert.
+2. Tickets are refunded.
+3. QR codes are invalidated.
+4. Notifications are sent via RabbitMQ.
 
 ## Troubleshooting
 
 ### `port is already allocated`
+Stop the conflicting process or change the host port in `.env`, then restart Docker Compose.
 
-Another process is already using that host port. Either stop the conflicting process or change the host port in `.env`, then restart Docker Compose.
-
-### RabbitMQ boot failure from invalid password hash
-
-Use the provided `infra/rabbitmq/definitions.json` and make sure `.env` uses:
+### Queue crashes on startup
+Ensure `.env` includes:
 
 ```env
-RABBITMQ_USER=ctms
-RABBITMQ_PASSWORD=ctms
-RABBITMQ_EXCHANGE=ctms_topic
+PURCHASE_WINDOW_SECONDS=300
+MAX_ACTIVE_WINDOWS=5
 ```
 
-### Frontend is still calling old ports
-
-Hard refresh the browser with `Ctrl + F5` after frontend changes.
-
-### Queue position looks wrong
-
-If queue values seem unexpectedly large, stale queue rows may still exist in the local database. Reset with:
+### `basePrice` missing
+If the concert DB schema is stale:
 
 ```bat
 docker compose down -v
 docker compose up --build
 ```
 
-### Purchase says ticket not found
-
-This usually means the concert was not fully configured or the selected ticket inventory was not created correctly. Reconfigure the concert from the admin page and verify ticket inventory creation succeeds.
+### Frontend calls old ports
+Hard refresh the browser with `Ctrl + F5`.
 
 ### Concert data not loading
-Check that CONCERT_SERVICE_URL in .env points to OutSystems and that you have internet access. Test with:
+Check `CONCERT_SERVICE_URL` in `.env` and verify the OutSystems endpoint is reachable.
 
-```bat
-curl https://personal-cqdsnkhp.outsystemscloud.com/ConcertAPI/rest/v1/health
-```
-
-Should return {"status": "ok", "service": "concert"}.
