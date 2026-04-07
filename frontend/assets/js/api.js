@@ -76,6 +76,7 @@ const API = (() => {
       get:     async (cid,cat)  => { try { return await req(`${BASE.pricing}/concerts/${cid}/prices/${cat}`); } catch { return (SEED.prices[cid]||[]).find(p=>p.categoryId===cat)||{}; } },
       ceiling: async (cid,cat)  => { try { return await req(`${BASE.pricing}/concerts/${cid}/prices/${cat}/ceiling`); } catch { const p=(SEED.prices[cid]||[]).find(p=>p.categoryId===cat)||{}; return {resaleCeiling:p.resaleCeiling,currency:'SGD'}; } },
       create: (cid,p)           => req(`${BASE.pricing}/concerts/${cid}/prices`, 'POST', p),
+      update: (cid,cat,p)       => req(`${BASE.pricing}/concerts/${cid}/prices/${cat}`, 'PUT', p),
     },
     queue: {
       join:   (cid,p)          => req(`${BASE.queue}/queue/${cid}`,'POST',p),
