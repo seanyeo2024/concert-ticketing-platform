@@ -47,10 +47,10 @@ const API = (() => {
     cancellation: `${GATEWAY}/cancellation/v1`,
   };
 
-  async function req(url, method='GET', body=null) {
+  async function req(url, method='GET', body=null, timeoutMs=10000) {
     const opts = { method, headers:{'Content-Type':'application/json'} };
     if (body) opts.body = JSON.stringify(body);
-    const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(10000) });
+    const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(timeoutMs) });
     const data = await res.json().catch(()=>({}));
     if (!res.ok) {
       const err = data.error || data || {};
@@ -65,14 +65,18 @@ const API = (() => {
   return {
     concerts: {
       list: async () => { try { const d = await req(`${BASE.concert}/concerts`); return Array.isArray(d) ? { concerts: d } : d; } catch { return { concerts: SEED.concerts }; } },
+      listStrict: async () => { const d = await req(`${BASE.concert}/concerts`); return Array.isArray(d) ? { concerts: d } : d; },
       get:  async id  => { try { return await req(`${BASE.concert}/concerts/${id}`); } catch { return SEED.concerts.find(c=>c.concertId===id) || null; } },
+      getStrict: async id => req(`${BASE.concert}/concerts/${id}`),
       seats:async id  => { try { return await req(`${BASE.concert}/concerts/${id}/seats`); } catch { return { categories: SEED.categories[id]||[] }; } },
+      seatsStrict: async id => req(`${BASE.concert}/concerts/${id}/seats`),
       createSeats: (id,p) => req(`${BASE.concert}/concerts/${id}/seats`, 'POST', p),
       update: (id,p)  => req(`${BASE.concert}/concerts/${id}`, 'PUT', p),
       create: p       => req(`${BASE.concert}/concerts`, 'POST', p),
     },
     pricing: {
       list:    async (cid)      => { try { return await req(`${BASE.pricing}/concerts/${cid}/prices`); } catch { return { prices: SEED.prices[cid]||[] }; } },
+      listStrict: async cid => req(`${BASE.pricing}/concerts/${cid}/prices`),
       get:     async (cid,cat)  => { try { return await req(`${BASE.pricing}/concerts/${cid}/prices/${cat}`); } catch { return (SEED.prices[cid]||[]).find(p=>p.categoryId===cat)||{}; } },
       ceiling: async (cid,cat)  => { try { return await req(`${BASE.pricing}/concerts/${cid}/prices/${cat}/ceiling`); } catch { const p=(SEED.prices[cid]||[]).find(p=>p.categoryId===cat)||{}; return {resaleCeiling:p.resaleCeiling,currency:'SGD'}; } },
       create: (cid,p)           => req(`${BASE.pricing}/concerts/${cid}/prices`, 'POST', p),
@@ -110,7 +114,7 @@ const API = (() => {
       byUser: async id => { try { return await req(`${BASE.notification}/notification/user/${id}`); } catch { return { notifications: SEED.notifications.filter(n=>n.userId===id) }; } },
     },
     purchase: {
-      complete: (cid,p) => req(`${BASE.purchase}/window/${cid}`,'POST',p),
+      complete: (cid,p) => req(`${BASE.purchase}/window/${cid}`,'POST',p,30000),
     },
     resaleTicket: {
       listings: async cid => {

@@ -174,10 +174,10 @@ body {
     <div class="panel active" id="panel-dashboard">
       <div class="section-label mb-24">Dashboard</div>
       <div class="kpi-row">
-        <div class="kpi"><div class="kpi-val">05</div><div class="kpi-key">Concerts</div><div class="kpi-sub">↑ 2 this month</div></div>
-        <div class="kpi"><div class="kpi-val">30</div><div class="kpi-key">Tickets Issued</div><div class="kpi-sub">↑ 12 this week</div></div>
-        <div class="kpi"><div class="kpi-val">02</div><div class="kpi-key">Resale Listings</div><div class="kpi-sub">Active</div></div>
-        <div class="kpi"><div class="kpi-val">0</div><div class="kpi-key">SGD Today</div><div class="kpi-sub">—</div></div>
+        <div class="kpi"><div class="kpi-val" id="kpi-concerts">—</div><div class="kpi-key">Concerts</div><div class="kpi-sub" id="kpi-concerts-sub">Loading…</div></div>
+        <div class="kpi"><div class="kpi-val" id="kpi-tickets">—</div><div class="kpi-key">Tickets Sold</div><div class="kpi-sub" id="kpi-tickets-sub">Loading…</div></div>
+        <div class="kpi"><div class="kpi-val" id="kpi-resale">—</div><div class="kpi-key">Resale Listings</div><div class="kpi-sub" id="kpi-resale-sub">Loading…</div></div>
+        <div class="kpi"><div class="kpi-val" id="kpi-revenue">—</div><div class="kpi-key">SGD Today</div><div class="kpi-sub" id="kpi-revenue-sub">Loading…</div></div>
       </div>
       <div class="section-label mb-16">Concert Status</div>
       <div class="card" id="dash-concerts">
@@ -313,6 +313,10 @@ body {
 <script>
 Auth.requireAdmin(); renderNav('admin');
 
+function isSameDay(a,b){
+  return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+}
+
 function showPanel(n,el){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.sidebar-link').forEach(l=>l.classList.remove('active'));
@@ -325,8 +329,70 @@ function showPanel(n,el){
 }
 
 async function loadDashboard(){
+  document.getElementById('kpi-concerts').textContent='—';
+  document.getElementById('kpi-concerts-sub').textContent='Loading…';
+  document.getElementById('kpi-tickets').textContent='—';
+  document.getElementById('kpi-tickets-sub').textContent='Loading…';
+  document.getElementById('kpi-resale').textContent='—';
+  document.getElementById('kpi-resale-sub').textContent='Loading…';
+  document.getElementById('kpi-revenue').textContent='—';
+  document.getElementById('kpi-revenue-sub').textContent='Loading…';
+
   const d=await API.concerts.list();
   const cs=d.concerts||d||[];
+  const activeCount=cs.filter(c=>c.status==='ACTIVE').length;
+  document.getElementById('kpi-concerts').textContent=String(cs.length).padStart(2,'0');
+  document.getElementById('kpi-concerts-sub').textContent=`${activeCount} active`;
+
+  // Tickets issued + sold
+  const ticketResults = await Promise.allSettled(
+    cs.map(c=>API.tickets.list(c.concertId,'ALL'))
+  );
+  let totalTickets=0;
+  let soldTickets=0;
+  let availableTickets=0;
+  ticketResults.forEach(r=>{
+    if(r.status!=='fulfilled') return;
+    const t=r.value?.tickets||[];
+    totalTickets += t.length;
+    const availableCount = t.filter(x=>x.status === 'AVAILABLE').length;
+    availableTickets += availableCount;
+    soldTickets += t.filter(x=>x.status && x.status !== 'AVAILABLE').length;
+  });
+  document.getElementById('kpi-tickets').textContent=String(soldTickets).padStart(2,'0');
+  document.getElementById('kpi-tickets-sub').textContent=totalTickets?`${availableTickets} available`:'No inventory';
+
+  // Resale listings
+  const resaleResults = await Promise.allSettled(
+    cs.map(c=>API.resaleTicket.listings(c.concertId))
+  );
+  const resaleCount = resaleResults.reduce((acc,r)=>acc + (r.status==='fulfilled'?(r.value?.listings||[]).length:0),0);
+  document.getElementById('kpi-resale').textContent=String(resaleCount).padStart(2,'0');
+  document.getElementById('kpi-resale-sub').textContent=resaleCount?'Active listings':'None';
+
+  // Revenue today
+  const payResults = await Promise.allSettled(
+    cs.map(c=>API.payment.byConcert(c.concertId))
+  );
+  const today=new Date();
+  let revenue=0;
+  let paymentCount=0;
+  payResults.forEach(r=>{
+    if(r.status!=='fulfilled') return;
+    const pays=r.value?.payments||[];
+    pays.forEach(p=>{
+      if(p.status && p.status !== 'SUCCESS') return;
+      if(p.type && p.type.toUpperCase().includes('REFUND')) return;
+      const dt=new Date(p.createdAt||p.created_at||p.timestamp||0);
+      if(!Number.isNaN(dt.getTime()) && isSameDay(dt,today)){
+        revenue += Number(p.amount||0);
+        paymentCount += 1;
+      }
+    });
+  });
+  document.getElementById('kpi-revenue').textContent=revenue?Math.round(revenue).toString():'0';
+  document.getElementById('kpi-revenue-sub').textContent=paymentCount?`${paymentCount} payment(s)`:'No payments';
+
   document.getElementById('dash-concerts').innerHTML=cs.map(c=>`
     <div class="health-row">
       <div class="flex-c gap-16"><span style="font-size:1.2rem">${c.emoji||'🎤'}</span><div><div style="font-weight:600;font-size:0.85rem">${c.name}</div><div class="text-xs text-muted">${Util.formatDateShort(c.eventDate)}</div></div></div>
@@ -392,13 +458,20 @@ async function loadConcerts(){
 async function loadConfigConcertOptions(selectedId=''){
   const sel=document.getElementById('cfg-concert');
   sel.innerHTML='<option value="">Choose concert to configure…</option>';
-  const d=await API.concerts.list();
-  (d.concerts||d||[]).forEach(c=>{
-    const o=document.createElement('option');
-    o.value=c.concertId;
-    o.textContent=`${c.name} (${c.totalSeats||0} seats)`;
-    sel.appendChild(o);
-  });
+  try{
+    const d=await API.concerts.listStrict();
+    (d.concerts||d||[]).forEach(c=>{
+      const o=document.createElement('option');
+      o.value=c.concertId;
+      o.textContent=`${c.name} (${c.totalSeats||0} seats)`;
+      sel.appendChild(o);
+    });
+  }catch(e){
+    document.getElementById('cfg-preview').textContent='Could not load concerts from the backend.';
+    document.getElementById('config-rows').innerHTML='';
+    document.getElementById('config-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Could not load concerts from the backend.'}</div>`;
+    return;
+  }
   if(selectedId){
     sel.value=selectedId;
     await loadConfigPreview();
@@ -494,13 +567,20 @@ function toConcertApiDateTime(value){
 
 async function buildUniqueConcertId(){
   const pad=n=>String(n).padStart(6,'0');
-  const d=await API.concerts.list();
+  const d=await API.concerts.listStrict();
   const used=new Set((d.concerts||d||[])
     .map(c=>String(c.concertId||'').match(/^CONC-(\d{6})$/)?.[1])
     .filter(Boolean));
   for(let n=1;n<=999999;n++){
     const id=pad(n);
-    if(!used.has(id)) return `CONC-${id}`;
+    if(used.has(id)) continue;
+    const candidate=`CONC-${id}`;
+    try{
+      await API.concerts.getStrict(candidate);
+    }catch(e){
+      if(e?.status===404) return candidate;
+      throw new Error('Could not verify concert IDs with the backend. Please try again.');
+    }
   }
   throw new Error('No available concert IDs remain');
 }
@@ -684,6 +764,13 @@ async function createConcert(){
   try{
     payload.concertId=await buildUniqueConcertId();
     const created=await API.concerts.create(payload);
+    if(created?.concertId !== payload.concertId){
+      throw new Error(`Concert was created with unexpected ID ${created?.concertId||'unknown'}.`);
+    }
+    const verified=await API.concerts.getStrict(payload.concertId);
+    if(!verified || verified.concertId !== payload.concertId){
+      throw new Error('Backend could not verify the new concert after creation.');
+    }
     toast('Concert created! Now configure seats and prices.','success');
     document.getElementById('create-alert').innerHTML='<div class="alert alert-success">Concert created successfully. Next, use Configure Concert to add seat categories and prices.</div>';
     document.getElementById('c-name').value='';
@@ -731,20 +818,24 @@ async function loadConfigPreview(){
     document.getElementById('cfg-preview').textContent='Choose a concert to configure its categories.';
     return;
   }
-  const concert=await API.concerts.get(concertId);
-  let categories=[];
-  let prices=[];
+  let concert, seatRes, priceRes;
   try{
-    const [seatRes, priceRes]=await Promise.all([
-      API.concerts.seats(concertId),
-      API.pricing.list(concertId),
+    [concert, seatRes, priceRes] = await Promise.all([
+      API.concerts.getStrict(concertId),
+      API.concerts.seatsStrict(concertId),
+      API.pricing.listStrict(concertId).catch(e=>{
+        if(e?.status===404) return { prices: [] };
+        throw e;
+      }),
     ]);
-    categories=seatRes.categories||[];
-    prices=priceRes.prices||[];
   }catch(e){
-    categories=[];
-    prices=[];
+    select.dataset.existingCount='0';
+    document.getElementById('cfg-preview').textContent='Could not load live concert configuration.';
+    document.getElementById('config-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Could not load live concert configuration from the backend.'}</div>`;
+    return;
   }
+  const categories=seatRes.categories||[];
+  const prices=priceRes.prices||[];
   select.dataset.existingCount=String(categories.length);
   document.getElementById('cfg-preview').textContent=categories.length
     ? `${concert.name} already has ${categories.length} category(ies). Existing categories are locked, but pricing can be updated. Add new categories below.`

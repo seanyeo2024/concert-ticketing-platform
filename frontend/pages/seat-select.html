@@ -81,6 +81,29 @@
   font-family: var(--font-display); font-size: 2.5rem; font-weight: 900;
   color: var(--black); letter-spacing: -0.02em;
 }
+.window-timer {
+  margin-top: 18px; padding: 14px 16px;
+  border: 1.5px solid rgba(58,180,242,0.2);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(58,180,242,0.08), rgba(58,180,242,0.03));
+}
+.window-timer.urgent {
+  border-color: rgba(240,62,138,0.35);
+  background: linear-gradient(180deg, rgba(240,62,138,0.1), rgba(240,62,138,0.04));
+}
+.window-timer-label {
+  color: #777; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em;
+}
+.window-timer-value {
+  margin-top: 6px;
+  font-family: var(--font-display); font-size: 2rem; font-weight: 900; letter-spacing: -0.03em;
+}
+.window-timer.urgent .window-timer-value {
+  color: var(--pink);
+}
+.window-timer-note {
+  margin-top: 6px; font-size: 0.78rem; color: #666;
+}
 
 /* Payment section */
 .card-section {
@@ -182,9 +205,15 @@
             <span class="order-row-label">Total</span>
             <span class="order-total" id="o-total">—</span>
           </div>
+          <div class="window-timer" id="window-timer">
+            <div class="window-timer-label">Purchase Window</div>
+            <div class="window-timer-value" id="window-timer-value">--:--</div>
+            <div class="window-timer-note" id="window-timer-note">Your checkout session is active.</div>
+          </div>
 
           <div class="card-section">
             <div class="card-section-title">Payment Details</div>
+            <div id="payment-alert" class="alert alert-danger hidden" style="margin-bottom:16px"></div>
             <div class="demo-note">Stripe test mode — use 4242 4242 4242 4242 for success or 4000 0000 0000 9995 to simulate a decline.</div>
             <div class="form-group">
               <label class="form-label">Card Number</label>
@@ -225,6 +254,7 @@ const concertId=Util.getParam('id'), catId=Util.getParam('cat');
 if(!concertId) window.location.href='index.html';
 let selectedTicket=null, currentCat=catId, allTickets=[], priceData=null, concert=null, categories=[];
 let isLoadingSeats = true;
+let windowExpires=null, windowTimerInterval=null, sessionExpiredHandled=false;
 const queueSessionStorageKey=`ctms_queue_session_${concertId}_${user?.userId||'guest'}`;
 
 function getQueueSession(){
@@ -235,7 +265,64 @@ function getQueueSession(){
   }
 }
 
+function parseUtcDate(value){
+  if(!value) return null;
+  const normalized=value.endsWith('Z')?value:`${value}Z`;
+  const dt=new Date(normalized);
+  return Number.isNaN(dt.getTime())?null:dt;
+}
+
+function stopWindowTimer(){
+  clearInterval(windowTimerInterval);
+  windowTimerInterval=null;
+}
+
+function expireSeatSession(message='Your purchase window expired. Please rejoin the queue.'){
+  if(sessionExpiredHandled) return;
+  sessionExpiredHandled=true;
+  stopWindowTimer();
+  sessionStorage.removeItem(queueSessionStorageKey);
+  toast(message,'warning',4000);
+  window.location.href=`queue.html?id=${concertId}&cat=${currentCat||''}`;
+}
+
+function renderWindowTimer(){
+  if(!windowExpires) return;
+  const diff=Math.max(0,Math.floor((windowExpires-Date.now())/1000));
+  if(!diff){
+    expireSeatSession();
+    return;
+  }
+  const minutes=String(Math.floor(diff/60)).padStart(2,'0');
+  const seconds=String(diff%60).padStart(2,'0');
+  document.getElementById('window-timer-value').textContent=`${minutes}:${seconds}`;
+  document.getElementById('window-timer-note').textContent=diff<=120
+    ? 'Less than 2 minutes remaining to complete checkout.'
+    : 'Your checkout session is active.';
+  document.getElementById('window-timer').classList.toggle('urgent', diff<=120);
+}
+
+function startWindowTimer(expiresAt){
+  windowExpires=expiresAt;
+  sessionExpiredHandled=false;
+  stopWindowTimer();
+  renderWindowTimer();
+  if(sessionExpiredHandled) return;
+  windowTimerInterval=setInterval(renderWindowTimer,1000);
+}
+
 async function init(){
+  const queueSession=getQueueSession();
+  const expiresAt=parseUtcDate(queueSession?.sessionExpiresAt);
+  if(!queueSession?.sessionToken || !expiresAt){
+    expireSeatSession('Your queue session is missing. Please rejoin the queue.');
+    return;
+  }
+  if(expiresAt<=Date.now()){
+    expireSeatSession();
+    return;
+  }
+  startWindowTimer(expiresAt);
   try{
     document.getElementById('cat-toggle').innerHTML='<div style="font-size:0.82rem;color:#888">Loading categories…</div>';
     isLoadingSeats = true;
@@ -269,7 +356,7 @@ async function loadCat(cid){
   currentCat=cid;
   isLoadingSeats = true;
   renderMap();
-  const d=await API.tickets.list(concertId,'AVAILABLE');
+  const d=await API.tickets.list(concertId,'ALL');
   allTickets=(d.tickets||[]).filter(t=>!cid||t.categoryId===cid);
   selectedTicket=null;
   document.getElementById('o-seat').textContent='—';
@@ -324,11 +411,19 @@ function renderMap(){
   map.innerHTML=rows.map((rowSeats,rowIndex)=>`
     <div class="seat-row">
       <span class="seat-row-lbl">${rowIndex + 1}</span>
-      ${rowSeats.map((t,seatIndex)=>`<div class="seat seat-av" id="s-${t.ticketId}" onclick="selectSeat('${t.ticketId}','${t.seatNumber}')" title="${t.seatNumber}">${seatIndex + 1}</div>`).join('')}
+      ${rowSeats.map((t,seatIndex)=>{
+        const isAvailable=t.status==='AVAILABLE';
+        const seatClass=isAvailable?'seat-av':'seat-tk';
+        const clickHandler=isAvailable?`onclick="selectSeat('${t.ticketId}','${t.seatNumber}')"`:'';
+        const title=isAvailable?t.seatNumber:`${t.seatNumber} (${String(t.status||'TAKEN').replace(/_/g,' ')})`;
+        return `<div class="seat ${seatClass}" id="s-${t.ticketId}" ${clickHandler} title="${title}">${seatIndex + 1}</div>`;
+      }).join('')}
     </div>`).join('');
 }
 
 function selectSeat(tid,sn){
+  const ticket=allTickets.find(t=>t.ticketId===tid);
+  if(!ticket || ticket.status!=='AVAILABLE') return;
   document.querySelectorAll('.seat').forEach(s=>s.classList.remove('seat-sel'));
   document.getElementById(`s-${tid}`)?.classList.add('seat-sel');
   selectedTicket={ticketId:tid,seatNumber:sn};
@@ -358,6 +453,18 @@ function getStripeTestPaymentMethodId(){
   throw new Error('Use a supported Stripe test card: 4242 4242 4242 4242 or 4000 0000 0000 9995.');
 }
 
+function setPaymentAlert(message=''){
+  const el=document.getElementById('payment-alert');
+  if(!el) return;
+  if(!message){
+    el.textContent='';
+    el.classList.add('hidden');
+    return;
+  }
+  el.textContent=message;
+  el.classList.remove('hidden');
+}
+
 async function pay(){
   if(!selectedTicket){toast('Select a seat first','warning');return;}
   if(!priceData){toast('Price data is unavailable for this category','warning');return;}
@@ -371,10 +478,32 @@ async function pay(){
   try{
     stripePaymentMethodId=getStripeTestPaymentMethodId();
   }catch(e){
+    setPaymentAlert(e.message||'Enter valid Stripe test card details.');
     toast(e.message||'Enter valid Stripe test card details','warning');
     return;
   }
+  setPaymentAlert('');
   const btn=document.getElementById('pay-btn'); btn.disabled=true; btn.textContent='Processing…';
+  async function resolvePurchaseAfterError(originalError){
+    try{
+      const latestTicket=await API.tickets.get(concertId, selectedTicket.ticketId);
+      if(latestTicket?.ownerId===user.userId && latestTicket?.status==='CONFIRMED'){
+        stopWindowTimer();
+        sessionStorage.removeItem(queueSessionStorageKey);
+        document.getElementById('c-ticket').textContent=latestTicket.ticketId||selectedTicket.ticketId;
+        document.getElementById('c-seat').textContent=latestTicket.seatNumber||selectedTicket.seatNumber;
+        document.getElementById('c-pay').textContent=`${Util.formatPrice(latestTicket.purchasePrice||priceData?.basePrice||0,'SGD')} · Confirmed`;
+        openModal('success-modal');
+        toast('Ticket purchased!','success');
+        return true;
+      }
+      if(latestTicket?.ownerId===user.userId && latestTicket?.status==='PENDING'){
+        toast('Your payment may still be processing. Please wait a moment and check My Tickets before retrying.','warning',5000);
+        return true;
+      }
+    }catch{}
+    return false;
+  }
   try{
     const liveTicket=await API.tickets.get(concertId, selectedTicket.ticketId);
     if(!liveTicket || liveTicket.ticketId!==selectedTicket.ticketId){
@@ -393,6 +522,7 @@ async function pay(){
       sessionToken:queueSession.sessionToken,
       stripeToken:stripePaymentMethodId
     });
+    stopWindowTimer();
     sessionStorage.removeItem(queueSessionStorageKey);
     document.getElementById('c-ticket').textContent=r.ticketId||selectedTicket.ticketId;
     document.getElementById('c-seat').textContent=selectedTicket.seatNumber;
@@ -400,17 +530,31 @@ async function pay(){
     openModal('success-modal');
     toast('Ticket purchased!','success');
   }catch(e){
+    const recovered=await resolvePurchaseAfterError(e);
+    if(recovered){
+      btn.disabled=false; btn.textContent='Complete Purchase →';
+      return;
+    }
     if(e.status===404){
       await loadCat(currentCat);
+      setPaymentAlert('');
       toast(e.message||'Selected ticket could not be found. The seat map was refreshed.','error');
     }else if(e.status===409){
       await loadCat(currentCat);
+      setPaymentAlert('');
       toast(e.message||'That seat was taken. Please choose another.','error');
+    }else if(e.name==='TimeoutError'){
+      setPaymentAlert('Payment confirmation timed out. Please check My Tickets before retrying.');
+      toast('Purchase confirmation timed out. Please check My Tickets before retrying.','error',5000);
+    }else if(e.status===402 || e.code==='PAYMENT_FAILED'){
+      setPaymentAlert('Your payment was declined. Please enter valid payment details');
+      toast('Your payment was declined. Please enter valid payment details','error');
     }else{
+      setPaymentAlert('');
       toast(e.message||'Purchase failed','error');
     }
     btn.disabled=false; btn.textContent='Complete Purchase →';
-    if(e.status===410) window.location.href=`queue.html?id=${concertId}`;
+    if(e.status===410) expireSeatSession();
   }
 }
 init();
