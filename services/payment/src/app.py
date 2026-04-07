@@ -82,11 +82,20 @@ def create_payment():
     data = request.get_json() or {}
     required = ["userId", "ticketId", "amount", "currency", "type"]
     if not all(k in data for k in required): return err("MISSING_FIELDS", f"Required: {required}")
-    if float(data["amount"]) <= 0:
-        return err("INVALID_AMOUNT", "amount must be > 0")
+    
+    # Validate amount
+    try:
+        amount = float(data["amount"])
+        if amount <= 0:
+            return err("INVALID_AMOUNT", "amount must be > 0")
+        if amount > 100000:  # Max price validation
+            return err("INVALID_AMOUNT", "amount cannot exceed 100000")
+    except (ValueError, TypeError):
+        return err("INVALID_AMOUNT", "amount must be a valid number", 400)
+    
     if data["type"] not in {"PURCHASE", "RESALE_PURCHASE"}:
         return err("INVALID_TYPE", "type must be PURCHASE or RESALE_PURCHASE")
-    intent_id, ok = stripe_charge(data["amount"], data["currency"], data.get("stripeToken", "tok_simulated"))
+    intent_id, ok = stripe_charge(amount, data["currency"], data.get("stripeToken", "tok_simulated"))
     status = "SUCCESS" if ok else "FAILED"
     pay_id = f"PAY-{uuid.uuid4().hex[:8].upper()}"
     db = get_db(); cur = db.cursor()
@@ -94,7 +103,7 @@ def create_payment():
         (paymentId,userId,ticketId,concertId,type,amount,currency,status,stripePaymentIntentId)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (pay_id, data["userId"], data["ticketId"], data.get("concertId",""),
-         data["type"], data["amount"], data["currency"], status, intent_id))
+         data["type"], amount, data["currency"], status, intent_id))
     db.commit(); cur.close(); db.close()
     if not ok: return err("PAYMENT_FAILED", "Card charge declined by Stripe", 402)
     return jsonify({"paymentId": pay_id, "status": status,
@@ -107,8 +116,17 @@ def create_refund():
     data = request.get_json() or {}
     required = ["userId", "ticketId", "paymentId", "amount"]
     if not all(k in data for k in required): return err("MISSING_FIELDS", f"Required: {required}")
-    if float(data["amount"]) <= 0:
-        return err("INVALID_AMOUNT", "amount must be > 0")
+    
+    # Validate amount
+    try:
+        amount = float(data["amount"])
+        if amount <= 0:
+            return err("INVALID_AMOUNT", "amount must be > 0")
+        if amount > 100000:
+            return err("INVALID_AMOUNT", "amount cannot exceed 100000")
+    except (ValueError, TypeError):
+        return err("INVALID_AMOUNT", "amount must be a valid number", 400)
+    
     db = get_db(); cur = db.cursor(dictionary=True)
     cur.execute("SELECT * FROM payment_record WHERE paymentId=%s", (data["paymentId"],))
     original = cur.fetchone()
@@ -117,17 +135,17 @@ def create_refund():
     if cur.fetchone():
         cur.close(); db.close()
         return err("REFUND_EXISTS", "Refund already issued for this payment and reason", 409)
-    refund_id_stripe, ok = stripe_refund(original["stripePaymentIntentId"], data["amount"])
+    refund_id_stripe, ok = stripe_refund(original["stripePaymentIntentId"], amount)
     pay_id = f"PAY-{uuid.uuid4().hex[:8].upper()}"
     cur.execute("""INSERT INTO payment_record
         (paymentId,userId,ticketId,concertId,type,amount,currency,status,stripeRefundId,originalPaymentId,reason)
         VALUES (%s,%s,%s,%s,'REFUND',%s,%s,%s,%s,%s,%s)""",
         (pay_id, data["userId"], data["ticketId"], original.get("concertId",""),
-         data["amount"], original["currency"], "SUCCESS" if ok else "FAILED",
+         amount, original["currency"], "SUCCESS" if ok else "FAILED",
          refund_id_stripe, data["paymentId"], data.get("reason")))
     db.commit(); cur.close(); db.close()
     return jsonify({"paymentId": pay_id, "type": "REFUND", "status": "SUCCESS" if ok else "FAILED",
-                    "refundId": refund_id_stripe, "amount": data["amount"],
+                    "refundId": refund_id_stripe, "amount": amount,
                     "currency": original["currency"], "createdAt": datetime.utcnow().isoformat()}), 201
 
 # GET /payment/v1/payment/<paymentId>

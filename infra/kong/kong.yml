@@ -74,6 +74,14 @@ services:
           - /resale/v1
         strip_path: false
 
+  - name: resale-ticket-service
+    url: http://resale_ticket:5013
+    routes:
+      - name: resale-ticket-routes
+        paths:
+          - /resale-ticket/v1
+        strip_path: false
+
   - name: concert-cancellation-service
     url: http://concert_cancellation:5012
     routes:

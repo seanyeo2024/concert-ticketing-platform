@@ -62,9 +62,10 @@ concert-ticketing-platform/
 
 | Service | Host Port | Responsibility |
 |---|---:|---|
-| `purchase_window` | 5110 | Primary purchase orchestration |
-| `resale_purchase` | 5111 | Resale purchase orchestration |
-| `concert_cancellation` | 5112 | Concert cancellation and refund orchestration |
+| `purchase_window` | 5010 | Primary purchase orchestration |
+| `resale_purchase` | 5011 | Resale listing and purchase orchestration |
+| `resale_ticket` | 5013 | Resale marketplace gateway (browse/list/unlist/purchase) |
+| `concert_cancellation` | 5012 | Concert cancellation and refund orchestration |
 
 ### Infrastructure
 
@@ -80,7 +81,7 @@ concert-ticketing-platform/
 | MySQL `ticket_inventory_db` | 3303 |
 | MySQL `payment_db` | 3304 |
 | MySQL `qr_db` | 3305 |
-| MySQL `notification_db` | 3306 |
+| MySQL `notification_db` | 3307 |
 
 ## Prerequisites
 
@@ -121,6 +122,7 @@ NOTIFICATION_PORT=5106
 PURCHASE_WINDOW_PORT=5110
 RESALE_PURCHASE_PORT=5111
 CONCERT_CANCELLATION_PORT=5112
+RESALE_TICKET_PORT=5113
 
 PURCHASE_WINDOW_SECONDS=300
 MAX_ACTIVE_WINDOWS=5
@@ -189,8 +191,16 @@ Useful pages:
 - Notification: `http://localhost:5106/health`
 - Purchase Window: `http://localhost:5110/health`
 - Resale Purchase: `http://localhost:5111/health`
+- Resale Ticket Gateway: `http://localhost:5113/health`
 - Concert Cancellation: `http://localhost:5112/health`
 - RabbitMQ UI: `http://localhost:15672`
+
+## Resale Ticket Gateway (New Composite)
+
+- List marketplace tickets: `GET /resale-ticket/v1/listings/<concertId>`
+- Seller list ticket: `POST /resale-ticket/v1/list`
+- Seller unlist ticket: `PUT /resale-ticket/v1/unlist`
+- Buyer purchase ticket: `POST /resale-ticket/v1/purchase`
 
 ## Demo Accounts
 

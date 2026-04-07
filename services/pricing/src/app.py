@@ -138,10 +138,28 @@ def create_price(concert_id):
     required = ["categoryId", "basePrice", "currency", "effectiveFrom"]
     if not all(k in data for k in required):
         return err("MISSING_FIELDS", f"Required: {required}")
-    if float(data["basePrice"]) < 0:
-        return err("INVALID_PRICE", "basePrice must be >= 0")
-    if data.get("resaleCeiling") is not None and float(data["resaleCeiling"]) < float(data["basePrice"]):
-        return err("INVALID_CEILING", "resaleCeiling must be >= basePrice")
+    
+    # Validate basePrice
+    try:
+        base_price = float(data["basePrice"])
+        if base_price < 0:
+            return err("INVALID_PRICE", "basePrice must be >= 0")
+        if base_price > 100000:
+            return err("INVALID_PRICE", "basePrice cannot exceed 100000")
+    except (ValueError, TypeError):
+        return err("INVALID_PRICE", "basePrice must be a valid number", 400)
+    
+    # Validate resaleCeiling
+    if data.get("resaleCeiling") is not None:
+        try:
+            resale_ceiling = float(data["resaleCeiling"])
+            if resale_ceiling < base_price:
+                return err("INVALID_CEILING", "resaleCeiling must be >= basePrice")
+            if resale_ceiling > 150000:
+                return err("INVALID_CEILING", "resaleCeiling cannot exceed 150000")
+        except (ValueError, TypeError):
+            return err("INVALID_CEILING", "resaleCeiling must be a valid number", 400)
+    
     if fetch_seat_category(concert_id, data["categoryId"]) is None:
         return err("CATEGORY_NOT_FOUND", "concertId or categoryId not found", 404)
     try:
