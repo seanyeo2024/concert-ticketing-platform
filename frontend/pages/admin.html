@@ -325,15 +325,15 @@ async function loadDashboard(){
 async function loadHealth(){
   const svcs=[
     {name:'Concert Service (OutSystems)',url:null,note:'External'},
-    {name:'Pricing Service',url:'http://localhost:5001/health'},
-    {name:'Queue Service',url:'http://localhost:5002/health'},
-    {name:'Ticket Inventory',url:'http://localhost:5003/health'},
-    {name:'Payment Service',url:'http://localhost:5004/health'},
-    {name:'QR Service',url:'http://localhost:5005/health'},
-    {name:'Notification Service',url:'http://localhost:5006/health'},
-    {name:'Purchase Window',url:'http://localhost:5010/health'},
-    {name:'Resale Purchase',url:'http://localhost:5011/health'},
-    {name:'Concert Cancellation',url:'http://localhost:5012/health'},
+    {name:'Pricing Service',url:'http://localhost:5101/health'},
+    {name:'Queue Service',url:'http://localhost:5102/health'},
+    {name:'Ticket Inventory',url:'http://localhost:5103/health'},
+    {name:'Payment Service',url:'http://localhost:5104/health'},
+    {name:'QR Service',url:'http://localhost:5105/health'},
+    {name:'Notification Service',url:'http://localhost:5106/health'},
+    {name:'Purchase Window',url:'http://localhost:5110/health'},
+    {name:'Resale Purchase',url:'http://localhost:5111/health'},
+    {name:'Concert Cancellation',url:'http://localhost:5112/health'},
   ];
   document.getElementById('health-list').innerHTML='<div style="padding:12px 20px;font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:#888">Checking services…</div>';
   const rows=await Promise.all(svcs.map(async s=>{
@@ -430,6 +430,27 @@ function toMysqlDateTime(value){
   if(year<1000) return null;
   const pad=n=>String(n).padStart(2,'0');
   return `${year}-${pad(dt.getUTCMonth()+1)}-${pad(dt.getUTCDate())} ${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}:${pad(dt.getUTCSeconds())}`;
+}
+
+function toConcertApiDateTime(value){
+  if(!value) return null;
+  const match=String(value).match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2}))?$/);
+  if(!match) return null;
+  const [,date,time,seconds='00']=match;
+  return `${date}T${time}:${seconds}`;
+}
+
+async function buildUniqueConcertId(){
+  const pad=n=>String(n).padStart(6,'0');
+  const d=await API.concerts.list();
+  const used=new Set((d.concerts||d||[])
+    .map(c=>String(c.concertId||'').match(/^CONC-(\d{6})$/)?.[1])
+    .filter(Boolean));
+  for(let n=1;n<=999999;n++){
+    const id=pad(n);
+    if(!used.has(id)) return `CONC-${id}`;
+  }
+  throw new Error('No available concert IDs remain');
 }
 
 function countBy(items, key){
@@ -599,16 +620,17 @@ async function execCancel(){
 }
 
 async function createConcert(){
-  const pad=n=>String(n).padStart(6,'0');
-  const concertId='CONC-'+pad(Date.now()%1000000);
-  const payload={concertId,name:document.getElementById('c-name').value,artistName:document.getElementById('c-artist').value,venue:document.getElementById('c-venue').value,eventDate:document.getElementById('c-date').value,currency:document.getElementById('c-cur').value,status:'ACTIVE'};
-  if(!payload.name||!payload.artistName||!payload.venue||!payload.eventDate){toast('Fill in all fields','warning');return;}
-  if(!toMysqlDateTime(payload.eventDate)){
+  const rawEventDate=document.getElementById('c-date').value;
+  const eventDate=toConcertApiDateTime(rawEventDate);
+  const payload={name:document.getElementById('c-name').value.trim(),artistName:document.getElementById('c-artist').value.trim(),venue:document.getElementById('c-venue').value.trim(),eventDate,currency:document.getElementById('c-cur').value,status:'ACTIVE'};
+  if(!payload.name||!payload.artistName||!payload.venue||!rawEventDate){toast('Fill in all fields','warning');return;}
+  if(!toMysqlDateTime(rawEventDate) || !eventDate){
     document.getElementById('create-alert').innerHTML='<div class="alert alert-danger">Use a valid date with year 1000 or later.</div>';
     toast('Use a valid concert date','warning');
     return;
   }
   try{
+    payload.concertId=await buildUniqueConcertId();
     const created=await API.concerts.create(payload);
     toast('Concert created! Now configure seats and prices.','success');
     document.getElementById('create-alert').innerHTML='<div class="alert alert-success">Concert created successfully. Next, use Configure Concert to add seat categories and prices.</div>';
