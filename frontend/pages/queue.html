@@ -222,7 +222,7 @@ body { background: var(--black); }
         </div>
         <div class="pulse-bar"></div>
         <div class="refresh-note">Refreshing every 10 seconds</div>
-        <div class="tip-box">⚡ <strong>Keep this tab open.</strong> When your window opens you'll have exactly 10 minutes to select a seat and pay. Missing your window means rejoining the queue.</div>
+        <div class="tip-box">⚡ <strong>Keep this tab open.</strong> When your window opens you'll see the live countdown for your purchase window. Missing your window means rejoining the queue.</div>
         <button class="btn btn-sm mt-24" style="background:transparent;border-color:rgba(255,255,255,0.1);color:#555;border-radius:100px" onclick="leaveQ()">Leave Queue</button>
       </div>
     </div>
@@ -234,7 +234,7 @@ body { background: var(--black); }
         <div style="font-size:3rem;margin-bottom:8px;position:relative;z-index:1">🎫</div>
         <div class="window-title">Purchase Window Open</div>
         <div style="font-size:0.78rem;color:#666;margin-bottom:0;position:relative;z-index:1">Time Remaining</div>
-        <div class="countdown-display" id="countdown">10:00</div>
+        <div class="countdown-display" id="countdown">--:--</div>
         <div class="countdown-label" id="expires-label"></div>
         <button class="btn btn-yellow btn-lg w-full" onclick="goSelect()" style="position:relative;z-index:1;border-radius:var(--radius)">Select My Seat →</button>
         <div class="expires-note">Window closes at <span id="expires-time"></span></div>
@@ -270,6 +270,13 @@ function parseUtcDate(value){
 
 function showPhase(n){ document.querySelectorAll('.phase').forEach(p=>p.classList.remove('active')); document.getElementById(`phase-${n}`)?.classList.add('active'); }
 function stopTimers(){ clearInterval(poll); clearInterval(cdInterval); poll=null; cdInterval=null; }
+function getQueueSession(){
+  try{
+    return JSON.parse(sessionStorage.getItem(queueSessionStorageKey)||'null');
+  }catch{
+    return null;
+  }
+}
 function persistQueueSession(payload){
   if(!payload?.sessionToken){
     sessionStorage.removeItem(queueSessionStorageKey);
@@ -281,6 +288,12 @@ function persistQueueSession(payload){
     concertId,
     userId: user.userId,
   }));
+}
+function setWindowPhase(expiresAt){
+  windowExpires=expiresAt;
+  document.getElementById('expires-time').textContent=windowExpires.toLocaleTimeString('en-SG');
+  showPhase('window');
+  startCountdown();
 }
 function showExpiredState(message='Your window expired. Rejoin the queue to try again.'){
   if(expiredHandled) return;
@@ -310,9 +323,10 @@ async function pollQueue(){
     if(q.status==='WINDOW_GRANTED'){
       persistQueueSession(q);
       clearInterval(poll);
-      windowExpires=parseUtcDate(q.windowExpiresAt)||new Date(Date.now()+600000);
-      document.getElementById('expires-time').textContent=windowExpires.toLocaleTimeString('en-SG');
-      showPhase('window'); startCountdown(); return;
+      const expiresAt=parseUtcDate(q.sessionExpiresAt)||parseUtcDate(q.windowExpiresAt);
+      if(!expiresAt){ showExpiredState('Your purchase window could not be restored. Please rejoin the queue.'); return; }
+      setWindowPhase(expiresAt);
+      return;
     }
     if(q.status==='COMPLETED'){ window.location.href='my-tickets.html'; return; }
     const pos=q.position||1; const ahead=Math.max(0,pos-1);
@@ -328,16 +342,21 @@ async function pollQueue(){
   }
 }
 
+function renderCountdown(){
+  const diff=Math.max(0,Math.floor((windowExpires-Date.now())/1000));
+  if(!diff){ showExpiredState(); return; }
+  const m=String(Math.floor(diff/60)).padStart(2,'0'), s=String(diff%60).padStart(2,'0');
+  const el=document.getElementById('countdown');
+  el.textContent=`${m}:${s}`;
+  el.classList.toggle('urgent',diff<120);
+  document.getElementById('expires-label').textContent=diff<120?'⚠ Less than 2 minutes remaining':'';
+}
+
 function startCountdown(){
   clearInterval(cdInterval);
-  cdInterval=setInterval(()=>{
-    const diff=Math.max(0,Math.floor((windowExpires-Date.now())/1000));
-    if(!diff){ showExpiredState(); return; }
-    const m=String(Math.floor(diff/60)).padStart(2,'0'), s=String(diff%60).padStart(2,'0');
-    const el=document.getElementById('countdown');
-    el.textContent=`${m}:${s}`; el.classList.toggle('urgent',diff<120);
-    document.getElementById('expires-label').textContent=diff<120?'⚠ Less than 2 minutes remaining':'';
-  },1000);
+  renderCountdown();
+  if(expiredHandled) return;
+  cdInterval=setInterval(renderCountdown,1000);
 }
 
 function goSelect(){ window.location.href=`seat-select.html?id=${concertId}&cat=${catId||''}`; }
@@ -347,15 +366,39 @@ async function rejoin(){
     stopTimers();
     expiredHandled=false;
     sessionStorage.removeItem(queueSessionStorageKey);
-    await API.queue.join(concertId,{userId:user.userId});
-    showPhase('waiting');
-    startPoll();
-    toast('Back in the queue!','success');
+    try{
+      const joinRes=await API.queue.join(concertId,{userId:user.userId});
+      if(joinRes?.status==='WINDOW_GRANTED'){
+        persistQueueSession(joinRes);
+        const expiresAt=parseUtcDate(joinRes.sessionExpiresAt)||parseUtcDate(joinRes.windowExpiresAt);
+        if(expiresAt){
+          setWindowPhase(expiresAt);
+          toast('Your purchase window is active.','success');
+          return;
+        }
+      }
+      showPhase('waiting');
+      startPoll();
+      toast('Back in the queue!','success');
+    }catch(e){
+      if(e.code==='ALREADY_IN_QUEUE' || e.status===400){
+        toast('Restored your active queue session.','info');
+        window.location.href=`queue.html?id=${concertId}&cat=${catId||''}`;
+        return;
+      }
+      throw e;
+    }
   }
   catch(e){ toast(e.message||'Could not rejoin','error'); }
 }
 function startPoll(){
   stopTimers();
+  const existingSession=getQueueSession();
+  const expiresAt=parseUtcDate(existingSession?.sessionExpiresAt);
+  if(existingSession?.sessionToken&&expiresAt&&expiresAt>Date.now()){
+    setWindowPhase(expiresAt);
+    return;
+  }
   pollQueue();
   if(!expiredHandled) poll=setInterval(pollQueue,10000);
 }

@@ -273,7 +273,7 @@
           </div>
           <div id="order-actions" class="hidden order-actions">
             <button class="btn btn-yellow w-full btn-lg" id="join-btn" onclick="joinQueue()" style="border-radius:var(--radius)">Join Queue →</button>
-            <p class="order-note">You'll be placed in a virtual queue. When it's your turn you have 10 minutes to complete your purchase.</p>
+            <p class="order-note">You'll be placed in a virtual queue. When it's your turn you'll see the live purchase countdown before checkout.</p>
           </div>
           <div id="order-blocked" class="hidden mt-16">
             <div class="alert alert-danger">This concert is not currently available for purchase.</div>
@@ -291,6 +291,15 @@ let isLoadingConcert = true;
 let isLoadingCats = true;
 renderNav('concerts');
 
+function countAvailableByCategory(tickets){
+  return (tickets||[]).reduce((acc,ticket)=>{
+    if(ticket?.status==='AVAILABLE'){
+      acc[ticket.categoryId]=(acc[ticket.categoryId]||0)+1;
+    }
+    return acc;
+  },{});
+}
+
 async function init(){
   concertId=Util.getParam('id');
   if(!concertId){window.location.href='index.html';return;}
@@ -304,7 +313,22 @@ async function init(){
     renderBanner();
     let catRes={ categories: [] }, priceRes={ prices: [] };
     try {
-      [catRes, priceRes] = await Promise.all([API.concerts.seats(concertId),API.pricing.list(concertId)]);
+      const [seatData, priceData, ticketData] = await Promise.all([
+        API.concerts.seats(concertId),
+        API.pricing.list(concertId),
+        API.tickets.list(concertId,'ALL').catch(()=>({ tickets: [] })),
+      ]);
+      catRes = seatData;
+      priceRes = priceData;
+      const availableByCategory=countAvailableByCategory(ticketData.tickets||[]);
+      if(Array.isArray(catRes.categories)){
+        catRes.categories=catRes.categories.map(category=>({
+          ...category,
+          availableSeats: typeof availableByCategory[category.categoryId]==='number'
+            ? availableByCategory[category.categoryId]
+            : category.availableSeats,
+        }));
+      }
     } catch (e) {
       catRes = { categories: [] };
       priceRes = { prices: [] };
@@ -375,7 +399,7 @@ function renderCats(){
         <div class="cat-row-avail">${soldOut?'Sold out':`${cat.availableSeats?.toLocaleString()} seats left`}</div>
       </div>
       <div>
-        <div class="cat-row-price">${price?`SGD ${price.basePrice}`:'—'}</div>
+        <div class="cat-row-price">${price?`SGD ${price.basePrice}`:'Sold Out'}</div>
         ${price?.resaleCeiling?`<div class="cat-row-ceiling">Resale cap: SGD ${price.resaleCeiling}</div>`:''}
         ${soldOut?`<span class="tag tag-sold-out" style="margin-top:6px">Sold Out</span>`:''}
       </div>
@@ -404,7 +428,18 @@ async function joinQueue(){
   const btn=document.getElementById('join-btn');
   btn.disabled=true;btn.textContent='Joining…';
   try{
-    await API.queue.join(concertId,{userId:user.userId});
+    const queueRes=await API.queue.join(concertId,{userId:user.userId});
+    const queueSessionStorageKey=`ctms_queue_session_${concertId}_${user.userId}`;
+    if(queueRes?.sessionToken){
+      sessionStorage.setItem(queueSessionStorageKey, JSON.stringify({
+        sessionToken: queueRes.sessionToken,
+        sessionExpiresAt: queueRes.sessionExpiresAt || queueRes.windowExpiresAt,
+        concertId,
+        userId: user.userId,
+      }));
+    }else{
+      sessionStorage.removeItem(queueSessionStorageKey);
+    }
     toast('You\'re in the queue!','success');
     setTimeout(()=>window.location.href=`queue.html?id=${concertId}&cat=${selectedCat.categoryId}`,700);
   }catch(e){
