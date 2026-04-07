@@ -185,17 +185,17 @@
 
           <div class="card-section">
             <div class="card-section-title">Payment Details</div>
-            <div class="demo-note">🔒 Demo mode — use card 4242 4242 4242 4242</div>
+            <div class="demo-note">Stripe test mode — use 4242 4242 4242 4242 for success or 4000 0000 0000 9995 to simulate a decline.</div>
             <div class="form-group">
               <label class="form-label">Card Number</label>
-              <input class="form-input" id="card-num" placeholder="4242 4242 4242 4242" maxlength="19" oninput="this.value=this.value.replace(/\D/g,'').replace(/(.{4})/g,'$1 ').trim()">
+              <input class="form-input" id="card-num" placeholder="4242 4242 4242 4242" maxlength="19" autocomplete="cc-number" oninput="this.value=this.value.replace(/\D/g,'').replace(/(.{4})/g,'$1 ').trim()">
             </div>
             <div class="grid-2">
-              <div class="form-group"><label class="form-label">Expiry</label><input class="form-input" id="card-exp" placeholder="MM / YY" maxlength="7"></div>
-              <div class="form-group"><label class="form-label">CVC</label><input class="form-input" id="card-cvc" placeholder="123" maxlength="3"></div>
+              <div class="form-group"><label class="form-label">Expiry</label><input class="form-input" id="card-exp" placeholder="MM / YY" maxlength="7" autocomplete="cc-exp"></div>
+              <div class="form-group"><label class="form-label">CVC</label><input class="form-input" id="card-cvc" placeholder="123" maxlength="4" autocomplete="cc-csc"></div>
             </div>
             <button class="btn btn-black w-full btn-lg" id="pay-btn" onclick="pay()" disabled style="border-radius:var(--radius)">Complete Purchase →</button>
-            <div style="font-size:0.68rem;text-align:center;color:#aaa;margin-top:10px;letter-spacing:0.06em">🔒 Secured by Stripe</div>
+            <div style="font-size:0.68rem;text-align:center;color:#aaa;margin-top:10px;letter-spacing:0.06em">Payments are submitted to the backend using Stripe test payment methods.</div>
           </div>
         </div>
       </div>
@@ -336,6 +336,28 @@ function selectSeat(tid,sn){
   document.getElementById('pay-btn').disabled=false;
 }
 
+function getStripeTestPaymentMethodId(){
+  const cardNum=(document.getElementById('card-num')?.value||'').replace(/\s+/g,'');
+  const cardExp=(document.getElementById('card-exp')?.value||'').trim();
+  const cardCvc=(document.getElementById('card-cvc')?.value||'').trim();
+
+  if(!/^\d{16}$/.test(cardNum)){
+    throw new Error('Enter a 16-digit test card number.');
+  }
+  if(!/^\d{2}\s*\/\s*\d{2}$/.test(cardExp)){
+    throw new Error('Enter expiry as MM / YY.');
+  }
+  if(!/^\d{3,4}$/.test(cardCvc)){
+    throw new Error('Enter a valid CVC.');
+  }
+
+  if(cardNum==='4242424242424242') return 'pm_card_visa';
+  if(cardNum==='4000000000009995') return 'pm_card_insufficientFunds';
+  if(cardNum==='4000000000000002') return 'pm_card_chargeDeclined';
+
+  throw new Error('Use a supported Stripe test card: 4242 4242 4242 4242 or 4000 0000 0000 9995.');
+}
+
 async function pay(){
   if(!selectedTicket){toast('Select a seat first','warning');return;}
   if(!priceData){toast('Price data is unavailable for this category','warning');return;}
@@ -343,6 +365,13 @@ async function pay(){
   if(!queueSession?.sessionToken){
     toast('Your queue session is missing. Please rejoin the queue.','warning');
     window.location.href=`queue.html?id=${concertId}&cat=${currentCat||''}`;
+    return;
+  }
+  let stripePaymentMethodId;
+  try{
+    stripePaymentMethodId=getStripeTestPaymentMethodId();
+  }catch(e){
+    toast(e.message||'Enter valid Stripe test card details','warning');
     return;
   }
   const btn=document.getElementById('pay-btn'); btn.disabled=true; btn.textContent='Processing…';
@@ -362,7 +391,7 @@ async function pay(){
       ticketId:liveTicket.ticketId,
       seatNumber:liveTicket.seatNumber || selectedTicket.seatNumber,
       sessionToken:queueSession.sessionToken,
-      stripeToken:'tok_visa_simulated'
+      stripeToken:stripePaymentMethodId
     });
     sessionStorage.removeItem(queueSessionStorageKey);
     document.getElementById('c-ticket').textContent=r.ticketId||selectedTicket.ticketId;
