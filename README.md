@@ -6,9 +6,17 @@ Concert Ticketing Management System (CTMS) is a microservices-based demo platfor
 
 - Frontend: HTML, CSS, vanilla JavaScript
 - Backend: Python, Flask, Flask-CORS
+- Concert Service: OutSystems (cloud-hosted)
 - Databases: MySQL 8
 - Messaging: RabbitMQ
+- Queue Cache: Redis
+- API Gateway: Kong
 - Container runtime: Docker Compose
+
+## Concert Service -OutSystems
+- Base URL: https://personal-cqdsnkhp.outsystemscloud.com/ConcertAPI/rest/v1
+- Endpoints: GET/POST /concerts, GET/PUT /concerts/{id}, GET/POST /concerts/{id}/seats, PUT /concerts/{id}/seats/{catId}, GET /health
+- All other services call this URL via the CONCERT_SERVICE_URL environment variable
 
 ## Project Structure
 
@@ -20,9 +28,10 @@ concert-ticketing-platform/
 │   ├── assets/
 │   └── pages/
 ├── infra/
+│   ├── kong/
+│   │   └── kong.yml
 │   └── rabbitmq/
 ├── services/
-│   ├── concert/
 │   ├── concert_cancellation/
 │   ├── notification/
 │   ├── payment/
@@ -41,7 +50,7 @@ concert-ticketing-platform/
 
 | Service | Host Port | Responsibility |
 |---|---:|---|
-| `concert` | 5100 | Concert records and seat category configuration |
+| `concert (OutSystems)` | NA | Concert records and seat category configuration — hosted on OutSystems |
 | `pricing` | 5101 | Price rules and resale caps |
 | `queue` | 5102 | Queue entries and purchase window allocation |
 | `ticket_inventory` | 5103 | Ticket inventory and ticket state transitions |
@@ -61,9 +70,11 @@ concert-ticketing-platform/
 
 | Service | Host Port |
 |---|---:|
+| Kong Proxy | 8000 |
+| Kong Admin | 8001 |
 | RabbitMQ AMQP | 5672 |
 | RabbitMQ Management UI | 15672 |
-| MySQL `concert_db` | 3300 |
+| Redis | 6379 |
 | MySQL `pricing_db` | 3301 |
 | MySQL `queue_db` | 3302 |
 | MySQL `ticket_inventory_db` | 3303 |
@@ -87,9 +98,15 @@ MYSQL_PASSWORD=ctms
 
 RABBITMQ_HOST=rabbitmq
 RABBITMQ_PORT=5672
+RABBITMQ_AMQP_HOST_PORT=5672
+RABBITMQ_MANAGEMENT_HOST_PORT=15672
 RABBITMQ_USER=ctms
 RABBITMQ_PASSWORD=ctms
 RABBITMQ_EXCHANGE=ctms_topic
+
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_HOST_PORT=6379
 
 KONG_PROXY_PORT=8000
 KONG_ADMIN_PORT=8001
@@ -105,9 +122,9 @@ PURCHASE_WINDOW_PORT=5110
 RESALE_PURCHASE_PORT=5111
 CONCERT_CANCELLATION_PORT=5112
 
-PURCHASE_WINDOW_SECONDS=600
+PURCHASE_WINDOW_SECONDS=300
 MAX_ACTIVE_WINDOWS=5
-CONCERT_SERVICE_URL=http://concert:5000
+CONCERT_SERVICE_URL=https://personal-cqdsnkhp.outsystemscloud.com/ConcertAPI/rest/v1
 
 STRIPE_SECRET_KEY=dummy
 QR_HMAC_SECRET=dev-secret
@@ -163,7 +180,7 @@ Useful pages:
 
 - Kong Proxy example: `http://localhost:8000/concerts`
 - Kong Admin API: `http://localhost:8001`
-- Concert: `http://localhost:5100/health`
+- Concert (OutSystems): `https://personal-cqdsnkhp.outsystemscloud.com/ConcertAPI/rest/v1/health`
 - Pricing: `http://localhost:5101/health`
 - Queue: `http://localhost:5102/health`
 - Ticket Inventory: `http://localhost:5103/health`
@@ -314,3 +331,12 @@ docker compose up --build
 ### Purchase says ticket not found
 
 This usually means the concert was not fully configured or the selected ticket inventory was not created correctly. Reconfigure the concert from the admin page and verify ticket inventory creation succeeds.
+
+### Concert data not loading
+Check that CONCERT_SERVICE_URL in .env points to OutSystems and that you have internet access. Test with:
+
+```bat
+curl https://personal-cqdsnkhp.outsystemscloud.com/ConcertAPI/rest/v1/health
+```
+
+Should return {"status": "ok", "service": "concert"}.

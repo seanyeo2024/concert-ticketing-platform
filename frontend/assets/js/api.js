@@ -21,74 +21,13 @@
 
 /* ── Seed / demo data ──────────────────────────────────────── */
 const SEED = {
-  concerts: [
-    { concertId:'CONC-000001', name:"Taylor Swift — The Eras Tour", artistName:"Taylor Swift", venue:"National Stadium, Singapore", eventDate:"2025-09-14T19:00:00", availableSeats:18430, totalSeats:50000, status:"ACTIVE", currency:"SGD", emoji:"🌟" },
-    { concertId:'CONC-000002', name:"Coldplay — Music of the Spheres", artistName:"Coldplay", venue:"Singapore Indoor Stadium", eventDate:"2025-11-22T20:00:00", availableSeats:4210, totalSeats:12000, status:"ACTIVE", currency:"SGD", emoji:"🎸" },
-    { concertId:'CONC-000003', name:"Bruno Mars — 24K Magic Live", artistName:"Bruno Mars", venue:"Resorts World Theatre", eventDate:"2025-08-03T21:00:00", availableSeats:0, totalSeats:5000, status:"SOLD_OUT", currency:"SGD", emoji:"🎷" },
-    { concertId:'CONC-000004', name:"BTS — Yet To Come", artistName:"BTS", venue:"Singapore Sports Hub", eventDate:"2025-07-05T18:00:00", availableSeats:0, totalSeats:55000, status:"CANCELLED", currency:"SGD", emoji:"💜" },
-    { concertId:'CONC-000005', name:"Ed Sheeran — Mathematics Tour", artistName:"Ed Sheeran", venue:"Changi Exhibition Centre", eventDate:"2025-10-18T19:30:00", availableSeats:22100, totalSeats:30000, status:"POSTPONED", currency:"SGD", emoji:"🎵" },
-  ],
-  categories: {
-    'CONC-000001': [
-      { categoryId:'CAT-C001-01', categoryName:'CAT 1 — FLOOR / PIT',  totalSeats:5000,  availableSeats:230  },
-      { categoryId:'CAT-C001-02', categoryName:'CAT 2 — LOWER TIER',   totalSeats:15000, availableSeats:4100 },
-      { categoryId:'CAT-C001-03', categoryName:'CAT 3 — UPPER TIER',   totalSeats:20000, availableSeats:8100 },
-      { categoryId:'CAT-C001-04', categoryName:'CAT 4 — GALLERY',      totalSeats:10000, availableSeats:6000 },
-    ],
-    'CONC-000002': [
-      { categoryId:'CAT-C002-01', categoryName:'CAT 1 — FLOOR / PIT',  totalSeats:1500, availableSeats:80   },
-      { categoryId:'CAT-C002-02', categoryName:'CAT 2 — LOWER TIER',   totalSeats:4500, availableSeats:930  },
-      { categoryId:'CAT-C002-03', categoryName:'CAT 3 — UPPER TIER',   totalSeats:4000, availableSeats:2200 },
-      { categoryId:'CAT-C002-04', categoryName:'CAT 4 — GALLERY',      totalSeats:2000, availableSeats:1000 },
-    ],
-  },
-  prices: {
-    'CONC-000001': [
-      { categoryId:'CAT-C001-01', basePrice:388, resaleCeiling:580, currency:'SGD' },
-      { categoryId:'CAT-C001-02', basePrice:248, resaleCeiling:370, currency:'SGD' },
-      { categoryId:'CAT-C001-03', basePrice:158, resaleCeiling:235, currency:'SGD' },
-      { categoryId:'CAT-C001-04', basePrice:98,  resaleCeiling:145, currency:'SGD' },
-    ],
-    'CONC-000002': [
-      { categoryId:'CAT-C002-01', basePrice:298, resaleCeiling:445, currency:'SGD' },
-      { categoryId:'CAT-C002-02', basePrice:188, resaleCeiling:280, currency:'SGD' },
-      { categoryId:'CAT-C002-03', basePrice:118, resaleCeiling:175, currency:'SGD' },
-      { categoryId:'CAT-C002-04', basePrice:68,  resaleCeiling:100, currency:'SGD' },
-    ],
-  },
-  tickets: [
-    { ticketId:'TKT-10001', concertId:'CONC-000001', seatNumber:'F-01-01', categoryId:'CAT-C001-01', ownerId:null,      status:'AVAILABLE',     purchasePrice:null,   resalePrice:null },
-    { ticketId:'TKT-10002', concertId:'CONC-000001', seatNumber:'F-01-02', categoryId:'CAT-C001-01', ownerId:'USR-0042', status:'PENDING',       purchasePrice:null,   resalePrice:null },
-    { ticketId:'TKT-10003', concertId:'CONC-000001', seatNumber:'F-01-03', categoryId:'CAT-C001-01', ownerId:'USR-0042', status:'CONFIRMED',     purchasePrice:388,    resalePrice:null },
-    { ticketId:'TKT-10004', concertId:'CONC-000001', seatNumber:'F-01-04', categoryId:'CAT-C001-01', ownerId:'USR-0099', status:'CONFIRMED',     purchasePrice:388,    resalePrice:null },
-    { ticketId:'TKT-10005', concertId:'CONC-000001', seatNumber:'L-03-08', categoryId:'CAT-C001-02', ownerId:null,      status:'AVAILABLE',     purchasePrice:null,   resalePrice:null },
-    { ticketId:'TKT-10006', concertId:'CONC-000001', seatNumber:'L-03-09', categoryId:'CAT-C001-02', ownerId:null,      status:'AVAILABLE',     purchasePrice:null,   resalePrice:null },
-    { ticketId:'TKT-10007', concertId:'CONC-000001', seatNumber:'L-05-12', categoryId:'CAT-C001-02', ownerId:'USR-0042', status:'CONFIRMED',     purchasePrice:248,    resalePrice:null },
-    { ticketId:'TKT-10008', concertId:'CONC-000001', seatNumber:'L-05-13', categoryId:'CAT-C001-02', ownerId:'USR-0303', status:'RESALE_LISTED', purchasePrice:248,    resalePrice:320 },
-    { ticketId:'TKT-10009', concertId:'CONC-000001', seatNumber:'L-06-01', categoryId:'CAT-C001-02', ownerId:'USR-0410', status:'RESALE_LISTED', purchasePrice:248,    resalePrice:310 },
-    { ticketId:'TKT-10010', concertId:'CONC-000001', seatNumber:'U-10-05', categoryId:'CAT-C001-03', ownerId:null,      status:'AVAILABLE',     purchasePrice:null,   resalePrice:null },
-    { ticketId:'TKT-10011', concertId:'CONC-000001', seatNumber:'U-10-06', categoryId:'CAT-C001-03', ownerId:'USR-0601', status:'CONFIRMED',     purchasePrice:158,    resalePrice:null },
-    { ticketId:'TKT-10012', concertId:'CONC-000001', seatNumber:'G-01-22', categoryId:'CAT-C001-04', ownerId:null,      status:'AVAILABLE',     purchasePrice:null,   resalePrice:null },
-    { ticketId:'TKT-30001', concertId:'CONC-000003', seatNumber:'F-01-01', categoryId:'CAT-C003-01', ownerId:'USR-0042', status:'USED',          purchasePrice:488,    resalePrice:null },
-    { ticketId:'TKT-40001', concertId:'CONC-000004', seatNumber:'F-02-01', categoryId:'CAT-C004-01', ownerId:'USR-0042', status:'REFUNDED',      purchasePrice:398,    resalePrice:null },
-    { ticketId:'TKT-20001', concertId:'CONC-000002', seatNumber:'F-01-01', categoryId:'CAT-C002-01', ownerId:null,      status:'AVAILABLE',     purchasePrice:null,   resalePrice:null },
-    { ticketId:'TKT-20002', concertId:'CONC-000002', seatNumber:'F-01-02', categoryId:'CAT-C002-01', ownerId:null,      status:'AVAILABLE',     purchasePrice:null,   resalePrice:null },
-  ],
-  resaleListings: [
-    { ticketId:'TKT-10008', concertId:'CONC-000001', seatNumber:'L-05-13', categoryId:'CAT-C001-02', ownerId:'USR-0303', resalePrice:320, status:'RESALE_LISTED' },
-    { ticketId:'TKT-10009', concertId:'CONC-000001', seatNumber:'L-06-01', categoryId:'CAT-C001-02', ownerId:'USR-0410', resalePrice:310, status:'RESALE_LISTED' },
-  ],
-  payments: [
-    { paymentId:'PAY-40001', userId:'USR-0042', ticketId:'TKT-10003', concertId:'CONC-000001', type:'PURCHASE',        amount:388, currency:'SGD', status:'SUCCESS', createdAt:'2025-05-20T14:30:00Z' },
-    { paymentId:'PAY-40002', userId:'USR-0042', ticketId:'TKT-10007', concertId:'CONC-000001', type:'PURCHASE',        amount:248, currency:'SGD', status:'SUCCESS', createdAt:'2025-04-15T16:45:00Z' },
-    { paymentId:'PAY-40003', userId:'USR-0042', ticketId:'TKT-30001', concertId:'CONC-000003', type:'PURCHASE',        amount:488, currency:'SGD', status:'SUCCESS', createdAt:'2025-03-01T11:00:00Z' },
-    { paymentId:'PAY-40004', userId:'USR-0042', ticketId:'TKT-40001', concertId:'CONC-000004', type:'REFUND',          amount:398, currency:'SGD', status:'SUCCESS', createdAt:'2025-05-30T14:30:00Z' },
-  ],
-  notifications: [
-    { notificationId:'NOTIF-001', userId:'USR-0042', eventType:'ticket.purchased',   subject:'Your ticket is confirmed!',         status:'SENT', channel:'EMAIL', sentAt:'2025-05-20T14:30:00Z' },
-    { notificationId:'NOTIF-002', userId:'USR-0042', eventType:'ticket.purchased',   subject:'Your ticket is confirmed!',         status:'SENT', channel:'EMAIL', sentAt:'2025-04-15T16:45:00Z' },
-    { notificationId:'NOTIF-003', userId:'USR-0042', eventType:'concert.cancelled',  subject:'Concert Cancelled — Refund Issued', status:'SENT', channel:'EMAIL', sentAt:'2025-05-30T14:31:00Z' },
-  ],
+  concerts: [],
+  categories: {},
+  prices: {},
+  tickets: [],
+  resaleListings: [],
+  payments: [],
+  notifications: [],
 };
 
 /* ── API client ─────────────────────────────────────────────── */
@@ -124,7 +63,7 @@ const API = (() => {
 
   return {
     concerts: {
-      list: async () => { try { return await req(`${BASE.concert}/concerts`); } catch { return { concerts: SEED.concerts }; } },
+      list: async () => { try { const d = await req(`${BASE.concert}/concerts`); return Array.isArray(d) ? { concerts: d } : d; } catch { return { concerts: SEED.concerts }; } },
       get:  async id  => { try { return await req(`${BASE.concert}/concerts/${id}`); } catch { return SEED.concerts.find(c=>c.concertId===id) || null; } },
       seats:async id  => { try { return await req(`${BASE.concert}/concerts/${id}/seats`); } catch { return { categories: SEED.categories[id]||[] }; } },
       createSeats: (id,p) => req(`${BASE.concert}/concerts/${id}/seats`, 'POST', p),

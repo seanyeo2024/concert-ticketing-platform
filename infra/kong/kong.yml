@@ -3,7 +3,7 @@ _transform: true
 
 services:
   - name: concert-service
-    url: http://concert:5000
+    url: https://personal-cqdsnkhp.outsystemscloud.com/ConcertAPI/rest/v1
     routes:
       - name: concert-routes
         paths:
