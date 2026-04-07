@@ -467,24 +467,65 @@ if (Auth.isAdmin()) window.location.href='admin.html';
 const CC_TOPS = ['cc-top-blue','cc-top-teal','cc-top-yellow','cc-top-pink','cc-top-black'];
 let allConcerts=[], activeFilter='ALL';
 let isLoadingConcerts = true;
+let refreshTimer = null;
+const REFRESH_MS = 12000;
 renderNav('concerts');
 
 async function load() {
   isLoadingConcerts = true;
   applyFilters();
   renderLineup();
+  await refreshConcerts();
+  startAutoRefresh();
+}
+
+async function refreshConcerts(){
   try {
     const d = await API.concerts.list();
-    allConcerts = d.concerts || d || [];
+    const next = d.concerts || d || [];
+    allConcerts = next;
     document.getElementById('hero-concert-count').textContent = String(allConcerts.length).padStart(2,'0');
+    await refreshAvailabilityCounts(allConcerts);
   } catch {
-    allConcerts = [];
+    if(isLoadingConcerts) allConcerts = [];
   } finally {
     isLoadingConcerts = false;
     applyFilters();
     renderLineup();
   }
 }
+
+async function refreshAvailabilityCounts(concerts){
+  if(!concerts.length) return;
+  const results = await Promise.allSettled(
+    concerts.map(c => API.tickets.list(c.concertId,'AVAILABLE'))
+  );
+  results.forEach((res, idx) => {
+    if(res.status !== 'fulfilled') return;
+    const available = (res.value.tickets || []).length;
+    if(Number.isFinite(available)){
+      concerts[idx].availableSeats = available;
+    }
+  });
+}
+
+function startAutoRefresh(){
+  stopAutoRefresh();
+  refreshTimer = setInterval(() => {
+    if(document.hidden) return;
+    refreshConcerts();
+  }, REFRESH_MS);
+}
+
+function stopAutoRefresh(){
+  if(refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = null;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden) return;
+  refreshConcerts();
+});
 
 function setFilter(el, f) {
   document.querySelectorAll('.filter-pill').forEach(p=>p.classList.remove('active'));
