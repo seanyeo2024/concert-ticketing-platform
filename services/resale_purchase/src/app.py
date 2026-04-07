@@ -62,6 +62,23 @@ def list_ticket():
     if ticket["status"] != "CONFIRMED":
         return err("INVALID_STATUS", f"Ticket must be CONFIRMED to list; current: {ticket['status']}", 400)
 
+    # Business rule: a ticket can only be resold once.
+    try:
+        pay = requests.get(f"{PAYMENT_URL}/payment/v1/payment/concert/{data['concertId']}", timeout=5)
+        if pay.status_code != 200:
+            return err("PAYMENT_LOOKUP_FAILED", "Unable to verify resale eligibility right now", 503)
+        payments = pay.json().get("payments", [])
+        already_resold_once = any(
+            str(p.get("ticketId")) == str(data["ticketId"])
+            and p.get("type") == "RESALE_PURCHASE"
+            and p.get("status") == "SUCCESS"
+            for p in payments
+        )
+        if already_resold_once:
+            return err("RESALE_LIMIT_REACHED", "This ticket has already been resold once and cannot be listed again", 409)
+    except requests.RequestException:
+        return err("PAYMENT_LOOKUP_FAILED", "Unable to verify resale eligibility right now", 503)
+
     # Step 2 — validate resale price against ceiling
     try:
         pr = requests.get(

@@ -79,12 +79,58 @@
   text-transform: uppercase; color: #888; text-align: center;
 }
 
-/* Color accent stubs */
-.tkt-card:nth-child(5n+1) .tkt-stub { background: rgba(58,180,242,0.08); }
-.tkt-card:nth-child(5n+2) .tkt-stub { background: rgba(62,207,178,0.08); }
-.tkt-card:nth-child(5n+3) .tkt-stub { background: rgba(245,197,24,0.1); }
-.tkt-card:nth-child(5n+4) .tkt-stub { background: rgba(240,62,138,0.08); }
-.tkt-card:nth-child(5n+5) .tkt-stub { background: rgba(124,77,255,0.08); }
+/* Policy color system: each color has business meaning */
+.tkt-card.tone-primary .tkt-stub { background: rgba(58,180,242,0.1); }
+.tkt-card.tone-primary { border-left: 6px solid rgba(58,180,242,0.7); }
+
+.tkt-card.tone-resale-locked .tkt-stub { background: rgba(124,77,255,0.12); }
+.tkt-card.tone-resale-locked { border-left: 6px solid rgba(124,77,255,0.75); }
+
+.tkt-card.tone-market .tkt-stub { background: rgba(240,62,138,0.11); }
+.tkt-card.tone-market { border-left: 6px solid rgba(240,62,138,0.7); }
+
+.tkt-card.tone-pending .tkt-stub { background: rgba(245,197,24,0.12); }
+.tkt-card.tone-pending { border-left: 6px solid rgba(245,197,24,0.8); }
+
+.tkt-card.tone-closed .tkt-stub { background: rgba(130,130,130,0.11); }
+.tkt-card.tone-closed { border-left: 6px solid rgba(130,130,130,0.65); }
+
+.policy-legend {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1.5px solid rgba(17,17,17,0.09);
+  border-radius: var(--radius-lg);
+  background: var(--white);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+}
+.policy-legend-title {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #666;
+}
+.policy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: #555;
+  white-space: nowrap;
+}
+.policy-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.policy-dot.primary { background: rgba(58,180,242,0.9); }
+.policy-dot.resale-locked { background: rgba(124,77,255,0.9); }
+.policy-dot.market { background: rgba(240,62,138,0.9); }
+.policy-dot.pending { background: rgba(245,197,24,0.95); }
+.policy-dot.closed { background: rgba(130,130,130,0.9); }
 
 .tkt-body { padding: 20px 24px; }
 .tkt-title {
@@ -140,6 +186,14 @@
 
 <div style="padding:48px 0 80px">
   <div class="container">
+    <div class="policy-legend">
+      <span class="policy-legend-title">Ticket Policy Colors</span>
+      <span class="policy-chip"><span class="policy-dot primary"></span>Primary purchase (resale-eligible)</span>
+      <span class="policy-chip"><span class="policy-dot resale-locked"></span>Resale-bought (resale locked)</span>
+      <span class="policy-chip"><span class="policy-dot market"></span>Listed on resale market</span>
+      <span class="policy-chip"><span class="policy-dot pending"></span>Pending transaction</span>
+      <span class="policy-chip"><span class="policy-dot closed"></span>Closed lifecycle (used/refunded)</span>
+    </div>
     <div id="ticket-list">
       <div class="skel" style="height:110px;margin-bottom:12px;border-radius:var(--radius-lg)"></div>
       <div class="skel" style="height:110px;margin-bottom:12px;border-radius:var(--radius-lg)"></div>
@@ -187,6 +241,7 @@ const user=Auth.require(); renderNav('tickets');
 let allTickets=[], refundedHistory=[], activeTab='upcoming', resaleTarget=null;
 const STATUS_TABS={ upcoming:['CONFIRMED','PENDING'], past:['USED'], reselling:['RESALE_LISTED','RESALE_PENDING'], refunded:['REFUNDED'], all:null };
 let concertIndex={};
+let resaleOwnedTicketIds=new Set();
 
 async function syncTransferredTicket() {
   const refreshTicketId = Util.getParam('refreshTicket');
@@ -212,6 +267,7 @@ async function syncTransferredTicket() {
 async function load(){
   allTickets=SEED.tickets.filter(t=>t.ownerId===user.userId);
   refundedHistory=[];
+  resaleOwnedTicketIds=new Set();
   concertIndex=Object.fromEntries((SEED.concerts||[]).map(c=>[c.concertId,c]));
   render();
   try{
@@ -227,6 +283,11 @@ async function load(){
 
     // Build seller-side refund history for completed resale payouts.
     const payRes=await API.payment.byUser(user.userId);
+    resaleOwnedTicketIds=new Set(
+      (payRes.payments||[])
+        .filter(p=>p.type==='RESALE_PURCHASE'&&p.status==='SUCCESS')
+        .map(p=>p.ticketId)
+    );
     const payouts=(payRes.payments||[]).filter(p=>p.type==='REFUND'&&p.reason==='RESALE_PAYOUT'&&p.status==='SUCCESS');
     const payoutTickets=await Promise.allSettled(
       payouts.map(p=>API.tickets.get(p.concertId,p.ticketId).then(t=>({payment:p,ticket:t})))
@@ -258,6 +319,14 @@ function switchTab(tab,el){
   el.classList.add('active'); activeTab=tab; render();
 }
 
+function policyToneForTicket(ticket,isResaleOwned){
+  if(ticket.status==='USED'||ticket.status==='REFUNDED') return 'tone-closed';
+  if(ticket.status==='PENDING'||ticket.status==='RESALE_PENDING') return 'tone-pending';
+  if(ticket.status==='RESALE_LISTED') return 'tone-market';
+  if(isResaleOwned) return 'tone-resale-locked';
+  return 'tone-primary';
+}
+
 function render(){
   const statuses=STATUS_TABS[activeTab];
   const baseList=statuses ? allTickets.filter(t=>statuses.includes(t.status)) : [...allTickets];
@@ -269,8 +338,11 @@ function render(){
     wrap.innerHTML=`<div class="empty-state"><h2>No tickets here</h2><p class="mt-16 text-muted">${activeTab==='upcoming'?'Browse concerts to find your next show.':'Nothing to show in this tab.'}</p>${activeTab==='upcoming'?'<a href="index.html" class="btn btn-black mt-24" style="border-radius:100px">Browse Lineup →</a>':''}</div>`;
     return;
   }
-  wrap.innerHTML=list.map(t=>`
-    <div class="tkt-card">
+  wrap.innerHTML=list.map(t=>{
+    const isResaleOwned=resaleOwnedTicketIds.has(t.ticketId);
+    const toneClass=policyToneForTicket(t,isResaleOwned);
+    return `
+    <div class="tkt-card ${toneClass}">
       <div class="tkt-stub">
         <span class="tkt-stub-emoji">${concertIndex[t.concertId]?.emoji||'🎫'}</span>
         <span class="tkt-stub-cat">${t.categoryId?.split('-').pop()||'GEN'}</span>
@@ -280,22 +352,26 @@ function render(){
         <div class="tkt-meta">
           <span>🪑 ${t.seatNumber}</span>
           <span>🆔 ${t.ticketId}</span>
+          ${isResaleOwned?`<span style="color:var(--pink);font-weight:700">Resale ticket · Cannot be resold</span>`:''}
           ${t.resalePrice?`<span style="color:var(--pink);font-weight:700">Listed @ SGD ${t.resalePrice}</span>`:''}
           ${t.isResalePayout?`<span style="color:var(--teal);font-weight:700">Resale payout received</span>`:''}
         </div>
-        ${Util.tag(t.status)}
+        ${Util.tag(t.status)}${isResaleOwned?` <span class="tag tag-resale">RESALE TICKET</span>`:''}
       </div>
       <div class="tkt-actions">
         <div class="tkt-price">SGD ${t.purchasePrice||'—'}</div>
         ${t.status==='CONFIRMED'?`
           <button class="btn btn-sm btn-black" onclick="viewQR('${t.ticketId}','${t.concertId}','${t.seatNumber}')" style="border-radius:100px">QR Code</button>
-          <button class="btn btn-sm btn-outline" onclick="openResale('${t.ticketId}','${t.concertId}','${t.categoryId}',${t.purchasePrice||0})" style="border-radius:100px">Sell</button>`:''}
+          ${isResaleOwned
+            ? `<button class="btn btn-sm btn-outline" disabled title="Policy: resale-purchased tickets cannot be listed for resale again." style="border-radius:100px;opacity:0.55;cursor:not-allowed">Resale Locked</button>`
+            : `<button class="btn btn-sm btn-outline" onclick="openResale('${t.ticketId}','${t.concertId}','${t.categoryId}',${t.purchasePrice||0})" style="border-radius:100px">Sell</button>`}`:''}
         ${t.status==='RESALE_LISTED'?`
           <button class="btn btn-sm btn-black" onclick="viewQR('${t.ticketId}','${t.concertId}','${t.seatNumber}')" style="border-radius:100px">QR Code</button>
           <button class="btn btn-sm" style="border-color:var(--pink);color:var(--pink);border-radius:100px" onclick="cancelListing('${t.ticketId}')">Cancel</button>`:''}
         ${t.status==='USED'?`<button class="btn btn-sm btn-outline" onclick="viewQR('${t.ticketId}','${t.concertId}','${t.seatNumber}')" style="border-radius:100px">View QR</button>`:''}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function viewQR(tid,cid,seat){
