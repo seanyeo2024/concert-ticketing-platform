@@ -261,11 +261,14 @@ input[type=range] { width: 100%; accent-color: var(--black); }
 <script>
 const user=Auth.getUser(); renderNav('resale');
 let allListings=[],selectedListing=null,pendingListing=null;
+let isLoadingListings = true;
 const NAMES={'CONC-000001':'Taylor Swift','CONC-000002':'Coldplay','CONC-000003':'Bruno Mars','CONC-000005':'Ed Sheeran'};
 const EMOJIS={'CONC-000001':'🌟','CONC-000002':'🎸','CONC-000003':'🎷','CONC-000005':'🎵'};
 const BASE={'CAT-C001-01':388,'CAT-C001-02':248,'CAT-C001-03':158,'CAT-C001-04':98,'CAT-C002-01':298,'CAT-C002-02':188,'CAT-C002-03':118,'CAT-C002-04':68};
 
 async function load(){
+  isLoadingListings = true;
+  applyFilters();
   const preId=Util.getParam('id');
   if(preId) document.getElementById('f-concert').value=preId;
   try{
@@ -278,6 +281,7 @@ async function load(){
     allListings=[];
     toast('Resale services are unavailable. Please ensure backend containers are running.','warning',4500);
   }
+  isLoadingListings = false;
   applyFilters();
 }
 
@@ -290,6 +294,11 @@ function clearFilters(){
 }
 
 function applyFilters(){
+  if(isLoadingListings){
+    document.getElementById('listing-count').textContent='—';
+    renderListings([]);
+    return;
+  }
   const concert=document.getElementById('f-concert').value;
   const max=parseFloat(document.getElementById('f-price').value);
   const cats=[...document.querySelectorAll('.filter-check input:checked')].map(c=>c.value);
@@ -309,6 +318,15 @@ function applyFilters(){
 
 function renderListings(list){
   const wrap=document.getElementById('listings-wrap');
+  if(isLoadingListings){
+    wrap.innerHTML=`
+      <div class="skel" style="height:88px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
+      <div class="skel" style="height:88px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
+      <div class="skel" style="height:88px;border-radius:var(--radius-lg)"></div>
+      <div style="margin-top:14px;color:#666;font-size:0.85rem">Loading resale listings…</div>
+    `;
+    return;
+  }
   if(!list.length){
     wrap.innerHTML=`<div class="no-listings"><h3>No listings found</h3><p class="text-muted mt-16">Try adjusting your filters.</p></div>`;
     return;
