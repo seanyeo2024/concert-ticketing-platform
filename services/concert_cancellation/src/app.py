@@ -45,11 +45,33 @@ def choose_refundable_payments(payments):
             latest_by_ticket[ticket_id] = payment
     return list(latest_by_ticket.values())
 
+
+def fetch_ticket_snapshot(concert_id, ticket_id):
+    try:
+        response = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/{ticket_id}", timeout=6)
+        if response.status_code == 200 and isinstance(response.json(), dict):
+            return response.json()
+    except Exception:
+        pass
+    return {}
+
+
+def fetch_concert_snapshot(concert_id):
+    try:
+        response = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=6)
+        if response.status_code == 200 and isinstance(response.json(), dict):
+            return response.json()
+    except Exception:
+        pass
+    return {}
+
 # POST /cancellation/v1/<concertId>
 @app.route("/cancellation/v1/<concert_id>", methods=["POST"])
 def cancel_concert(concert_id):
     data = request.get_json() or {}
     reason = data.get("reason", "Concert cancelled by organiser")
+    concert_snapshot = {}
+    cancelled_at = datetime.utcnow().isoformat()
 
     # Step 1 — mark concert as CANCELLED (via OutSystems Concert Service)
     c = requests.put(f"{CONCERT_URL}/concerts/{concert_id}",
@@ -66,6 +88,13 @@ def cancel_concert(concert_id):
         except Exception:
             pass
         return err("CONCERT_UPDATE_FAILED", message, c.status_code)
+
+    try:
+        concert_snapshot = c.json() if isinstance(c.json(), dict) else {}
+    except Exception:
+        concert_snapshot = {}
+    if not concert_snapshot:
+        concert_snapshot = fetch_concert_snapshot(concert_id)
 
     # Step 2+3 — bulk update all confirmed tickets to REFUNDED
     bulk = requests.put(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/cancel-all",
@@ -95,16 +124,25 @@ def cancel_concert(concert_id):
                     if r.status_code == 201:
                         refund_count += 1
                         try:
+                            ticket_snapshot = fetch_ticket_snapshot(concert_id, payment["ticketId"])
                             mq_publish("concert.cancelled", {
                                 "eventType": "concert.cancelled",
                                 "channel": "SMS",
                                 "userId": payment["userId"],
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": cancelled_at,
                                 "data": {
                                     "concertId": concert_id,
+                                    "concertName": concert_snapshot.get("name") or concert_snapshot.get("concertName"),
+                                    "concertDateTime": concert_snapshot.get("eventDate") or concert_snapshot.get("concertDateTime"),
+                                    "cancellationReason": concert_snapshot.get("cancellationReason") or reason,
+                                    "ticketId": payment["ticketId"],
+                                    "seatNumber": ticket_snapshot.get("seatNumber"),
+                                    "price": payment["amount"],
                                     "amount": payment["amount"],
                                     "currency": payment.get("currency", "SGD"),
-                                    "reason": reason,
+                                    "purchaseDateTime": payment.get("createdAt"),
+                                    "cancelledAt": cancelled_at,
+                                    "reason": concert_snapshot.get("cancellationReason") or reason,
                                 },
                             })
                         except Exception:
@@ -123,7 +161,7 @@ def cancel_concert(concert_id):
                     "ticketsRefunded": tickets_refunded,
                     "paymentsRefunded": refund_count,
                     "paymentRefundFailures": refund_failures,
-                    "completedAt": datetime.utcnow().isoformat()})
+                    "completedAt": cancelled_at})
 
 @app.route("/health")
 def health(): return jsonify({"status": "ok", "service": "concert_cancellation"})

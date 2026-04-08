@@ -37,6 +37,7 @@ def err(code, message, status=400):
 
 E164_PATTERN = re.compile(r'^\+[1-9]\d{7,14}$')
 EMAIL_PATTERN = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+CONCERT_ID_PATTERN = re.compile(r'^CONC-\d+$', re.IGNORECASE)
 SMS_MAX_LENGTH = 1200
 FRONTEND_PAGES_BASE_URL = os.environ.get("FRONTEND_PAGES_BASE_URL", "http://localhost:8080/pages")
 
@@ -178,23 +179,17 @@ def persist_contact_hints(payload, data, user_id):
     cur = db.cursor(dictionary=True)
     try:
         cur.execute(
-            "SELECT userId, email, phoneE164, smsOptIn FROM user_contact WHERE userId=%s",
+            "SELECT userId FROM user_contact WHERE userId=%s",
             (user_id,),
         )
         existing = cur.fetchone()
+
+        # Profile Settings is the source of truth for saved contact data.
+        # Do not overwrite existing records from transactional inputs.
         if existing:
-            email_to_save = hinted_email or existing.get("email")
-            phone_to_save = hinted_phone or existing.get("phoneE164")
-            sms_opt_in = 1 if phone_to_save else int(existing.get("smsOptIn") or 0)
-            cur.execute(
-                """
-                UPDATE user_contact
-                SET email=%s, phoneE164=%s, smsOptIn=%s
-                WHERE userId=%s
-                """,
-                (email_to_save, phone_to_save, sms_opt_in, user_id),
-            )
-        elif hinted_phone:
+            return
+
+        if hinted_phone:
             sms_opt_in = 1 if hinted_phone else 0
             cur.execute(
                 """
@@ -203,7 +198,7 @@ def persist_contact_hints(payload, data, user_id):
                 """,
                 (user_id, hinted_email, hinted_phone, sms_opt_in),
             )
-        db.commit()
+            db.commit()
     except Exception as e:
         print(f"[NOTIFICATION] Could not persist contact hints for {user_id}: {e}")
     finally:
@@ -321,7 +316,7 @@ def send_sms(to_number, body):
     """Send an SMS via Twilio."""
     account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
     auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
-    from_number = normalize_phone(os.environ.get("TWILIO_FROM_NUMBER"))
+    from_number = normalize_phone(os.environ.get("TWILIO_FROM_NUMBER") or os.environ.get("WILIO_FROM_NUMBER"))
 
     if not account_sid or not auth_token or not from_number:
         raise RuntimeError("Twilio environment variables are not configured")
@@ -376,7 +371,7 @@ def send_whatsapp(to_number, body):
 
 TEMPLATES = {
     "ticket.resale.listed": ("Your ticket is listed for resale", "Ticket {ticketId} for {concertName} has been listed at {resalePrice} {currency}."),
-    "concert.cancelled":    ("Concert Cancelled — Refund Issued", "We regret to inform you that {concertName} has been cancelled. A full refund of {amount} {currency} will be processed."),
+    "concert.cancelled":    ("Concert Cancelled — Refund Issued", "We regret to inform you that {concertName} has been cancelled. A full refund will be processed."),
     "queue.window.granted": ("It's your turn!", "Your purchase window for {concertName} is now open. You have {windowDurationMinutes} minutes to complete your purchase."),
     "queue.window.expired": ("Purchase window expired", "Your purchase window has expired. Please rejoin the queue to try again."),
 }
@@ -405,6 +400,10 @@ def _money(data, primary_key="amount", fallback_key="resalePrice"):
 
 def _is_blank(value):
     return value is None or str(value).strip() in ("", "N/A")
+
+
+def _looks_like_concert_id(value):
+    return isinstance(value, str) and bool(CONCERT_ID_PATTERN.fullmatch(value.strip()))
 
 
 def _resolve_window_minutes(payload, data):
@@ -452,7 +451,7 @@ def enrich_concert_fields(payload, data):
     if not concert_id:
         return
 
-    needs_name = _is_blank(data.get("concertName"))
+    needs_name = _is_blank(data.get("concertName")) or _looks_like_concert_id(data.get("concertName"))
     needs_dt = _is_blank(data.get("concertDateTime"))
     if not needs_name and not needs_dt:
         return
@@ -541,6 +540,28 @@ def compose_message(event_type, data):
         )
         return subject, body
 
+    if event_type == "concert.cancelled":
+        subject = "⚠️ Update: Your concert has been cancelled"
+        refund_value = _money(data, primary_key='price', fallback_key='amount')
+        body = (
+            "⚠️ Update: Your concert has been cancelled\n\n"
+            f"We’re truly sorry — {_value(data, 'concertName')} will no longer be taking place.\n\n"
+            "Solstitix sincerely regrets the disappointment caused and remains committed to supporting you.\n\n"
+            f"📌 Reason: {_value(data, 'cancellationReason', _value(data, 'reason'))}\n\n"
+            f"Ticket ID: {_value(data, 'ticketId')}\n"
+            f"Seat: {_value(data, 'seatNumber')}\n"
+            f"Original Date & Time: {_value(data, 'concertDateTime', _value(data, 'eventDate'))}\n\n"
+            f"💰 Original Price: {refund_value}\n"
+            f"🕒 Purchased At: {_value(data, 'purchaseDateTime', 'N/A')}\n"
+            f"🕒 Cancelled At: {_value(data, 'cancelledAt', _value(data, 'timestamp'))}\n\n"
+            f"💳 A full refund of {refund_value} will be processed to your original payment method within 3–5 working days.\n\n"
+            "If you have any questions or need assistance, please reach out to us:\n"
+            "📞 +65 9876 5432\n"
+            "📧 solstitixcustomerservice@gmail.com\n\n"
+            "We truly appreciate your understanding 🤍"
+        )
+        return subject, body
+
     tmpl = TEMPLATES.get(event_type, ("Notification", str(data)))
     subject = tmpl[0]
     try:
@@ -597,10 +618,12 @@ def compose_sms_message(event_type, data):
         )
 
     if event_type == "concert.cancelled":
+        refund_amount = str(_value(data, 'price', _value(data, 'amount'))).lstrip('$').strip()
         return (
-            "Concert cancelled\n"
-            f"Concert: {concert_name}\n"
-            f"Refund: {_money(data)}\n"
+            f"⚠️ Solstitix: {concert_name} cancelled. "
+            f"Ticket {ticket_id} ({seat_number}). "
+            f"Refund ${refund_amount} in 3-5 working days. "
+            f"Reason: {_value(data, 'cancellationReason', _value(data, 'reason'))}. "
             f"{footer}"
         )
 

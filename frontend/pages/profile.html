@@ -317,15 +317,24 @@ function isValidEmail(value=''){
 }
 
 async function loadContactSettings(){
+  const cEmail=document.getElementById('s-contact-email');
+  const cPhone=document.getElementById('s-contact-phone');
+  const cached=ContactProfile.readCached(user?.userId)||{};
+
+  if(cEmail && !cEmail.value){
+    cEmail.value=(cached?.email||user?.contactEmail||user?.email||'').trim();
+  }
+  if(cPhone && !cPhone.value){
+    cPhone.value=(cached?.phoneNumber||user?.contactPhone||user?.phone||'').trim();
+  }
+
   try{
     const contact=await ContactProfile.fetch(user);
-    const cEmail=document.getElementById('s-contact-email');
-    const cPhone=document.getElementById('s-contact-phone');
-    if(cEmail) cEmail.value=contact?.email||user?.email||'';
-    if(cPhone) cPhone.value=contact?.phoneNumber||'';
+    if(cEmail) cEmail.value=(contact?.email||cached?.email||user?.contactEmail||user?.email||'').trim();
+    if(cPhone) cPhone.value=(contact?.phoneNumber||cached?.phoneNumber||user?.contactPhone||user?.phone||'').trim();
   }catch{
-    const cEmail=document.getElementById('s-contact-email');
-    if(cEmail && !cEmail.value) cEmail.value=user?.email||'';
+    if(cEmail && !cEmail.value) cEmail.value=(cached?.email||user?.contactEmail||user?.email||'').trim();
+    if(cPhone && !cPhone.value) cPhone.value=(cached?.phoneNumber||user?.contactPhone||user?.phone||'').trim();
   }
 }
 
