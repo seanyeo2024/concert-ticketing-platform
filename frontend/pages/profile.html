@@ -2,50 +2,82 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Profile — Soltistix</title>
+<title>Profile - Soltistix</title>
 <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
 <link rel="stylesheet" href="../assets/css/global.css">
 <style>
-/* ── Profile hero ─────────────────────── */
 .profile-hero {
   background: var(--black);
   padding: calc(var(--nav-h) + 56px) 0 0;
-  position: relative; overflow: hidden;
+  position: relative;
+  overflow: hidden;
 }
 .ph-blob-1 {
-  position: absolute; width: 380px; height: 380px;
-  background: var(--purple); opacity: 0.07;
+  position: absolute;
+  width: 380px;
+  height: 380px;
+  background: var(--purple);
+  opacity: 0.07;
   border-radius: 60% 40% 70% 30% / 40% 60% 30% 70%;
-  top: -60px; right: -60px;
+  top: -60px;
+  right: -60px;
   animation: blobFloat 12s ease-in-out infinite;
 }
 .ph-blob-2 {
-  position: absolute; width: 220px; height: 220px;
-  background: var(--teal); opacity: 0.06;
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  background: var(--teal);
+  opacity: 0.06;
   border-radius: 40% 60% 30% 70% / 60% 40% 70% 30%;
-  bottom: 0; left: 25%;
+  bottom: 0;
+  left: 25%;
   animation: blobFloat 9s ease-in-out infinite reverse;
 }
 .profile-top {
-  display: grid; grid-template-columns: auto 1fr;
-  gap: 40px; align-items: end; padding-bottom: 48px;
-  position: relative; z-index: 2;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 40px;
+  align-items: end;
+  padding-bottom: 48px;
+  position: relative;
+  z-index: 2;
 }
 .avatar-xl {
-  width: 110px; height: 110px;
+  width: 110px;
+  height: 110px;
   background: linear-gradient(135deg, var(--blue), var(--teal));
-  border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  font-family: var(--font-display); font-size: 3.5rem; font-weight: 900;
-  color: var(--white); flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 3.5rem;
+  font-weight: 900;
+  color: var(--white);
+  flex-shrink: 0;
   box-shadow: 0 8px 32px rgba(58,180,242,0.3);
 }
 .profile-name {
-  font-family: var(--font-display); font-size: clamp(2.5rem, 6vw, 4.5rem);
-  font-weight: 900; color: var(--cream); line-height: 0.9;
-  letter-spacing: -0.03em; font-style: italic;
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 900;
+  color: var(--cream);
+  line-height: 0.9;
+  letter-spacing: -0.03em;
+  font-style: italic;
 }
-.profile-email { font-size: 0.82rem; color: #555; margin-top: 8px; }
-.role-tag { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; }
+.profile-email {
+  font-size: 0.82rem;
+  color: #555;
+  margin-top: 8px;
+}
+.role-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
 .role-tag .tag {
   background: rgba(255,255,255,0.08);
   border-color: rgba(255,255,255,0.16);
@@ -56,73 +88,104 @@
   border-color: var(--teal);
   color: var(--black);
 }
-
-/* ── Tabs bar ─────────────────────────── */
 .tabs-bar {
-  display: flex; gap: 0;
+  display: flex;
+  gap: 0;
   border-top: 1.5px solid rgba(255,255,255,0.06);
-  position: relative; z-index: 2;
+  position: relative;
+  z-index: 2;
   overflow-x: auto;
   scrollbar-width: none;
 }
 .tabs-bar::-webkit-scrollbar { display: none; }
 .tab-btn {
-  padding: 16px 28px; font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
-  background: none; border: none; border-right: 1.5px solid rgba(255,255,255,0.06);
-  color: #555; cursor: none; transition: all 0.15s; letter-spacing: 0.02em;
+  padding: 16px 28px;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: none;
+  border: none;
+  border-right: 1.5px solid rgba(255,255,255,0.06);
+  color: #555;
+  cursor: none;
+  transition: all 0.15s;
+  letter-spacing: 0.02em;
   white-space: nowrap;
   flex-shrink: 0;
 }
 .tab-btn:last-child { border-right: none; }
-.tab-btn.active { color: var(--yellow); border-bottom: 3px solid var(--yellow); }
+.tab-btn.active {
+  color: var(--yellow);
+  border-bottom: 3px solid var(--yellow);
+}
 .tab-btn:hover:not(.active) { color: var(--cream); }
-
-/* ── Panels ──────────────────────────── */
-.panel { display: none; padding: 48px 0 80px; }
+.panel {
+  display: none;
+  padding: 48px 0 80px;
+}
 .panel.active { display: block; }
-
-/* Stats strip */
 .stat-strip {
-  display: grid; grid-template-columns: 1fr 1fr 1fr;
-  gap: 16px; margin-bottom: 40px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 40px;
 }
 .stat-cell {
-  background: var(--white); border: 2px solid rgba(17,17,17,0.07);
-  border-radius: var(--radius-lg); padding: 24px; text-align: center;
+  background: var(--white);
+  border: 2px solid rgba(17,17,17,0.07);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  text-align: center;
   transition: transform 0.15s var(--ease);
 }
 .stat-cell:hover { transform: translateY(-3px); }
 .stat-val {
-  font-family: var(--font-display); font-size: 2.5rem; font-weight: 900;
-  color: var(--black); letter-spacing: -0.03em;
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: var(--black);
+  letter-spacing: -0.03em;
 }
 .stat-key {
-  font-size: 0.65rem; font-weight: 700; letter-spacing: 0.14em;
-  text-transform: uppercase; color: #888; margin-top: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #888;
+  margin-top: 4px;
 }
-
-/* Activity / payment rows */
 .pay-row {
-  display: flex; align-items: center; gap: 16px;
-  padding: 14px 0; border-bottom: 1.5px solid rgba(17,17,17,0.07);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1.5px solid rgba(17,17,17,0.07);
 }
 .pay-row:last-of-type { border-bottom: none; }
 .pay-icon {
-  width: 40px; height: 40px; border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
   background: rgba(17,17,17,0.06);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1rem; flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
 }
 .pay-amount {
-  font-family: var(--font-display); font-size: 1.3rem; font-weight: 900;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 900;
   letter-spacing: -0.02em;
 }
 .pay-credit { color: var(--teal); }
-.pay-debit  { color: var(--pink); }
-
-/* Profile grid */
-.profile-grid { display: grid; grid-template-columns: 380px 1fr; gap: 40px; }
-
+.pay-debit { color: var(--pink); }
+.profile-grid {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 40px;
+}
 @media(max-width:900px){
   .profile-top { grid-template-columns: 1fr; }
   .stat-strip { grid-template-columns: 1fr 1fr; }
@@ -144,6 +207,11 @@
   }
   .tab-btn:nth-child(2n) { border-right: none; }
 }
+@media(max-width:560px){
+  .tabs-bar { grid-template-columns: 1fr; }
+  .tab-btn { border-right: none; }
+  .panel { padding: 34px 0 52px; }
+}
 </style>
 </head>
 <body>
@@ -152,33 +220,6 @@
 <div id="toast-container"></div>
 
 <div class="profile-hero">
-
-@media(max-width:860px){
-  .tabs-bar {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    overflow: visible;
-  }
-  .tab-btn {
-    border-right: 1.5px solid rgba(255,255,255,0.06);
-    border-bottom: 1.5px solid rgba(255,255,255,0.06);
-  }
-  .tab-btn:nth-child(2n) {
-    border-right: none;
-  }
-}
-
-@media(max-width:560px){
-  .tabs-bar {
-    grid-template-columns: 1fr;
-  }
-  .tab-btn {
-    border-right: none;
-  }
-  .panel {
-    padding: 34px 0 52px;
-  }
-}
   <div class="ph-blob-1"></div>
   <div class="ph-blob-2"></div>
   <div class="container">
@@ -201,13 +242,11 @@
 
 <div style="background:var(--cream)">
   <div class="container">
-
-    <!-- Overview -->
     <div class="panel active" id="panel-overview">
       <div class="stat-strip">
-        <div class="stat-cell"><div class="stat-val" id="stat-tix">3</div><div class="stat-key">Tickets Held</div></div>
-        <div class="stat-cell"><div class="stat-val" id="stat-shows">2</div><div class="stat-key">Shows Attended</div></div>
-        <div class="stat-cell"><div class="stat-val" id="stat-spent">1,124</div><div class="stat-key">SGD Spent</div></div>
+        <div class="stat-cell"><div class="stat-val" id="stat-tix">0</div><div class="stat-key">Tickets Held</div></div>
+        <div class="stat-cell"><div class="stat-val" id="stat-shows">0</div><div class="stat-key">Shows Attended</div></div>
+        <div class="stat-cell"><div class="stat-val" id="stat-spent">0.00</div><div class="stat-key">SGD Spent</div></div>
       </div>
       <div class="section-label mb-16">Recent Activity</div>
       <div class="card" id="activity-list">
@@ -217,19 +256,16 @@
       </div>
     </div>
 
-    <!-- Payments -->
     <div class="panel" id="panel-payments">
       <div class="section-label mb-24">Payment History</div>
-      <div class="card" id="payment-list"><div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Loading…</div></div>
+      <div class="card" id="payment-list"><div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Loading...</div></div>
     </div>
 
-    <!-- Notifications -->
     <div class="panel" id="panel-notifications">
       <div class="section-label mb-24">Notification Log</div>
-      <div class="card" id="notif-list"><div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Loading…</div></div>
+      <div class="card" id="notif-list"><div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Loading...</div></div>
     </div>
 
-    <!-- Settings -->
     <div class="panel" id="panel-settings">
       <div class="profile-grid">
         <div>
@@ -237,9 +273,9 @@
           <div class="card">
             <div class="form-group"><label class="form-label">Display Name</label><input class="form-input" id="s-name"></div>
             <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="s-email" type="email"></div>
-            <button class="btn btn-black w-full" onclick="saveSettings()" style="border-radius:var(--radius)">Save Changes →</button>
+            <button class="btn btn-black w-full" onclick="saveSettings()" style="border-radius:var(--radius)">Save Changes -></button>
             <div class="divider mt-24 mb-24"></div>
-            <button class="btn w-full" style="border-color:var(--pink);color:var(--pink);border-radius:var(--radius)" onclick="Auth.logout()">Sign Out ✕</button>
+            <button class="btn w-full" style="border-color:var(--pink);color:var(--pink);border-radius:var(--radius)" onclick="Auth.logout()">Sign Out x</button>
           </div>
         </div>
         <div>
@@ -250,101 +286,287 @@
         </div>
       </div>
     </div>
-
   </div>
 </div>
 
 <script src="../assets/js/api.js"></script>
 <script>
-const user=Auth.require(); renderNav();
-function switchPanel(n,el){
-  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-  document.getElementById(`panel-${n}`).classList.add('active'); el.classList.add('active');
-  if(n==='payments'&&!document.getElementById('payment-list').dataset.loaded) loadPayments();
-  if(n==='notifications'&&!document.getElementById('notif-list').dataset.loaded) loadNotifs();
+const user = Auth.require();
+renderNav();
+
+let profileConcertIndex = {};
+let profileLiveSyncUnsub = null;
+
+function switchPanel(name, button){
+  document.querySelectorAll('.panel').forEach(panel => panel.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(tab => tab.classList.remove('active'));
+  document.getElementById(`panel-${name}`).classList.add('active');
+  button.classList.add('active');
+  if(name === 'payments' && !document.getElementById('payment-list').dataset.loaded) loadPayments();
+  if(name === 'notifications' && !document.getElementById('notif-list').dataset.loaded) loadNotifs();
+}
+
+function getProfileConcertLabel(concertId){
+  const concert = profileConcertIndex[concertId] || {};
+  const artist = String(concert.artistName || '').trim();
+  const name = String(concert.name || concert.concertId || concertId || '').trim();
+  if(artist && name && artist.toLowerCase() !== name.toLowerCase()) return `${artist} - ${name}`;
+  return artist || name || concertId || 'Concert';
+}
+
+function getProfileTicketMeta(ticket){
+  if(!ticket) return 'Ticket details unavailable';
+  const parts = [];
+  if(ticket.seatNumber) parts.push(ticket.seatNumber);
+  const amount = ticket.resalePrice ?? ticket.purchasePrice;
+  if(amount != null && amount !== '') parts.push(`SGD ${Number(amount).toFixed(2)}`);
+  return parts.join(' · ') || ticket.ticketId || 'Ticket details unavailable';
+}
+
+function getProfileRelativeTime(dt){
+  const parsed = Util.parseDateParts(dt)?.date;
+  if(!parsed) return 'Recently';
+  const diffMs = Date.now() - parsed.getTime();
+  if(diffMs < 60_000) return 'Just now';
+  const mins = Math.floor(diffMs / 60_000);
+  if(mins < 60) return `${mins} min${mins === 1 ? '' : 's'} ago`;
+  const hours = Math.floor(mins / 60);
+  if(hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  if(days < 7) return `${days} day${days === 1 ? '' : 's'} ago`;
+  const weeks = Math.floor(days / 7);
+  if(weeks < 5) return `${weeks} week${weeks === 1 ? '' : 's'} ago`;
+  return Util.formatDateShort(parsed);
+}
+
+function renderOverviewStats(payments, tickets){
+  const held = tickets.filter(ticket => ['CONFIRMED', 'PENDING', 'RESALE_LISTED', 'RESALE_PENDING'].includes(ticket.status)).length;
+  const attendedConcertIds = new Set(tickets.filter(ticket => ticket.status === 'USED').map(ticket => ticket.concertId));
+  const spent = payments
+    .filter(payment => ['PURCHASE', 'RESALE_PURCHASE'].includes(String(payment.type || '').toUpperCase()) && String(payment.status || '').toUpperCase() === 'SUCCESS')
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+
+  document.getElementById('stat-tix').textContent = String(held);
+  document.getElementById('stat-shows').textContent = String(attendedConcertIds.size);
+  document.getElementById('stat-spent').textContent = spent.toFixed(2);
+}
+
+function mapPaymentActivity(payment, ticketMap){
+  const type = String(payment?.type || '').toUpperCase();
+  const reason = String(payment?.reason || '').toUpperCase();
+  const ticket = ticketMap[payment?.ticketId] || null;
+  const concertLabel = getProfileConcertLabel(payment?.concertId || ticket?.concertId);
+  const amount = payment?.amount != null ? `SGD ${Number(payment.amount).toFixed(2)}` : null;
+
+  if(type === 'PURCHASE'){
+    return { icon: '🎫', label: `Purchased Ticket - ${concertLabel}`, sub: getProfileTicketMeta(ticket), at: payment.createdAt };
+  }
+  if(type === 'RESALE_PURCHASE'){
+    return { icon: '🛒', label: `Bought Resale Ticket - ${concertLabel}`, sub: getProfileTicketMeta(ticket), at: payment.createdAt };
+  }
+  if(type === 'REFUND' && reason === 'RESALE_PAYOUT'){
+    return {
+      icon: '💸',
+      label: `Received Resale Payout - ${concertLabel}`,
+      sub: [ticket?.seatNumber, amount].filter(Boolean).join(' · ') || amount || 'Resale payout completed',
+      at: payment.createdAt,
+    };
+  }
+  if(type === 'REFUND'){
+    return {
+      icon: '↩',
+      label: `Refund Processed - ${concertLabel}`,
+      sub: [ticket?.seatNumber, amount].filter(Boolean).join(' · ') || amount || 'Refund completed',
+      at: payment.createdAt,
+    };
+  }
+  return null;
+}
+
+function mapTicketActivity(ticket){
+  if(!ticket?.updatedAt || !['RESALE_LISTED', 'RESALE_PENDING'].includes(ticket.status)) return null;
+  return {
+    icon: '🔁',
+    label: `Listed Ticket for Resale - ${getProfileConcertLabel(ticket.concertId)}`,
+    sub: getProfileTicketMeta(ticket),
+    at: ticket.updatedAt,
+  };
+}
+
+function mapNotificationActivity(notification){
+  const subject = String(notification?.subject || '').trim();
+  const eventType = String(notification?.eventType || 'Notification').replace(/_/g, ' ');
+  return {
+    icon: '📩',
+    label: subject || eventType,
+    sub: [notification?.channel, notification?.status].filter(Boolean).join(' · ') || 'Notification update',
+    at: notification?.sentAt || notification?.createdAt,
+  };
+}
+
+function renderActivityRows(activity){
+  const list = document.getElementById('activity-list');
+  if(!activity.length){
+    list.innerHTML = '<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No recent activity yet</div>';
+    return;
+  }
+  list.innerHTML = activity.map(item => `
+    <div class="pay-row">
+      <div class="pay-icon">${item.icon}</div>
+      <div style="flex:1"><div style="font-weight:600;font-size:0.85rem">${item.label}</div><div class="text-xs text-muted">${item.sub}</div></div>
+      <div class="text-xs text-muted">${getProfileRelativeTime(item.at)}</div>
+    </div>`).join('');
+}
+
+function setupProfileLiveSync(){
+  if(profileLiveSyncUnsub) profileLiveSyncUnsub();
+  let timer = null;
+  const schedule = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      loadActivity({ silent: true });
+      if(document.getElementById('payment-list').dataset.loaded) loadPayments();
+      if(document.getElementById('notif-list').dataset.loaded) loadNotifs();
+    }, 350);
+  };
+  profileLiveSyncUnsub = LiveSync.on(schedule);
+  window.addEventListener('focus', schedule);
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible') schedule();
+  });
+}
+
+async function loadActivity({ silent = false } = {}){
+  const activityList = document.getElementById('activity-list');
+  if(!silent){
+    activityList.innerHTML = `
+      <div class="skel" style="height:56px;margin-bottom:8px;border-radius:var(--radius)"></div>
+      <div class="skel" style="height:56px;margin-bottom:8px;border-radius:var(--radius)"></div>
+      <div class="skel" style="height:56px;border-radius:var(--radius)"></div>
+    `;
+  }
+
+  try{
+    const [concertsRes, paymentsRes, notificationsRes] = await Promise.all([
+      API.concerts.list(),
+      API.payment.byUser(user.userId),
+      API.notification.byUser(user.userId),
+    ]);
+    const concerts = concertsRes?.concerts || concertsRes || [];
+    profileConcertIndex = Object.fromEntries(concerts.filter(concert => concert?.concertId).map(concert => [concert.concertId, concert]));
+
+    const concertIds = concerts.map(concert => concert.concertId).filter(Boolean);
+    const ticketResults = await Promise.allSettled(concertIds.map(concertId => API.tickets.list(concertId, 'ALL')));
+    const tickets = ticketResults.flatMap(result => result.value?.tickets || []).filter(ticket => ticket?.ownerId === user.userId);
+    const ticketMap = Object.fromEntries(tickets.filter(ticket => ticket?.ticketId).map(ticket => [ticket.ticketId, ticket]));
+
+    const payments = paymentsRes?.payments || [];
+    const notifications = notificationsRes?.notifications || [];
+    renderOverviewStats(payments, tickets);
+
+    const activity = [
+      ...payments
+        .filter(payment => String(payment?.status || '').toUpperCase() === 'SUCCESS')
+        .map(payment => mapPaymentActivity(payment, ticketMap))
+        .filter(Boolean),
+      ...tickets.map(mapTicketActivity).filter(Boolean),
+      ...notifications.map(mapNotificationActivity).filter(Boolean),
+    ]
+      .filter(item => item?.at)
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, 6);
+
+    renderActivityRows(activity);
+  }catch{
+    if(!silent){
+      activityList.innerHTML = '<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Could not load activity</div>';
+    }
+  }
+}
+
+async function loadPayments(){
+  const list = document.getElementById('payment-list');
+  list.dataset.loaded = '1';
+  try{
+    const d = await API.payment.byUser(user.userId);
+    const pays = d.payments || [];
+    if(!pays.length){
+      list.innerHTML = '<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No payments yet</div>';
+      return;
+    }
+    list.innerHTML = pays.map(payment => {
+      const isRefund = payment.type === 'REFUND';
+      return `<div class="pay-row">
+        <div class="pay-icon" style="background:${isRefund ? 'rgba(245,197,24,0.15)' : 'rgba(17,17,17,0.06)'}">${isRefund ? '↩' : '💳'}</div>
+        <div style="flex:1"><div style="font-weight:600;font-size:0.85rem">${payment.type.replace('_', ' ')}</div><div class="text-xs text-muted">${payment.ticketId} · ${Util.formatDateShort(payment.createdAt)}</div></div>
+        <div class="pay-amount ${isRefund ? 'pay-credit' : 'pay-debit'}">${isRefund ? '+' : '-'}SGD ${payment.amount}</div>
+      </div>`;
+    }).join('');
+  }catch{
+    list.innerHTML = '<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Could not load</div>';
+  }
+}
+
+async function loadNotifs(){
+  const list = document.getElementById('notif-list');
+  list.dataset.loaded = '1';
+  try{
+    const d = await API.notification.byUser(user.userId);
+    const notifs = d.notifications || [];
+    if(!notifs.length){
+      list.innerHTML = '<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No notifications</div>';
+      return;
+    }
+    list.innerHTML = notifs.map(notification => `
+      <div class="pay-row">
+        <div class="pay-icon" style="background:rgba(62,207,178,0.1)">📧</div>
+        <div style="flex:1"><div style="font-weight:600;font-size:0.85rem">${notification.subject}</div><div class="text-xs text-muted">${notification.channel} · ${Util.formatDateShort(notification.sentAt)}</div></div>
+        ${Util.tag(notification.status)}
+      </div>`).join('');
+  }catch{
+    list.innerHTML = '<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Could not load</div>';
+  }
+}
+
+function saveSettings(){
+  const name = document.getElementById('s-name').value.trim();
+  if(!name){
+    toast('Name cannot be empty', 'warning');
+    return;
+  }
+  const stored = Auth.getUser();
+  stored.name = name;
+  localStorage.setItem('ctms_user', JSON.stringify(stored));
+  document.getElementById('p-name').textContent = name;
+  document.getElementById('p-avatar').textContent = name[0];
+  toast('Profile updated', 'success');
 }
 
 function init(){
-  document.getElementById('p-avatar').textContent=user.name[0];
-  document.getElementById('p-name').textContent=user.name;
-  document.getElementById('p-email').textContent=user.email;
-  document.getElementById('p-role').innerHTML=user.role==='admin'
-    ?`<span class="tag tag-active">👑 Administrator</span>`
-    :`<span class="tag">Customer</span>`;
-  document.getElementById('s-name').value=user.name;
-  document.getElementById('s-email').value=user.email;
-  if(user.role==='admin'){
-    document.querySelectorAll('#tab-bar .tab-btn').forEach((btn,index)=>{
-      if(index < 3) btn.remove();
+  document.getElementById('p-avatar').textContent = user.name[0];
+  document.getElementById('p-name').textContent = user.name;
+  document.getElementById('p-email').textContent = user.email;
+  document.getElementById('p-role').innerHTML = user.role === 'admin'
+    ? '<span class="tag tag-active">Admin</span>'
+    : '<span class="tag">Customer</span>';
+  document.getElementById('s-name').value = user.name;
+  document.getElementById('s-email').value = user.email;
+
+  if(user.role === 'admin'){
+    document.querySelectorAll('#tab-bar .tab-btn').forEach((button, index) => {
+      if(index < 3) button.remove();
     });
-    ['overview','payments','notifications'].forEach(panel=>{
+    ['overview', 'payments', 'notifications'].forEach(panel => {
       document.getElementById(`panel-${panel}`)?.remove();
     });
-    const settingsBtn=document.querySelector('#tab-bar .tab-btn');
+    const settingsBtn = document.querySelector('#tab-bar .tab-btn');
     settingsBtn?.classList.add('active');
     document.getElementById('panel-settings')?.classList.add('active');
     return;
   }
+
+  setupProfileLiveSync();
   loadActivity();
-}
-
-function loadActivity(){
-  const acts=[
-    {icon:'🎫',label:'Purchased Ticket — Taylor Swift',sub:'Seat F-01-03 · SGD 388',time:'2 days ago'},
-    {icon:'🔄',label:'Listed Ticket for Resale',sub:'TKT-10007 · SGD 300',time:'5 days ago'},
-    {icon:'💜',label:'BTS Ticket Refunded',sub:'Concert cancelled · SGD 398',time:'1 week ago'},
-  ];
-  document.getElementById('activity-list').innerHTML=acts.map(a=>`
-    <div class="pay-row">
-      <div class="pay-icon">${a.icon}</div>
-      <div style="flex:1"><div style="font-weight:600;font-size:0.85rem">${a.label}</div><div class="text-xs text-muted">${a.sub}</div></div>
-      <div class="text-xs text-muted">${a.time}</div>
-    </div>`).join('');
-}
-
-async function loadPayments(){
-  const list=document.getElementById('payment-list');
-  list.dataset.loaded='1';
-  try{
-    const d=await API.payment.byUser(user.userId);
-    const pays=d.payments||[];
-    if(!pays.length){list.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No payments yet</div>`;return;}
-    list.innerHTML=pays.map(p=>{
-      const isRef=p.type==='REFUND';
-      return `<div class="pay-row">
-        <div class="pay-icon" style="background:${isRef?'rgba(245,197,24,0.15)':'rgba(17,17,17,0.06)'}">${isRef?'↩':'💳'}</div>
-        <div style="flex:1"><div style="font-weight:600;font-size:0.85rem">${p.type.replace('_',' ')}</div><div class="text-xs text-muted">${p.ticketId} · ${Util.formatDateShort(p.createdAt)}</div></div>
-        <div class="pay-amount ${isRef?'pay-credit':'pay-debit'}">${isRef?'+':'-'}SGD ${p.amount}</div>
-      </div>`;
-    }).join('');
-  }catch{list.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Could not load</div>`;}
-}
-
-async function loadNotifs(){
-  const list=document.getElementById('notif-list');
-  list.dataset.loaded='1';
-  try{
-    const d=await API.notification.byUser(user.userId);
-    const notifs=d.notifications||[];
-    if(!notifs.length){list.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No notifications</div>`;return;}
-    list.innerHTML=notifs.map(n=>`
-      <div class="pay-row">
-        <div class="pay-icon" style="background:rgba(62,207,178,0.1)">📧</div>
-        <div style="flex:1"><div style="font-weight:600;font-size:0.85rem">${n.subject}</div><div class="text-xs text-muted">${n.channel} · ${Util.formatDateShort(n.sentAt)}</div></div>
-        ${Util.tag(n.status)}
-      </div>`).join('');
-  }catch{list.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Could not load</div>`;}
-}
-
-function saveSettings(){
-  const name=document.getElementById('s-name').value.trim();
-  if(!name){toast('Name cannot be empty','warning');return;}
-  const stored=Auth.getUser(); stored.name=name;
-  localStorage.setItem('ctms_user',JSON.stringify(stored));
-  document.getElementById('p-name').textContent=name;
-  document.getElementById('p-avatar').textContent=name[0];
-  toast('Profile updated ✓','success');
 }
 
 init();
