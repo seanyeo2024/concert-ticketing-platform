@@ -184,6 +184,7 @@ def publish_window_expired(row):
             "queue.window.expired",
             {
                 "eventType": "queue.window.expired",
+                "channel": "SMS",
                 "userId": row["userId"],
                 "timestamp": datetime.utcnow().isoformat(),
                 "data": {
@@ -201,9 +202,14 @@ def publish_window_granted(user_id, concert_id, expires_at):
         mq_publish(
             "queue.window.granted",
             {
+                "eventType": "queue.window.granted",
+                "channel": "SMS",
                 "userId": user_id,
-                "concertId": concert_id,
-                "windowExpiresAt": expires_at.isoformat(),
+                "timestamp": datetime.utcnow().isoformat(),
+                "data": {
+                    "concertId": concert_id,
+                    "windowExpiresAt": expires_at.isoformat(),
+                },
             },
         )
     except Exception:

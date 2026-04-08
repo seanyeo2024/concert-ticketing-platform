@@ -10,6 +10,9 @@ from flask_cors import CORS
 import mysql.connector, os, uuid, json, threading
 from datetime import datetime
 import pika
+import re
+import time
+from importlib import import_module
 
 app = Flask(__name__)
 CORS(app)
@@ -26,6 +29,45 @@ def get_db():
 def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "notification", "timestamp": datetime.utcnow().isoformat()}}), status
+
+
+E164_PATTERN = re.compile(r'^\+[1-9]\d{7,14}$')
+SMS_MAX_LENGTH = 320
+
+
+def is_e164_phone_number(value):
+    return isinstance(value, str) and bool(E164_PATTERN.fullmatch(value.strip()))
+
+
+def resolve_sms_recipient(payload, data, user_id):
+    for candidate in (
+        payload.get("phoneNumber"),
+        payload.get("toNumber"),
+        data.get("phoneNumber"),
+        data.get("toNumber"),
+    ):
+        if is_e164_phone_number(candidate):
+            return candidate.strip()
+
+    db = get_db()
+    cur = db.cursor(dictionary=True)
+    try:
+        cur.execute(
+            "SELECT userId, phoneE164, smsOptIn FROM user_contact WHERE userId=%s",
+            (user_id,),
+        )
+        contact = cur.fetchone()
+    finally:
+        cur.close()
+        db.close()
+
+    if not contact:
+        raise ValueError(f"No contact record found for user {user_id}")
+    if not contact.get("smsOptIn"):
+        raise ValueError(f"User {user_id} has not opted in to SMS notifications")
+    if not is_e164_phone_number(contact.get("phoneE164")):
+        raise ValueError(f"User {user_id} does not have a valid E.164 phone number")
+    return contact["phoneE164"].strip()
 
 
 def ensure_schema():
@@ -51,6 +93,18 @@ def ensure_schema():
         )
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_contact (
+          userId VARCHAR(36) PRIMARY KEY,
+          email VARCHAR(200) NULL,
+          phoneE164 VARCHAR(20) NOT NULL,
+          smsOptIn TINYINT(1) NOT NULL DEFAULT 0,
+          createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+        """
+    )
     db.commit()
     cur.close()
     db.close()
@@ -61,11 +115,45 @@ def send_email(to_user, subject, body):
     print(f"[EMAIL STUB] To={to_user} Subject={subject}")
     return f"msg_{uuid.uuid4().hex[:8]}", True
 
-def send_sms(to_user, body):
-    """Stub — replace with Twilio call."""
-    # TODO: twilio.rest.Client(...).messages.create(...)
-    print(f"[SMS STUB] To={to_user} Body={body[:60]}")
-    return f"SM{uuid.uuid4().hex[:16]}", True
+def send_sms(to_number, body):
+    """Send an SMS via Twilio."""
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
+    auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
+    from_number = os.environ.get("TWILIO_FROM_NUMBER")
+
+    if not account_sid or not auth_token or not from_number:
+        raise RuntimeError("Twilio environment variables are not configured")
+    if not is_e164_phone_number(to_number):
+        raise ValueError("SMS recipient must be in E.164 format, e.g. +6591234567")
+    if not is_e164_phone_number(from_number):
+        raise ValueError("TWILIO_FROM_NUMBER must be in E.164 format, e.g. +6591234567")
+
+    body = (body or "").strip()
+    if len(body) > SMS_MAX_LENGTH:
+        body = body[:SMS_MAX_LENGTH]
+
+    client = import_module("twilio.rest").Client(account_sid, auth_token)
+    retryable_tokens = ("timeout", "temporarily", "rate", "429", "502", "503", "connection")
+    last_error = None
+
+    for attempt in range(3):
+        try:
+            message = client.messages.create(
+                body=body,
+                from_=from_number.strip(),
+                to=to_number.strip(),
+            )
+            return message.sid, True
+        except Exception as exc:
+            last_error = exc
+            error_text = str(exc).lower()
+            can_retry = any(token in error_text for token in retryable_tokens)
+            if can_retry and attempt < 2:
+                time.sleep(0.6 * (attempt + 1))
+                continue
+            raise
+
+    raise last_error
 
 TEMPLATES = {
     "ticket.purchased":     ("Your ticket is confirmed!", "You have successfully purchased ticket {ticketId} for {concertName}. Seat: {seatNumber}."),
@@ -85,8 +173,13 @@ def handle_event(event_type, payload):
     try: body = tmpl[1].format(**data)
     except KeyError: body = tmpl[1]
     if channel == "SMS":
-        ext_id, ok = send_sms(user_id, body)
-        subject = None
+        try:
+            recipient = resolve_sms_recipient(payload, data, user_id)
+            ext_id, ok = send_sms(recipient, body)
+            subject = None
+        except Exception as e:
+            print(f"[NOTIFICATION] SMS failed for {event_type}: {e}")
+            ext_id, ok = None, False
     else:
         ext_id, ok = send_email(user_id, subject, body)
     status = "SENT" if ok else "FAILED"

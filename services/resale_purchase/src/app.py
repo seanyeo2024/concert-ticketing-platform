@@ -103,7 +103,7 @@ def list_ticket():
     # Step 4 — notify seller (non-critical)
     try:
         mq_publish("ticket.resale.listed", {
-            "eventType": "ticket.resale.listed", "userId": data["sellerId"],
+            "eventType": "ticket.resale.listed", "channel": "SMS", "userId": data["sellerId"],
             "timestamp": datetime.utcnow().isoformat(),
             "data": {"ticketId": data["ticketId"], "concertId": data["concertId"],
                      "resalePrice": data["resalePrice"]}
@@ -227,6 +227,7 @@ def purchase_resale():
     try:
         mq_publish("ticket.resale.sold", {
             "eventType": "ticket.resale.sold",
+            "channel": "SMS",
             "userId": seller_id,
             "timestamp": datetime.utcnow().isoformat(),
             "data": {"ticketId": data["ticketId"], "concertId": data["concertId"],
