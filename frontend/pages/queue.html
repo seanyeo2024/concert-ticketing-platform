@@ -350,11 +350,14 @@ function showExpiredState(message='Your window expired. Rejoin the queue to try 
 
 async function loadConcert(){
   try{
-    const c=await API.concerts.get(concertId);
+    const [c, summary]=await Promise.all([
+      API.concerts.get(concertId),
+      API.tickets.summary(concertId),
+    ]);
     document.getElementById('q-concert-name').textContent=c.name;
     document.getElementById('q-concert-meta').textContent=`${Util.formatConcertDateTime(c.eventDate)} · ${c.venue?.split(',')[0]}`;
     document.getElementById('q-concert-status').innerHTML=Util.tag(c.status);
-    document.getElementById('q-avail').textContent=c.availableSeats?.toLocaleString()||'—';
+    document.getElementById('q-avail').textContent=Number(summary?.availableSeats || 0).toLocaleString();
   }catch{}
 }
 
