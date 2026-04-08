@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Concert — Solstitix</title>
+<title>Concert — Soltistix</title>
 <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
 <link rel="stylesheet" href="../assets/css/global.css">
 <style>
@@ -381,8 +381,8 @@
         <div class="admin-block-box hidden" id="admin-block-box">
           <div class="admin-block-icon">🔒</div>
           <div class="admin-block-badge">Admin Account</div>
-          <div class="admin-block-title">Purchase Restricted</div>
-          <p class="admin-block-msg">Administrators cannot purchase tickets. This restriction ensures fairness and prevents conflicts of interest in ticket sales.</p>
+          <div class="admin-block-title">Admin View</div>
+          <p class="admin-block-msg">Note to Administrators -- This is just a configuration view based of the concert. This section would be the Purchase Ticket for the public to checkout their tickets.</p>
         </div>
       </div>
     </div>
@@ -430,7 +430,7 @@ async function init() {
       return;
     }
 
-    document.title = `${concert.name} — Solstitix`;
+    document.title = `${concert.name} — Soltistix`;
     renderBanner();
 
     let catRes = { categories: [] };
