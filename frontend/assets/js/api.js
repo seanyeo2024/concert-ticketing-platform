@@ -200,6 +200,29 @@ const API = (() => {
       create:    p              => req(`${BASE.tickets}/tickets`, 'POST', p),
       update:    (cid,id,p)     => req(`${BASE.tickets}/tickets/${cid}/${id}`,'PUT',p).catch(()=>({ updated:true })),
       cancelAll: (cid,p)        => req(`${BASE.tickets}/tickets/${cid}/cancel-all`,'PUT',p).catch(()=>({ ticketsRefunded:0 })),
+      summary: async cid => {
+        const result = await API.tickets.list(cid, 'ALL');
+        const tickets = result?.tickets || [];
+        const byCategory = tickets.reduce((acc, ticket) => {
+          const categoryId = ticket?.categoryId;
+          if (!categoryId) return acc;
+          const bucket = acc[categoryId] || { total: 0, available: 0, sold: 0 };
+          bucket.total += 1;
+          if (ticket.status === 'AVAILABLE') bucket.available += 1;
+          else bucket.sold += 1;
+          acc[categoryId] = bucket;
+          return acc;
+        }, {});
+        const availableSeats = tickets.filter(ticket => ticket?.status === 'AVAILABLE').length;
+        return {
+          concertId: cid,
+          tickets,
+          totalSeats: tickets.length,
+          availableSeats,
+          soldSeats: Math.max(tickets.length - availableSeats, 0),
+          byCategory,
+        };
+      },
     },
     payment: {
       config:   async () => { try { return await req(`${BASE.payment}/config`); } catch { return { stripeConfigured:false, frontendMode:'demo-fallback' }; } },

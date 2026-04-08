@@ -468,7 +468,7 @@ body {
         <div class="config-zone-title">Seats, Prices, and Tickets</div>
         <div class="form-group" style="max-width:520px">
           <label class="form-label">Select Concert</label>
-          <select class="form-select" id="cfg-concert" onchange="loadConfigPreview()">
+          <select class="form-select" id="cfg-concert" onchange="loadConfigPreview(this.value)">
             <option value="">Choose concert to configure…</option>
           </select>
         </div>
@@ -916,6 +916,23 @@ async function mapWithConcurrency(items, worker, limit=4){
   return results;
 }
 
+async function enrichConcertsWithInventory(concerts=[]){
+  if(!concerts.length) return [];
+  const summaries=await mapWithConcurrency(concerts, c=>API.tickets.summary(c.concertId), 4);
+  return concerts.map((concert,index)=>{
+    const summary=summaries[index] || {};
+    const totalSeats=Number(summary.totalSeats || 0);
+    const availableSeats=Number(summary.availableSeats || 0);
+    return {
+      ...concert,
+      totalSeats,
+      availableSeats,
+      soldSeats: Math.max(totalSeats - availableSeats, 0),
+      inventorySummary: summary,
+    };
+  });
+}
+
 async function loadDashboard(){
   document.getElementById('kpi-concerts').textContent='—';
   document.getElementById('kpi-concerts-sub').textContent='Loading…';
@@ -927,7 +944,7 @@ async function loadDashboard(){
   document.getElementById('kpi-revenue-sub').textContent='Loading…';
 
   const d=await API.concerts.list();
-  const cs=d.concerts||d||[];
+  const cs=await enrichConcertsWithInventory(d.concerts||d||[]);
   const activeCount=cs.filter(c=>c.status==='ACTIVE').length;
   document.getElementById('kpi-concerts').textContent=String(cs.length).padStart(2,'0');
   document.getElementById('kpi-concerts-sub').textContent=`${activeCount} active`;
@@ -938,17 +955,13 @@ async function loadDashboard(){
       <div class="flex-c gap-16"><span class="text-sm text-muted">${c.availableSeats?.toLocaleString()} left</span>${Util.tag(c.status)}</div>
     </div>`).join('');
 
-  // Limit concurrent backend requests to keep admin fast and avoid request bursts.
-  const ticketResults = await mapWithConcurrency(cs, c=>API.tickets.list(c.concertId,'ALL'), 4);
   let totalTickets=0;
   let soldTickets=0;
   let availableTickets=0;
-  ticketResults.forEach(result=>{
-    const t=result?.tickets||[];
-    totalTickets += t.length;
-    const availableCount = t.filter(x=>x.status === 'AVAILABLE').length;
-    availableTickets += availableCount;
-    soldTickets += t.filter(x=>x.status && x.status !== 'AVAILABLE').length;
+  cs.forEach(concert=>{
+    totalTickets += Number(concert.totalSeats || 0);
+    availableTickets += Number(concert.availableSeats || 0);
+    soldTickets += Number(concert.soldSeats || 0);
   });
   document.getElementById('kpi-tickets').textContent=String(soldTickets).padStart(2,'0');
   document.getElementById('kpi-tickets-sub').textContent=totalTickets?`${availableTickets} available`:'No inventory';
@@ -1012,7 +1025,7 @@ async function loadHealth(){
 
 async function loadConcerts(){
   const d=await API.concerts.list();
-  const cs=d.concerts||d||[];
+  const cs=await enrichConcertsWithInventory(d.concerts||d||[]);
   const selectedStatus=document.getElementById('concert-status-filter')?.value || 'ALL';
   const filtered=selectedStatus==='ALL'
     ? cs
@@ -1040,7 +1053,8 @@ async function loadConfigConcertOptions(selectedId=''){
   sel.innerHTML='<option value="">Choose concert to configure…</option>';
   try{
     const d=await API.concerts.listStrict();
-    (d.concerts||d||[]).forEach(c=>{
+    const concerts=await enrichConcertsWithInventory(d.concerts||d||[]);
+    concerts.forEach(c=>{
       const o=document.createElement('option');
       o.value=c.concertId;
       o.textContent=`${c.name} (${c.totalSeats||0} seats)`;
@@ -1310,6 +1324,30 @@ function countBy(items, key){
   }, {});
 }
 
+function deriveCategoryPrefix(concertId, categories=[]){
+  const existingId=(categories||[])
+    .map(category=>String(category?.categoryId||''))
+    .find(id=>/-(\d+)$/.test(id));
+  if(existingId){
+    return existingId.replace(/-(\d+)$/, '');
+  }
+  return `CAT-${String(concertId||'').slice(-6)}`;
+}
+
+function getNextCategorySequence(prefix, categories=[]){
+  let maxSeq=0;
+  (categories||[]).forEach(category=>{
+    const id=String(category?.categoryId||'');
+    if(prefix && !id.startsWith(`${prefix}-`)) return;
+    const match=id.match(/-(\d+)$/);
+    if(match){
+      maxSeq=Math.max(maxSeq, Number(match[1]) || 0);
+    }
+  });
+  return maxSeq+1;
+}
+
+/* Legacy conflicted duplicate kept only for reference during merge.
 async function loadConfigPreview(){
   const concertId=document.getElementById('cfg-concert').value;
   const select=document.getElementById('cfg-concert');
@@ -1317,7 +1355,8 @@ async function loadConfigPreview(){
   rows.innerHTML='';
   document.getElementById('config-alert').innerHTML='';
   if(!concertId){
-    select.dataset.existingCount='0';
+    select.dataset.nextSeq='1';
+    select.dataset.categoryPrefix='';
     document.getElementById('cfg-preview').textContent='Choose a concert to configure its categories.';
     return;
   }
@@ -1339,6 +1378,53 @@ async function loadConfigPreview(){
   } else {
     addConfigRow();
   }
+
+  let concert, seatRes, priceRes, inventorySummary;
+  try{
+    [concert, seatRes, priceRes, inventorySummary] = await Promise.all([
+      API.concerts.getStrict(concertId),
+      API.concerts.seatsStrict(concertId),
+      API.pricing.listStrict(concertId).catch(e=>{
+        if(e?.status===404) return { prices: [] };
+        throw e;
+      }),
+      API.tickets.summary(concertId),
+    ]);
+  }catch(err){
+    select.dataset.nextSeq='1';
+    select.dataset.categoryPrefix='';
+    document.getElementById('cfg-preview').textContent='Could not load live concert configuration.';
+    document.getElementById('config-alert').innerHTML=`<div class="alert alert-danger">${err.message||'Could not load live concert configuration from the backend.'}</div>`;
+    return;
+  }
+
+  const categories=(seatRes.categories||[]).map(category=>{
+    const counts=inventorySummary?.byCategory?.[category.categoryId] || {};
+    const hasInventory=Number(counts.total || 0) > 0;
+    return {
+      ...category,
+      totalSeats: hasInventory ? Number(counts.total || 0) : Number(category.totalSeats || 0),
+      availableSeats: hasInventory ? Number(counts.available || 0) : Number(category.availableSeats ?? category.totalSeats ?? 0),
+      inventoryReady: hasInventory,
+    };
+  });
+  const prices=priceRes.prices||[];
+  const categoryPrefix=deriveCategoryPrefix(concertId, categories);
+  document.getElementById('cfg-event-date').value=toDateTimeLocalValue(concert?.eventDate);
+  select.dataset.categoryPrefix=categoryPrefix;
+  select.dataset.nextSeq=String(getNextCategorySequence(categoryPrefix, categories));
+  document.getElementById('cfg-preview').textContent=categories.length
+    ? `${concert.name} has ${categories.length} saved category(ies). Locked rows are grey. Unlock to edit, then save to apply and lock again.`
+    : `${concert.name} has no categories yet. Start with the empty row below, then save to lock it.`;
+  categories.forEach(category=>{
+    addConfigRow({
+      ...category,
+      basePrice: category.basePrice ?? '',
+      mode:'existing',
+      locked:true,
+    });
+  });
+  addConfigRow({ mode:'new', locked:false });
 }
 
 async function configureConcert(){
@@ -1431,6 +1517,7 @@ async function configureConcert(){
   }
 }
 
+*/
 async function loadCancelOptions(){
   const sel=document.getElementById('cancel-id');
   sel.innerHTML='<option value="">Choose concert to cancel…</option>';
@@ -1834,40 +1921,61 @@ async function loadConcertPays(){
   }
 }
 
-async function loadConfigPreview(){
-  const concertId=document.getElementById('cfg-concert').value;
+async function loadConfigPreview(selectedConcertId=''){
+  const concertId=selectedConcertId || document.getElementById('cfg-concert').value;
   const select=document.getElementById('cfg-concert');
   const rows=document.getElementById('config-rows');
   rows.innerHTML='';
   document.getElementById('config-alert').innerHTML='';
+  if(selectedConcertId && select.value !== selectedConcertId){
+    select.value=selectedConcertId;
+  }
   if(!concertId){
     select.dataset.existingCount='0';
+    select.dataset.nextSeq='1';
+    select.dataset.categoryPrefix='';
     document.getElementById('cfg-preview').textContent='Choose a concert to configure its categories.';
     return;
   }
-  let concert, seatRes, priceRes;
+  let concert, seatRes, priceRes, inventorySummary;
   try{
-    [concert, seatRes, priceRes] = await Promise.all([
+    [concert, seatRes, priceRes, inventorySummary] = await Promise.all([
       API.concerts.getStrict(concertId),
       API.concerts.seatsStrict(concertId),
       API.pricing.listStrict(concertId).catch(e=>{
         if(e?.status===404) return { prices: [] };
         throw e;
       }),
+      API.tickets.summary(concertId),
     ]);
   }catch(e){
     select.dataset.existingCount='0';
+    select.dataset.nextSeq='1';
+    select.dataset.categoryPrefix='';
     document.getElementById('cfg-preview').textContent='Could not load live concert configuration.';
     document.getElementById('config-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Could not load live concert configuration from the backend.'}</div>`;
     return;
   }
-  const categories=seatRes.categories||[];
-  document.getElementById('cfg-event-date').value=toDateTimeLocalValue(concert?.eventDate);
+
+  const categories=(seatRes.categories||[]).map(category=>{
+    const counts=inventorySummary?.byCategory?.[category.categoryId] || {};
+    const hasInventory=Number(counts.total || 0) > 0;
+    return {
+      ...category,
+      totalSeats: hasInventory ? Number(counts.total || 0) : Number(category.totalSeats || 0),
+      availableSeats: hasInventory ? Number(counts.available || 0) : Number(category.availableSeats ?? category.totalSeats ?? 0),
+      inventoryReady: hasInventory,
+    };
+  });
   const prices=priceRes.prices||[];
+  const categoryPrefix=deriveCategoryPrefix(concertId, categories);
+  document.getElementById('cfg-event-date').value=toDateTimeLocalValue(concert?.eventDate);
   select.dataset.existingCount=String(categories.length);
+  select.dataset.categoryPrefix=categoryPrefix;
+  select.dataset.nextSeq=String(getNextCategorySequence(categoryPrefix, categories));
   document.getElementById('cfg-preview').textContent=categories.length
-    ? `${concert.name} already has ${categories.length} category(ies). Unlock rows to edit, then save to lock all rows again.`
-    : `${concert.name} currently has no categories configured. Fill the empty row below, then save to lock it.`;
+    ? `${concert.name} has ${categories.length} saved category(ies). Locked rows are grey. Unlock to edit, then save to apply and lock again.`
+    : `${concert.name} has no categories yet. Start with the suggested rows below, then save to lock them.`;
   categories.forEach(category=>{
     const price=prices.find(entry=>entry.categoryId===category.categoryId) || {};
     addConfigRow({
@@ -1878,7 +1986,12 @@ async function loadConfigPreview(){
       locked:true,
     });
   });
-  addConfigRow({ locked:false });
+  if(categories.length){
+    addConfigRow({ mode:'new', locked:false });
+  }else{
+    addConfigRow({ categoryName:'CAT 1 - FLOOR / PIT', mode:'new', locked:false });
+    addConfigRow({ categoryName:'CAT 2 - LOWER TIER', mode:'new', locked:false });
+  }
 }
 
 async function configureConcert(){
