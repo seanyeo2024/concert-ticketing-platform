@@ -357,6 +357,18 @@ function formatPurchaseDateTime(ticket){
   });
 }
 
+function getPurchaseTimestamp(ticket){
+  const dt=
+    purchaseTimeByTicketId[ticket.ticketId] ||
+    ticket.purchasedAt ||
+    ticket.purchaseTime ||
+    ticket.createdAt ||
+    ticket.updatedAt ||
+    ticket.payoutAt;
+  const parsed=dt ? new Date(dt) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed.getTime() : 0;
+}
+
 function getConcertDateTime(ticket){
   const eventDate=concertIndex[ticket.concertId]?.eventDate;
   if(!eventDate) return null;
@@ -504,7 +516,9 @@ function ticketLifecycle(ticket){
 function render(){
   let baseList=[...allTickets];
   if(activeTab==='upcoming'){
-    baseList=allTickets.filter(t=>ticketLifecycle(t)==='upcoming');
+    baseList=allTickets
+      .filter(t=>ticketLifecycle(t)==='upcoming')
+      .sort((a,b)=>getPurchaseTimestamp(b)-getPurchaseTimestamp(a));
   }else if(activeTab==='past'){
     baseList=allTickets.filter(t=>ticketLifecycle(t)==='past');
   }else if(activeTab==='reselling'){

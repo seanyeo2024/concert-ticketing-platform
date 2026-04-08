@@ -484,7 +484,7 @@ body {
         <div class="form-group" style="max-width:320px">
           <label class="form-label">Resale Markup Cap (%)</label>
           <input class="form-input" id="cfg-markup-pct" type="number" min="0" step="0.01" value="20">
-          <div class="form-hint">Resale cap auto-fills as Base Price x (1 + markup%). You can still override per row.</div>
+          <div class="form-hint">Resale ceiling is auto-calculated as Base Price x (1 + markup%) for every category.</div>
         </div>
         <div class="config-rows" id="config-rows"></div>
         <div class="flex-c gap-12" style="margin-bottom:20px">
@@ -1109,6 +1109,9 @@ function buildConfigRow(row={}){
   const seats=row.totalSeats||'';
   const price=row.basePrice||'';
   const resaleCap=row.resaleCeiling ?? '';
+  const originalPrice=row.originalBasePrice ?? price;
+  const originalCap=row.originalResaleCeiling ?? resaleCap;
+  const hasRule=row.hasRule ?? (originalPrice !== '' && originalPrice !== null && typeof originalPrice !== 'undefined');
   const mode=row.mode||'new';
   const isExisting=mode==='existing';
   const lockedState = row.locked ?? isExisting;
@@ -1120,11 +1123,10 @@ function buildConfigRow(row={}){
   const priceHint = needsPrice
     ? '<div class="text-xs text-muted" style="margin-top:6px">No price rule yet — set a base price to create it.</div>'
     : '';
-  return `<div class="config-row" data-mode="${mode}" data-locked="${lockedState ? '1' : '0'}" data-category-id="${escapeAttr(row.categoryId||'')}" data-original-name="${escapeAttr(name)}" data-original-seats="${escapeAttr(seats)}" data-original-available="${escapeAttr(row.availableSeats ?? seats)}" data-original-price="${escapeAttr(price)}" data-original-cap="${escapeAttr(resaleCap)}">
+  return `<div class="config-row" data-mode="${mode}" data-locked="${lockedState ? '1' : '0'}" data-category-id="${escapeAttr(row.categoryId||'')}" data-original-name="${escapeAttr(name)}" data-original-seats="${escapeAttr(seats)}" data-original-available="${escapeAttr(row.availableSeats ?? seats)}" data-original-price="${escapeAttr(originalPrice)}" data-original-cap="${escapeAttr(originalCap)}" data-has-rule="${hasRule ? '1' : '0'}">
     <div class="form-group" style="margin:0"><label class="form-label">Category Name</label><input class="form-input cfg-name" value="${escapeAttr(name)}" placeholder="CAT 1 - FLOOR / PIT" ${locked}></div>
     <div class="form-group" style="margin:0"><label class="form-label">Seats</label><input class="form-input cfg-seats" type="number" min="1" value="${escapeAttr(seats)}" placeholder="1000" ${locked}></div>
     <div class="form-group" style="margin:0"><label class="form-label">Base Price</label><input class="form-input cfg-price" type="number" min="0" step="0.01" value="${escapeAttr(price)}" placeholder="98" ${locked}>${priceHint}</div>
-    <div class="form-group" style="margin:0"><label class="form-label">Resale Cap</label><input class="form-input cfg-cap" type="number" min="0" step="0.01" value="${escapeAttr(resaleCap)}" placeholder="Auto" ${locked}></div>
     <div class="config-actions">
       <button class="btn btn-sm btn-outline cfg-lock-btn ${lockClass}" type="button" onclick="toggleConfigRowLock(this)" style="border-radius:100px">${lockText}</button>
       <button class="btn btn-sm btn-outline cfg-remove-btn" type="button" onclick="this.closest('.config-row')?.remove()" ${removeDisabled}>Remove</button>
@@ -1186,42 +1188,18 @@ function autoCapFromPrice(basePrice){
   return Number((basePrice * (1 + markup / 100)).toFixed(2));
 }
 
-function applyAutoCap(row, force=false){
-  if(!row || row.dataset.mode==='existing') return;
-  const priceInput=row.querySelector('.cfg-price');
-  const capInput=row.querySelector('.cfg-cap');
-  if(!priceInput || !capInput) return;
+function resaleCeilingFromRow(row){
+  const priceInput=row?.querySelector('.cfg-price');
+  if(!priceInput) return null;
   const basePrice=Number(priceInput.value);
-  if(!Number.isFinite(basePrice) || basePrice < 0) return;
-  const autoAllowed=force || row.dataset.capAuto==='1' || capInput.value.trim()==='';
-  if(!autoAllowed) return;
-  capInput.value=String(autoCapFromPrice(basePrice));
-  row.dataset.capAuto='1';
+  if(!Number.isFinite(basePrice) || basePrice < 0) return null;
+  return autoCapFromPrice(basePrice);
 }
 
-function bindConfigRowAutoCap(row){
-  if(!row || row.dataset.mode==='existing') return;
-  const priceInput=row.querySelector('.cfg-price');
-  const capInput=row.querySelector('.cfg-cap');
-  if(!priceInput || !capInput) return;
-
-  row.dataset.capAuto = capInput.value.trim() ? '0' : '1';
-  priceInput.addEventListener('input', ()=>applyAutoCap(row));
-  capInput.addEventListener('input', ()=>{
-    if(capInput.value.trim()===''){
-      row.dataset.capAuto='1';
-      applyAutoCap(row, true);
-      return;
-    }
-    row.dataset.capAuto='0';
-  });
-  applyAutoCap(row, true);
-}
-
-function applyMarkupToNewRows(){
+function applyMarkupToRows(){
   document.querySelectorAll('#config-rows .config-row').forEach(row=>{
-    if(row.dataset.mode==='existing') return;
-    applyAutoCap(row, true);
+    const computed=resaleCeilingFromRow(row);
+    row.dataset.computedCap = computed===null ? '' : String(computed);
   });
 }
 
@@ -1229,8 +1207,8 @@ function addConfigRow(row={}){
   const container=document.getElementById('config-rows');
   container.insertAdjacentHTML('beforeend', buildConfigRow(row));
   const latest=container.lastElementChild;
-  bindConfigRowAutoCap(latest);
-  latest.querySelectorAll('.cfg-name,.cfg-seats,.cfg-price,.cfg-cap').forEach(input=>{
+  applyMarkupToRows();
+  latest.querySelectorAll('.cfg-name,.cfg-seats,.cfg-price').forEach(input=>{
     input.addEventListener('input', ()=>applyConfigRowVisualState(latest));
   });
   const defaultLocked = row.locked ?? (row.mode === 'existing');
@@ -1447,18 +1425,13 @@ async function configureConcert(){
     totalSeats:Number(row.querySelector('.cfg-seats').value),
     availableSeats:Number(row.querySelector('.cfg-seats').value),
     basePrice:Number(row.querySelector('.cfg-price').value),
-    resaleCeiling:row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
+    resaleCeiling:resaleCeilingFromRow(row),
   }));
 
   if(categories.some(c=>!c.categoryName || !Number.isFinite(c.totalSeats) || c.totalSeats <= 0 || !Number.isFinite(c.basePrice) || c.basePrice < 0)){
     toast('Each category needs a name, positive seats, and base price','warning');
     return;
   }
-  if(categories.some(c=>c.resaleCeiling !== null && c.resaleCeiling < c.basePrice)){
-    toast('Resale cap must be greater than or equal to base price','warning');
-    return;
-  }
-
   const tickets=categories.flatMap(category=>{
     const prefix=slugifyCategory(category.categoryName).slice(0,6);
     return Array.from({length: category.totalSeats}, (_, index)=>({
@@ -1977,11 +1950,15 @@ async function loadConfigPreview(selectedConcertId=''){
     ? `${concert.name} has ${categories.length} saved category(ies). Locked rows are grey. Unlock to edit, then save to apply and lock again.`
     : `${concert.name} has no categories yet. Start with the suggested rows below, then save to lock them.`;
   categories.forEach(category=>{
-    const price=prices.find(entry=>entry.categoryId===category.categoryId) || {};
+    const priceRule=prices.find(entry=>entry.categoryId===category.categoryId);
+    const price=priceRule || {};
     addConfigRow({
       ...category,
       basePrice: price.basePrice ?? category.basePrice ?? '',
       resaleCeiling: price.resaleCeiling ?? '',
+      originalBasePrice: priceRule?.basePrice ?? '',
+      originalResaleCeiling: priceRule?.resaleCeiling ?? '',
+      hasRule: !!priceRule,
       mode:'existing',
       locked:true,
     });
@@ -1991,6 +1968,41 @@ async function loadConfigPreview(selectedConcertId=''){
   }else{
     addConfigRow({ categoryName:'CAT 1 - FLOOR / PIT', mode:'new', locked:false });
     addConfigRow({ categoryName:'CAT 2 - LOWER TIER', mode:'new', locked:false });
+  }
+}
+
+async function upsertPricingRule(concertId, item, effectiveFrom, currency='SGD'){
+  try{
+    await API.pricing.update(concertId, item.categoryId, {
+      basePrice: item.basePrice,
+      resaleCeiling: item.resaleCeiling,
+      effectiveTo: null,
+    });
+    return;
+  }catch(e){
+    const missingRule = e?.status===404 || e?.code==='NOT_FOUND' || e?.code==='PRICE_NOT_FOUND';
+    if(!missingRule) throw e;
+  }
+
+  try{
+    await API.pricing.create(concertId, {
+      categoryId: item.categoryId,
+      basePrice: item.basePrice,
+      resaleCeiling: item.resaleCeiling,
+      currency,
+      effectiveFrom,
+    });
+  }catch(e){
+    // If another request created it first, retry update once.
+    if(e?.status===409 || e?.code==='DUPLICATE_RULE'){
+      await API.pricing.update(concertId, item.categoryId, {
+        basePrice: item.basePrice,
+        resaleCeiling: item.resaleCeiling,
+        effectiveTo: null,
+      });
+      return;
+    }
+    throw e;
   }
 }
 
@@ -2024,13 +2036,13 @@ async function configureConcert(){
     categoryName: row.querySelector('.cfg-name').value.trim(),
     totalSeats: Number(row.querySelector('.cfg-seats').value),
     basePrice: Number(row.querySelector('.cfg-price').value),
-    resaleCeiling: row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
+    resaleCeiling: resaleCeilingFromRow(row),
     originalName: row.dataset.originalName || '',
     originalSeats: Number(row.dataset.originalSeats || 0),
     originalAvailable: Number(row.dataset.originalAvailable || 0),
     originalBasePrice: row.dataset.originalPrice === '' ? null : Number(row.dataset.originalPrice),
     originalResaleCeiling: row.dataset.originalCap === '' ? null : Number(row.dataset.originalCap),
-    hasRule: row.dataset.originalPrice !== '',
+    hasRule: row.dataset.hasRule === '1',
   }));
   const existingSeatUpdates=existingItems.filter(item=>
     item.categoryName !== item.originalName || item.totalSeats !== item.originalSeats
@@ -2046,7 +2058,7 @@ async function configureConcert(){
     totalSeats:Number(row.querySelector('.cfg-seats').value),
     availableSeats:Number(row.querySelector('.cfg-seats').value),
     basePrice:Number(row.querySelector('.cfg-price').value),
-    resaleCeiling: row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
+    resaleCeiling: resaleCeilingFromRow(row),
   }));
 
   if(categories.some(c=>!c.categoryName || !Number.isFinite(c.totalSeats) || c.totalSeats <= 0 || !Number.isFinite(c.basePrice) || c.basePrice < 0)){
@@ -2055,11 +2067,6 @@ async function configureConcert(){
   }
   if(existingItems.some(c=>!c.categoryName || !Number.isFinite(c.totalSeats) || c.totalSeats <= 0 || !Number.isFinite(c.basePrice) || c.basePrice < 0)){
     toast('Existing categories need a valid base price','warning');
-    return;
-  }
-  const hasBadCap = [...categories, ...existingItems].some(c=>c.resaleCeiling !== null && (!Number.isFinite(c.resaleCeiling) || c.resaleCeiling < c.basePrice));
-  if(hasBadCap){
-    toast('Resale cap must be empty or >= base price','warning');
     return;
   }
   if(!categories.length && !existingUpdates.length && !existingMissing.length && !existingSeatUpdates.length){
@@ -2089,11 +2096,9 @@ async function configureConcert(){
     }
 
     if(existingUpdates.length){
-      await Promise.all(existingUpdates.map(item=>API.pricing.update(concertId,item.categoryId,{
-        basePrice: item.basePrice,
-        resaleCeiling: item.resaleCeiling,
-        effectiveTo: null,
-      })));
+      await Promise.all(existingUpdates.map(item=>
+        upsertPricingRule(concertId, item, effectiveFrom, concert.currency || 'SGD')
+      ));
     }
     if(existingMissing.length){
       await Promise.all(existingMissing.map(item=>API.pricing.create(concertId,{
@@ -2162,7 +2167,7 @@ document.getElementById('cfg-markup-pct')?.addEventListener('input', ()=>{
   const input=document.getElementById('cfg-markup-pct');
   const value=Number(input?.value);
   if(input && (!Number.isFinite(value) || value < 0)) input.value='0';
-  applyMarkupToNewRows();
+  applyMarkupToRows();
 });
 window.addEventListener('hashchange', handleAdminHashAction);
 handleAdminHashAction();
