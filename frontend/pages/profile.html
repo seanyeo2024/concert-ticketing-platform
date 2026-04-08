@@ -272,8 +272,11 @@
           <div class="section-label mb-24">Account Settings</div>
           <div class="card">
             <div class="form-group"><label class="form-label">Display Name</label><input class="form-input" id="s-name"></div>
-            <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="s-email" type="email"></div>
-            <button class="btn btn-black w-full" onclick="saveSettings()" style="border-radius:var(--radius)">Save Changes -></button>
+            <div class="form-group"><label class="form-label">Account Email</label><input class="form-input" id="s-email" type="email" readonly></div>
+            <div class="divider mt-16 mb-16"></div>
+            <div class="form-group"><label class="form-label">Contact Email For Notifications</label><input class="form-input" id="s-contact-email" type="email" placeholder="you@example.com" autocomplete="email"></div>
+            <div class="form-group"><label class="form-label">Contact Phone For Notifications</label><input class="form-input" id="s-contact-phone" type="tel" placeholder="+6591234567 or 91234567" autocomplete="tel"></div>
+            <button class="btn btn-black w-full" onclick="saveSettings()" style="border-radius:var(--radius)">Save Changes →</button>
             <div class="divider mt-24 mb-24"></div>
             <button class="btn w-full" style="border-color:var(--pink);color:var(--pink);border-radius:var(--radius)" onclick="Auth.logout()">Sign Out x</button>
           </div>
@@ -306,111 +309,83 @@ function switchPanel(name, button){
   if(name === 'notifications' && !document.getElementById('notif-list').dataset.loaded) loadNotifs();
 }
 
-function getProfileConcertLabel(concertId){
-  const concert = profileConcertIndex[concertId] || {};
-  const artist = String(concert.artistName || '').trim();
-  const name = String(concert.name || concert.concertId || concertId || '').trim();
-  if(artist && name && artist.toLowerCase() !== name.toLowerCase()) return `${artist} - ${name}`;
-  return artist || name || concertId || 'Concert';
+function activatePanelFromQuery(){
+  const target=(Util.getParam('tab')||Util.getParam('panel')||'').toLowerCase();
+  if(target!=='settings') return;
+  const settingsBtn=[...document.querySelectorAll('#tab-bar .tab-btn')].find(btn=>btn.textContent.trim()==='Settings');
+  if(settingsBtn) switchPanel('settings', settingsBtn);
 }
 
-function getProfileTicketMeta(ticket){
-  if(!ticket) return 'Ticket details unavailable';
-  const parts = [];
-  if(ticket.seatNumber) parts.push(ticket.seatNumber);
-  const amount = ticket.resalePrice ?? ticket.purchasePrice;
-  if(amount != null && amount !== '') parts.push(`SGD ${Number(amount).toFixed(2)}`);
-  return parts.join(' · ') || ticket.ticketId || 'Ticket details unavailable';
+function init(){
+  document.getElementById('p-avatar').textContent=user.name[0];
+  document.getElementById('p-name').textContent=user.name;
+  document.getElementById('p-email').textContent=user.email;
+  document.getElementById('p-role').innerHTML=user.role==='admin'
+    ?`<span class="tag tag-active">👑 Administrator</span>`
+    :`<span class="tag">Customer</span>`;
+  document.getElementById('s-name').value=user.name;
+  document.getElementById('s-email').value=user.email;
+  if(user.role==='admin'){
+    document.querySelectorAll('#tab-bar .tab-btn').forEach((btn,index)=>{
+      if(index < 3) btn.remove();
+    });
+    ['overview','payments','notifications'].forEach(panel=>{
+      document.getElementById(`panel-${panel}`)?.remove();
+    });
+    const settingsBtn=document.querySelector('#tab-bar .tab-btn');
+    settingsBtn?.classList.add('active');
+    document.getElementById('panel-settings')?.classList.add('active');
+    return;
+  }
+  loadContactSettings();
+  loadActivity();
+  activatePanelFromQuery();
 }
 
-function getProfileRelativeTime(dt){
-  const parsed = Util.parseDateParts(dt)?.date;
-  if(!parsed) return 'Recently';
-  const diffMs = Date.now() - parsed.getTime();
-  if(diffMs < 60_000) return 'Just now';
-  const mins = Math.floor(diffMs / 60_000);
-  if(mins < 60) return `${mins} min${mins === 1 ? '' : 's'} ago`;
-  const hours = Math.floor(mins / 60);
-  if(hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
-  const days = Math.floor(hours / 24);
-  if(days < 7) return `${days} day${days === 1 ? '' : 's'} ago`;
-  const weeks = Math.floor(days / 7);
-  if(weeks < 5) return `${weeks} week${weeks === 1 ? '' : 's'} ago`;
-  return Util.formatDateShort(parsed);
+function normalizePhoneInput(value=''){
+  return String(value).replace(/[^\d+\s()-]/g,'').trim();
 }
 
-function renderOverviewStats(payments, tickets){
-  const held = tickets.filter(ticket => ['CONFIRMED', 'PENDING', 'RESALE_LISTED', 'RESALE_PENDING'].includes(ticket.status)).length;
-  const attendedConcertIds = new Set(tickets.filter(ticket => ticket.status === 'USED').map(ticket => ticket.concertId));
-  const spent = payments
-    .filter(payment => ['PURCHASE', 'RESALE_PURCHASE'].includes(String(payment.type || '').toUpperCase()) && String(payment.status || '').toUpperCase() === 'SUCCESS')
-    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-
-  document.getElementById('stat-tix').textContent = String(held);
-  document.getElementById('stat-shows').textContent = String(attendedConcertIds.size);
-  document.getElementById('stat-spent').textContent = spent.toFixed(2);
-}
-
-function mapPaymentActivity(payment, ticketMap){
-  const type = String(payment?.type || '').toUpperCase();
-  const reason = String(payment?.reason || '').toUpperCase();
-  const ticket = ticketMap[payment?.ticketId] || null;
-  const concertLabel = getProfileConcertLabel(payment?.concertId || ticket?.concertId);
-  const amount = payment?.amount != null ? `SGD ${Number(payment.amount).toFixed(2)}` : null;
-
-  if(type === 'PURCHASE'){
-    return { icon: '🎫', label: `Purchased Ticket - ${concertLabel}`, sub: getProfileTicketMeta(ticket), at: payment.createdAt };
-  }
-  if(type === 'RESALE_PURCHASE'){
-    return { icon: '🛒', label: `Bought Resale Ticket - ${concertLabel}`, sub: getProfileTicketMeta(ticket), at: payment.createdAt };
-  }
-  if(type === 'REFUND' && reason === 'RESALE_PAYOUT'){
-    return {
-      icon: '💸',
-      label: `Received Resale Payout - ${concertLabel}`,
-      sub: [ticket?.seatNumber, amount].filter(Boolean).join(' · ') || amount || 'Resale payout completed',
-      at: payment.createdAt,
-    };
-  }
-  if(type === 'REFUND'){
-    return {
-      icon: '↩',
-      label: `Refund Processed - ${concertLabel}`,
-      sub: [ticket?.seatNumber, amount].filter(Boolean).join(' · ') || amount || 'Refund completed',
-      at: payment.createdAt,
-    };
-  }
+function toE164Phone(value=''){
+  const cleaned=normalizePhoneInput(value).replace(/[\s()-]/g,'');
+  if(/^\+[1-9]\d{7,14}$/.test(cleaned)) return cleaned;
+  if(/^\d{8}$/.test(cleaned)) return `+65${cleaned}`;
   return null;
 }
 
-function mapTicketActivity(ticket){
-  if(!ticket?.updatedAt || !['RESALE_LISTED', 'RESALE_PENDING'].includes(ticket.status)) return null;
-  return {
-    icon: '🔁',
-    label: `Listed Ticket for Resale - ${getProfileConcertLabel(ticket.concertId)}`,
-    sub: getProfileTicketMeta(ticket),
-    at: ticket.updatedAt,
-  };
+function isValidEmail(value=''){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value||'').trim());
 }
 
-function mapNotificationActivity(notification){
-  const subject = String(notification?.subject || '').trim();
-  const eventType = String(notification?.eventType || 'Notification').replace(/_/g, ' ');
-  return {
-    icon: '📩',
-    label: subject || eventType,
-    sub: [notification?.channel, notification?.status].filter(Boolean).join(' · ') || 'Notification update',
-    at: notification?.sentAt || notification?.createdAt,
-  };
-}
+async function loadContactSettings(){
+  const cEmail=document.getElementById('s-contact-email');
+  const cPhone=document.getElementById('s-contact-phone');
+  const cached=ContactProfile.readCached(user?.userId)||{};
 
-function renderActivityRows(activity){
-  const list = document.getElementById('activity-list');
-  if(!activity.length){
-    list.innerHTML = '<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No recent activity yet</div>';
-    return;
+  if(cEmail && !cEmail.value){
+    cEmail.value=(cached?.email||user?.contactEmail||user?.email||'').trim();
   }
-  list.innerHTML = activity.map(item => `
+  if(cPhone && !cPhone.value){
+    cPhone.value=(cached?.phoneNumber||user?.contactPhone||user?.phone||'').trim();
+  }
+
+  try{
+    const contact=await ContactProfile.fetch(user);
+    if(cEmail) cEmail.value=(contact?.email||cached?.email||user?.contactEmail||user?.email||'').trim();
+    if(cPhone) cPhone.value=(contact?.phoneNumber||cached?.phoneNumber||user?.contactPhone||user?.phone||'').trim();
+  }catch{
+    if(cEmail && !cEmail.value) cEmail.value=(cached?.email||user?.contactEmail||user?.email||'').trim();
+    if(cPhone && !cPhone.value) cPhone.value=(cached?.phoneNumber||user?.contactPhone||user?.phone||'').trim();
+  }
+}
+
+function loadActivity(){
+  const acts=[
+    {icon:'🎫',label:'Purchased Ticket — Taylor Swift',sub:'Seat F-01-03 · SGD 388',time:'2 days ago'},
+    {icon:'🔄',label:'Listed Ticket for Resale',sub:'TKT-10007 · SGD 300',time:'5 days ago'},
+    {icon:'💜',label:'BTS Ticket Refunded',sub:'Concert cancelled · SGD 398',time:'1 week ago'},
+  ];
+  document.getElementById('activity-list').innerHTML=acts.map(a=>`
     <div class="pay-row">
       <div class="pay-icon">${item.icon}</div>
       <div style="flex:1"><div style="font-weight:600;font-size:0.85rem">${item.label}</div><div class="text-xs text-muted">${item.sub}</div></div>
@@ -528,45 +503,32 @@ async function loadNotifs(){
   }
 }
 
-function saveSettings(){
-  const name = document.getElementById('s-name').value.trim();
-  if(!name){
-    toast('Name cannot be empty', 'warning');
-    return;
-  }
-  const stored = Auth.getUser();
-  stored.name = name;
-  localStorage.setItem('ctms_user', JSON.stringify(stored));
-  document.getElementById('p-name').textContent = name;
-  document.getElementById('p-avatar').textContent = name[0];
-  toast('Profile updated', 'success');
-}
+async function saveSettings(){
+  const name=document.getElementById('s-name').value.trim();
+  const contactEmail=(document.getElementById('s-contact-email')?.value||'').trim();
+  const contactPhoneRaw=document.getElementById('s-contact-phone')?.value||'';
+  const contactPhone=toE164Phone(contactPhoneRaw);
+  if(!name){toast('Name cannot be empty','warning');return;}
+  if(!isValidEmail(contactEmail)){toast('Enter a valid contact email','warning');return;}
+  if(!contactPhone){toast('Enter a valid contact phone in E.164 (e.g. +6591234567)','warning');return;}
 
-function init(){
-  document.getElementById('p-avatar').textContent = user.name[0];
-  document.getElementById('p-name').textContent = user.name;
-  document.getElementById('p-email').textContent = user.email;
-  document.getElementById('p-role').innerHTML = user.role === 'admin'
-    ? '<span class="tag tag-active">Admin</span>'
-    : '<span class="tag">Customer</span>';
-  document.getElementById('s-name').value = user.name;
-  document.getElementById('s-email').value = user.email;
-
-  if(user.role === 'admin'){
-    document.querySelectorAll('#tab-bar .tab-btn').forEach((button, index) => {
-      if(index < 3) button.remove();
+  try{
+    await ContactProfile.save(user, {
+      email: contactEmail,
+      phoneNumber: contactPhone,
+      smsOptIn: true,
     });
-    ['overview', 'payments', 'notifications'].forEach(panel => {
-      document.getElementById(`panel-${panel}`)?.remove();
-    });
-    const settingsBtn = document.querySelector('#tab-bar .tab-btn');
-    settingsBtn?.classList.add('active');
-    document.getElementById('panel-settings')?.classList.add('active');
+  }catch(e){
+    toast(e?.message||'Could not save contact details right now','error');
     return;
   }
 
-  setupProfileLiveSync();
-  loadActivity();
+  const stored=Auth.getUser(); stored.name=name;
+  localStorage.setItem('ctms_user',JSON.stringify(stored));
+  document.getElementById('p-name').textContent=name;
+  document.getElementById('p-avatar').textContent=name[0];
+  document.getElementById('s-contact-phone').value=contactPhone;
+  toast('Profile and contact details updated ✓','success');
 }
 
 init();
