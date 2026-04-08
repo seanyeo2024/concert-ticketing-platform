@@ -1123,7 +1123,7 @@ function buildConfigRow(row={}){
   const priceHint = needsPrice
     ? '<div class="text-xs text-muted" style="margin-top:6px">No price rule yet — set a base price to create it.</div>'
     : '';
-  return `<div class="config-row" data-mode="${mode}" data-locked="${lockedState ? '1' : '0'}" data-category-id="${escapeAttr(row.categoryId||'')}" data-original-name="${escapeAttr(name)}" data-original-seats="${escapeAttr(seats)}" data-original-available="${escapeAttr(row.availableSeats ?? seats)}" data-original-price="${escapeAttr(originalPrice)}" data-original-cap="${escapeAttr(originalCap)}" data-has-rule="${hasRule ? '1' : '0'}">
+  return `<div class="config-row" data-mode="${mode}" data-locked="${lockedState ? '1' : '0'}" data-category-id="${escapeAttr(row.categoryId||'')}" data-original-name="${escapeAttr(name)}" data-original-seats="${escapeAttr(seats)}" data-original-price="${escapeAttr(originalPrice)}" data-original-cap="${escapeAttr(originalCap)}" data-has-rule="${hasRule ? '1' : '0'}">
     <div class="form-group" style="margin:0"><label class="form-label">Category Name</label><input class="form-input cfg-name" value="${escapeAttr(name)}" placeholder="CAT 1 - FLOOR / PIT" ${locked}></div>
     <div class="form-group" style="margin:0"><label class="form-label">Seats</label><input class="form-input cfg-seats" type="number" min="1" value="${escapeAttr(seats)}" placeholder="1000" ${locked}></div>
     <div class="form-group" style="margin:0"><label class="form-label">Base Price</label><input class="form-input cfg-price" type="number" min="0" step="0.01" value="${escapeAttr(price)}" placeholder="98" ${locked}>${priceHint}</div>
@@ -1382,7 +1382,7 @@ async function loadConfigPreview(){
     return {
       ...category,
       totalSeats: hasInventory ? Number(counts.total || 0) : Number(category.totalSeats || 0),
-      availableSeats: hasInventory ? Number(counts.available || 0) : Number(category.availableSeats ?? category.totalSeats ?? 0),
+      availableSeats: hasInventory ? Number(counts.available || 0) : 0,
       inventoryReady: hasInventory,
     };
   });
@@ -2039,7 +2039,6 @@ async function configureConcert(){
     resaleCeiling: resaleCeilingFromRow(row),
     originalName: row.dataset.originalName || '',
     originalSeats: Number(row.dataset.originalSeats || 0),
-    originalAvailable: Number(row.dataset.originalAvailable || 0),
     originalBasePrice: row.dataset.originalPrice === '' ? null : Number(row.dataset.originalPrice),
     originalResaleCeiling: row.dataset.originalCap === '' ? null : Number(row.dataset.originalCap),
     hasRule: row.dataset.hasRule === '1',
@@ -2091,7 +2090,7 @@ async function configureConcert(){
       await Promise.all(existingSeatUpdates.map(item=>API.concerts.updateSeat(concertId,item.categoryId,{
         categoryName: item.categoryName,
         totalSeats: item.totalSeats,
-        availableSeats: Math.min(item.totalSeats, Math.max(0, item.originalAvailable || 0)),
+        availableSeats: item.totalSeats,
       })));
     }
 
