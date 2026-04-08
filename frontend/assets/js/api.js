@@ -162,9 +162,10 @@ const API = (() => {
         }
       },
       getStrict: async id => hydrateConcertSchedule(await req(`${BASE.concert}/concerts/${id}`)),
-      seats:async id  => { try { return await req(`${BASE.concert}/concerts/${id}/seats`); } catch { return { categories: SEED.categories[id]||[] }; } },
+      seats:async id  => { try { return await req(`${BASE.concert}/concerts/${id}/seats`); } catch { return { categories: [] }; } },
       seatsStrict: async id => req(`${BASE.concert}/concerts/${id}/seats`),
       createSeats: (id,p) => req(`${BASE.concert}/concerts/${id}/seats`, 'POST', p),
+      updateSeat: (id,categoryId,p) => req(`${BASE.concert}/concerts/${id}/seats/${categoryId}`, 'PUT', p),
       update: async (id,p)  => {
         const updated = await req(`${BASE.concert}/concerts/${id}`, 'PUT', p);
         rememberConcertSchedule(id, p?.eventDate);
