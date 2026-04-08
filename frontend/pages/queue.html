@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Queue — Solstitix</title>
+<title>Queue — Soltistix</title>
 <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
 <link rel="stylesheet" href="../assets/css/global.css">
 <style>
@@ -298,8 +298,9 @@ body { background: var(--black); }
 const user=Auth.require(); renderNav();
 const concertId=Util.getParam('id'), catId=Util.getParam('cat');
 if(!concertId) window.location.href='index.html';
-let poll, cdInterval, windowExpires, expiredHandled=false;
+let poll, cdInterval, heartbeatInterval, windowExpires, expiredHandled=false;
 const queueSessionStorageKey=`ctms_queue_session_${concertId}_${user?.userId||'guest'}`;
+const HEARTBEAT_INTERVAL_MS=5000;
 
 function parseUtcDate(value){
   if(!value) return null;
@@ -309,7 +310,8 @@ function parseUtcDate(value){
 }
 
 function showPhase(n){ document.querySelectorAll('.phase').forEach(p=>p.classList.remove('active')); document.getElementById(`phase-${n}`)?.classList.add('active'); }
-function stopTimers(){ clearInterval(poll); clearInterval(cdInterval); poll=null; cdInterval=null; }
+function stopHeartbeat(){ clearInterval(heartbeatInterval); heartbeatInterval=null; }
+function stopTimers(){ clearInterval(poll); clearInterval(cdInterval); stopHeartbeat(); poll=null; cdInterval=null; }
 function getQueueSession(){
   try{
     return JSON.parse(sessionStorage.getItem(queueSessionStorageKey)||'null');
@@ -334,6 +336,7 @@ function setWindowPhase(expiresAt){
   document.getElementById('expires-time').textContent=windowExpires.toLocaleTimeString('en-SG');
   showPhase('window');
   startCountdown();
+  startHeartbeat();
 }
 function showExpiredState(message='Your window expired. Rejoin the queue to try again.'){
   if(expiredHandled) return;
@@ -347,11 +350,14 @@ function showExpiredState(message='Your window expired. Rejoin the queue to try 
 
 async function loadConcert(){
   try{
-    const c=await API.concerts.get(concertId);
+    const [c, summary]=await Promise.all([
+      API.concerts.get(concertId),
+      API.tickets.summary(concertId),
+    ]);
     document.getElementById('q-concert-name').textContent=c.name;
     document.getElementById('q-concert-meta').textContent=`${Util.formatConcertDateTime(c.eventDate)} · ${c.venue?.split(',')[0]}`;
     document.getElementById('q-concert-status').innerHTML=Util.tag(c.status);
-    document.getElementById('q-avail').textContent=c.availableSeats?.toLocaleString()||'—';
+    document.getElementById('q-avail').textContent=Number(summary?.availableSeats || 0).toLocaleString();
   }catch{}
 }
 
@@ -382,6 +388,30 @@ async function pollQueue(){
   }
 }
 
+async function sendHeartbeat(){
+  if(expiredHandled) return;
+  const session=getQueueSession();
+  if(!session?.sessionToken) return;
+  try{
+    await API.queue.heartbeat({
+      concertId,
+      userId:user.userId,
+      sessionToken:session.sessionToken,
+    });
+  }catch(e){
+    if(e.status===410 || e.code==='SESSION_EXPIRED' || e.code==='SESSION_ABANDONED'){
+      showExpiredState('Your purchase window expired because the session was no longer active. Please rejoin the queue.');
+    }
+  }
+}
+
+function startHeartbeat(){
+  stopHeartbeat();
+  sendHeartbeat();
+  if(expiredHandled) return;
+  heartbeatInterval=setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+}
+
 function renderCountdown(){
   const diff=Math.max(0,Math.floor((windowExpires-Date.now())/1000));
   if(!diff){ showExpiredState(); return; }
@@ -399,7 +429,7 @@ function startCountdown(){
   cdInterval=setInterval(renderCountdown,1000);
 }
 
-function goSelect(){ window.location.href=`seat-select.html?id=${concertId}&cat=${catId||''}`; }
+function goSelect(){ stopHeartbeat(); window.location.href=`seat-select.html?id=${concertId}&cat=${catId||''}`; }
 async function leaveQ(){ if(!confirm('Leave the queue? You will lose your position.'))return; sessionStorage.removeItem(queueSessionStorageKey); stopTimers(); await API.queue.leave(concertId,user.userId); window.location.href=`concert-detail.html?id=${concertId}`; }
 async function rejoin(){
   try{

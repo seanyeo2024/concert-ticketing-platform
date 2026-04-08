@@ -32,9 +32,5 @@ CREATE TABLE qr_record (
   KEY idx_qr_concert_valid (concertId, isValid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Sample seed data
-INSERT INTO qr_record
-  (qrId, ticketId, concertId, userId, qrData, qrImageUrl, isValid, generatedAt)
-VALUES
-  ('QR-10001', 'TKT-10003', 'CONC-000001', 'USR-0042', 'Solstitix|TKT-10003|USR-0042|CONC-000001|demo1234', 'data:image/png;base64,iVBORw0KGgoAAAANS==', 1, '2025-05-20 14:30:00'),
-  ('QR-10002', 'TKT-30001', 'CONC-000003', 'USR-0042', 'Solstitix|TKT-30001|USR-0042|CONC-000003|demo5678', 'data:image/png;base64,iVBORw0KGgoAAAANS==', 0, '2025-03-01 11:00:00');
+-- No sample QR records are seeded by default.
+-- QR records are expected to be generated during purchase and resale flows.

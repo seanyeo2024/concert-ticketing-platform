@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Admin — Solstitix</title>
+<title>Admin — Soltistix</title>
 <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
 <link rel="stylesheet" href="../assets/css/global.css">
 <style>
@@ -81,12 +81,136 @@ body {
 .health-row {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 20px; border-bottom: 1.5px solid rgba(17,17,17,0.07);
+  gap: 24px;
 }
 .health-row:last-of-type { border-bottom: none; }
+.health-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.health-row-name {
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.health-row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  flex: 0 0 auto;
+  padding-left: 24px;
+  white-space: nowrap;
+}
+.health-row-status {
+  font-size: 0.75rem;
+  font-weight: 700;
+}
 .hdot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .hdot.ok      { background: var(--teal); box-shadow: 0 0 6px rgba(62,207,178,0.5); }
 .hdot.error   { background: var(--pink); box-shadow: 0 0 6px rgba(240,62,138,0.5); }
 .hdot.unknown { background: #555; }
+
+.scan-modal {
+  max-width: 860px;
+}
+.scan-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.9fr);
+  gap: 24px;
+}
+.scan-stage {
+  position: relative;
+  border-radius: 28px;
+  overflow: hidden;
+  border: 2px solid rgba(17,17,17,0.12);
+  background: linear-gradient(180deg, rgba(17,17,17,0.08) 0%, rgba(17,17,17,0.18) 100%);
+  min-height: 360px;
+}
+.scan-video {
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  object-fit: cover;
+  display: block;
+  background: #0f0f0f;
+}
+.scan-frame {
+  position: absolute;
+  inset: 22% 18%;
+  border: 3px solid rgba(255,255,255,0.9);
+  border-radius: 24px;
+  box-shadow: 0 0 0 999px rgba(17,17,17,0.2);
+  pointer-events: none;
+}
+.scan-status-pill {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(17,17,17,0.76);
+  color: var(--cream);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+}
+.scan-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.scan-card {
+  background: rgba(255,255,255,0.72);
+  border: 2px solid rgba(17,17,17,0.08);
+  border-radius: 24px;
+  padding: 20px;
+}
+.scan-card h4 {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+.scan-card p {
+  font-size: 0.84rem;
+  color: #666;
+}
+.scan-manual-input {
+  min-height: 116px;
+  resize: vertical;
+  font-family: 'Space Grotesk', monospace;
+  font-size: 0.8rem;
+}
+.scan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+.scan-result {
+  min-height: 120px;
+}
+.scan-result .alert {
+  margin: 0;
+}
+.scan-result-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
 
 /* ── Cancel zone ─────────────────────── */
 .cancel-zone {
@@ -112,12 +236,98 @@ body {
   display: grid; gap: 12px; margin: 24px 0;
 }
 .config-row {
-  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto;
+  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto auto;
   gap: 12px; align-items: end;
   padding: 16px; background: var(--white); border-radius: var(--radius);
   border: 2px solid rgba(17,17,17,0.08);
 }
 .config-row .btn { white-space: nowrap; }
+.config-row .btn.btn-sm {
+  min-width: 92px;
+  padding: 7px 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.config-row.row-empty {
+  background: #f9f9f9;
+  border-style: dashed;
+  border-color: rgba(17,17,17,0.16);
+}
+.config-row.row-unlocked {
+  background: #fffafc;
+  border-color: rgba(223,62,133,0.32);
+}
+.config-row.row-locked {
+  background: #ececef;
+  border-color: rgba(17,17,17,0.18);
+}
+.config-row.row-locked .form-input {
+  background: #e3e3e6;
+  color: #666;
+  border-color: rgba(17,17,17,0.16);
+}
+.config-row.row-unlocked .form-input {
+  background: #fff;
+  color: #444;
+  border-color: rgba(223,62,133,0.28);
+}
+
+/* Unlock default: grey. Hover: pink */
+.cfg-lock-toggle.is-unlocked,
+.cfg-lock-btn:not(.is-locked) {
+  background: #f3f3f3 !important;
+  border: 2px solid rgba(17,17,17,0.2) !important;
+  color: var(--black) !important;
+}
+.cfg-lock-toggle.is-unlocked:hover,
+.cfg-lock-btn:not(.is-locked):hover {
+  background: linear-gradient(180deg, #f35198 0%, #df3e85 100%) !important;
+  border-color: #cf2f76 !important;
+  color: var(--white) !important;
+}
+
+/* Locked default: pink. Hover: grey */
+.cfg-lock-toggle.is-locked,
+.cfg-lock-btn.is-locked {
+  background: linear-gradient(180deg, #f35198 0%, #df3e85 100%) !important;
+  border-color: #cf2f76 !important;
+  color: var(--white) !important;
+}
+.cfg-lock-toggle.is-locked:hover,
+.cfg-lock-btn.is-locked:hover {
+  background: #f3f3f3 !important;
+  border-color: rgba(17,17,17,0.2) !important;
+  color: var(--black) !important;
+}
+
+.config-actions {
+  display: contents;
+}
+.cfg-remove-btn,
+.config-actions .btn.btn-outline:not(.cfg-lock-btn) {
+  border: 2px solid rgba(17,17,17,0.16) !important;
+  background: #f9f9f9 !important;
+  color: #7a7a7a !important;
+  transition: transform 0.16s var(--ease), box-shadow 0.16s var(--ease), border-color 0.16s var(--ease) !important;
+}
+.config-row[data-locked='0'] .cfg-remove-btn,
+.config-row[data-locked='0'] .config-actions .btn.btn-outline:not(.cfg-lock-btn) {
+  background: #f9f9f9 !important;
+  color: #5f5f5f !important;
+  border-color: rgba(17,17,17,0.26) !important;
+}
+.config-row[data-locked='1'] .cfg-remove-btn,
+.config-row[data-locked='1'] .config-actions .btn.btn-outline:not(.cfg-lock-btn) {
+  background: #ececef !important;
+  color: #adadad !important;
+  border-color: rgba(17,17,17,0.2) !important;
+}
+.config-row[data-locked='0'] .cfg-remove-btn:hover,
+.config-row[data-locked='0'] .config-actions .btn.btn-outline:not(.cfg-lock-btn):hover {
+  transform: scale(1.09);
+  border-color: rgba(17,17,17,0.34) !important;
+  box-shadow: 0 8px 18px rgba(17,17,17,0.12);
+}
 
 @media(max-width:900px){
   .admin-wrap { grid-template-columns: 1fr; }
@@ -134,8 +344,22 @@ body {
     align-items: flex-start;
     gap: 10px;
   }
+  .health-row-meta {
+    padding-left: 0;
+    justify-content: flex-start;
+    white-space: normal;
+  }
   .cancel-zone,
   .config-zone { padding: 20px; }
+}
+
+@media(max-width:860px){
+  .scan-layout {
+    grid-template-columns: 1fr;
+  }
+  .scan-modal {
+    padding: 28px 20px;
+  }
 }
 </style>
 </head>
@@ -244,7 +468,7 @@ body {
         <div class="config-zone-title">Seats, Prices, and Tickets</div>
         <div class="form-group" style="max-width:520px">
           <label class="form-label">Select Concert</label>
-          <select class="form-select" id="cfg-concert" onchange="loadConfigPreview()">
+          <select class="form-select" id="cfg-concert" onchange="loadConfigPreview(this.value)">
             <option value="">Choose concert to configure…</option>
           </select>
         </div>
@@ -260,7 +484,7 @@ body {
         <div class="form-group" style="max-width:320px">
           <label class="form-label">Resale Markup Cap (%)</label>
           <input class="form-input" id="cfg-markup-pct" type="number" min="0" step="0.01" value="20">
-          <div class="form-hint">Resale cap auto-fills as Base Price x (1 + markup%). You can still override per row.</div>
+          <div class="form-hint">Resale ceiling is auto-calculated as Base Price x (1 + markup%) for every category.</div>
         </div>
         <div class="config-rows" id="config-rows"></div>
         <div class="flex-c gap-12" style="margin-bottom:20px">
@@ -307,13 +531,39 @@ body {
     <!-- Payments -->
     <div class="panel" id="panel-payments">
       <div class="section-label mb-24">Payment Records</div>
-      <div class="form-group" style="max-width:320px"><label class="form-label">Select Concert</label>
-        <select class="form-select" id="p-concert" onchange="loadConcertPays()">
-          <option value="">Select…</option>
-          <option value="CONC-000001">Taylor Swift</option>
-          <option value="CONC-000002">Coldplay</option>
-          <option value="CONC-000004">BTS (Cancelled)</option>
-        </select>
+      <div class="card mb-16" style="padding:18px 20px;background:rgba(255,214,10,0.08);border:2px solid rgba(255,214,10,0.22)">
+        <div style="font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:#8a6d00;font-weight:800">Primary Sales Scope</div>
+        <div style="margin-top:6px;font-size:0.92rem;color:#333;line-height:1.6">
+          This tab shows platform primary ticket sales only. Buyer-to-buyer resale charges and resale payouts are excluded.
+        </div>
+      </div>
+      <div class="flex-c gap-24" id="payment-filter-row" style="margin-bottom:24px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" id="p-concert-wrap" style="margin:0;min-width:260px;max-width:520px;flex:1 1 420px"><label class="form-label">Select Concert</label>
+          <select class="form-select" id="p-concert" onchange="loadConcertPays()">
+            <option value="">All concerts</option>
+          </select>
+        </div>
+        <div class="form-group" id="p-range-wrap" style="margin:0;min-width:220px;max-width:420px;flex:1 1 320px"><label class="form-label">Date Range</label>
+          <select class="form-select" id="p-range" onchange="handlePaymentRangeChange()">
+            <option value="week">This week</option>
+            <option value="month">This month</option>
+            <option value="year">This year</option>
+            <option value="custom">Custom range</option>
+          </select>
+        </div>
+        <div class="form-group hidden" id="p-custom-from-wrap" style="margin:0;min-width:200px;max-width:260px;flex:1 1 220px">
+          <label class="form-label">From</label>
+          <input class="form-input" type="date" id="p-from" onchange="loadConcertPays()">
+        </div>
+        <div class="form-group hidden" id="p-custom-to-wrap" style="margin:0;min-width:200px;max-width:260px;flex:1 1 220px">
+          <label class="form-label">To</label>
+          <input class="form-input" type="date" id="p-to" onchange="loadConcertPays()">
+        </div>
+      </div>
+      <div class="kpi-row" id="payment-kpis">
+        <div class="kpi"><div class="kpi-val" id="p-kpi-week-sales">—</div><div class="kpi-key" id="p-kpi-week-sales-key">Tickets Sold This Week</div><div class="kpi-sub" id="p-kpi-week-sales-sub">All concerts</div></div>
+        <div class="kpi"><div class="kpi-val" id="p-kpi-week-gmv">—</div><div class="kpi-key" id="p-kpi-week-gmv-key">SGD This Week</div><div class="kpi-sub" id="p-kpi-week-gmv-sub">Primary charges only</div></div>
+        <div class="kpi"><div class="kpi-val" id="p-kpi-aov">—</div><div class="kpi-key">Avg Order Value</div><div class="kpi-sub" id="p-kpi-aov-sub">Successful primary sales</div></div>
       </div>
       <div id="pays-list"></div>
     </div>
@@ -321,7 +571,38 @@ body {
   </div>
 </div>
 
+<div class="modal-overlay" id="scan-qr-modal" onclick="if(event.target===this) closeScanQrModal()">
+  <div class="modal scan-modal">
+    <button class="modal-close" onclick="closeScanQrModal()">✕</button>
+    <div class="modal-title">Scan QR Code</div>
+    <div class="modal-sub">Scan a customer ticket at the gate. Confirmed tickets will be marked as used. Refunded, invalid, expired, or already-used tickets will be rejected with a clear result.</div>
+    <div class="scan-layout">
+      <div class="scan-stage">
+        <video id="scan-video" class="scan-video" playsinline muted autoplay></video>
+        <div class="scan-frame"></div>
+        <div id="scan-status-pill" class="scan-status-pill">Starting camera…</div>
+      </div>
+      <div class="scan-side">
+        <div class="scan-card">
+          <h4>Manual Fallback</h4>
+          <p>Paste the raw QR payload if camera access is blocked or unsupported.</p>
+          <textarea id="scan-manual-input" class="form-input scan-manual-input" placeholder="CTMS|TICKET_ID|USER_ID|CONCERT_ID|SIGNATURE"></textarea>
+          <div class="scan-actions">
+            <button class="btn btn-black btn-sm" onclick="submitManualQrScan()" style="border-radius:100px">Validate Payload</button>
+            <button class="btn btn-outline btn-sm" onclick="restartQrScanner()" style="border-radius:100px">Restart Camera</button>
+          </div>
+        </div>
+        <div class="scan-card scan-result">
+          <h4>Latest Result</h4>
+          <div id="scan-result-panel" class="alert alert-warning">Awaiting scan…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="../assets/js/api.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script>
 Auth.requireAdmin(); renderNav('admin');
 
@@ -330,6 +611,29 @@ function isSameDay(a,b){
 }
 
 let queueMonitorInterval=null;
+let qrScanStream=null;
+let qrScanDetector=null;
+let qrScanLoopId=0;
+let qrScanBusy=false;
+let qrScanCooldownUntil=0;
+let qrLastScannedValue='';
+let qrScanCanvas=null;
+let qrScanCtx=null;
+let qrPendingConfirm=null;
+
+function decodeQrFromCanvasRegion(sx, sy, sw, sh){
+  if(!qrScanCtx || !window.jsQR || !sw || !sh) return '';
+  qrScanCanvas.width=sw;
+  qrScanCanvas.height=sh;
+  qrScanCtx.drawImage(
+    document.getElementById('scan-video'),
+    sx, sy, sw, sh,
+    0, 0, sw, sh
+  );
+  const imageData=qrScanCtx.getImageData(0, 0, sw, sh);
+  const decoded=window.jsQR(imageData.data, sw, sh, { inversionAttempts:'attemptBoth' });
+  return decoded?.data?.trim?.() || '';
+}
 
 function stopQueueMonitorAutoRefresh(){
   if(queueMonitorInterval){
@@ -350,6 +654,234 @@ function startQueueMonitorAutoRefresh(){
   },5000);
 }
 
+function setScanStatus(message){
+  const el=document.getElementById('scan-status-pill');
+  if(el) el.textContent=message;
+}
+
+function resetScanResult(){
+  qrPendingConfirm=null;
+  renderScanResult({ message:'Awaiting scan…' }, 'info');
+  setScanStatus('Ready to scan');
+}
+
+function renderScanResult(result, tone='info', actionsHtml=''){
+  const panel=document.getElementById('scan-result-panel');
+  if(!panel) return;
+  const classMap={ success:'alert-success', error:'alert-danger', warning:'alert-warning', info:'alert-warning' };
+  const extra=result?.ticketId ? `<div style="margin-top:8px;font-size:0.76rem;color:#666">Ticket: ${result.ticketId}${result.concertName?` · ${result.concertName}`:''}</div>` : '';
+  panel.className='';
+  panel.innerHTML=`<div class="alert ${classMap[tone]||'alert-warning'}"><strong>${result?.message||'No result available.'}</strong>${extra}</div>${actionsHtml ? `<div class="scan-result-actions">${actionsHtml}</div>` : ''}`;
+}
+
+function stopQrScanner(){
+  if(qrScanLoopId){
+    cancelAnimationFrame(qrScanLoopId);
+    qrScanLoopId=0;
+  }
+  const video=document.getElementById('scan-video');
+  if(video){
+    video.pause?.();
+    video.srcObject=null;
+  }
+  if(qrScanStream){
+    qrScanStream.getTracks().forEach(track=>track.stop());
+    qrScanStream=null;
+  }
+}
+
+async function scanQrLoop(){
+  const video=document.getElementById('scan-video');
+  if(!video || qrScanBusy || qrPendingConfirm){
+    qrScanLoopId=requestAnimationFrame(scanQrLoop);
+    return;
+  }
+  try{
+    if(video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA){
+      let rawValue='';
+      if(qrScanDetector){
+        const codes=await qrScanDetector.detect(video);
+        rawValue=codes?.[0]?.rawValue?.trim?.() || '';
+      }else if(window.jsQR){
+        const width=video.videoWidth || 0;
+        const height=video.videoHeight || 0;
+        if(width && height){
+          if(!qrScanCanvas){
+            qrScanCanvas=document.createElement('canvas');
+            qrScanCtx=qrScanCanvas.getContext('2d', { willReadFrequently:true });
+          }
+          const cropX=Math.floor(width * 0.18);
+          const cropY=Math.floor(height * 0.22);
+          const cropW=Math.floor(width * 0.64);
+          const cropH=Math.floor(height * 0.56);
+
+          rawValue=decodeQrFromCanvasRegion(cropX, cropY, cropW, cropH);
+          if(!rawValue){
+            rawValue=decodeQrFromCanvasRegion(0, 0, width, height);
+          }
+        }
+      }
+      if(rawValue){
+        if(Date.now() >= qrScanCooldownUntil || rawValue !== qrLastScannedValue){
+          qrLastScannedValue=rawValue;
+          qrScanCooldownUntil=Date.now()+2500;
+          processQrPayload(rawValue, 'camera');
+        }
+      }
+    }
+  }catch{}
+  qrScanLoopId=requestAnimationFrame(scanQrLoop);
+}
+
+async function startQrScanner(){
+  stopQrScanner();
+  const manual=document.getElementById('scan-manual-input');
+  if(manual) manual.value='';
+  resetScanResult();
+  if(!navigator.mediaDevices?.getUserMedia){
+    setScanStatus('Camera access not supported. Use manual fallback.');
+    return;
+  }
+  try{
+    qrScanDetector='BarcodeDetector' in window ? new BarcodeDetector({ formats:['qr_code'] }) : null;
+    if(!qrScanDetector && !window.jsQR){
+      setScanStatus('QR detection is unavailable here. Use manual fallback.');
+      return;
+    }
+    qrScanStream=await navigator.mediaDevices.getUserMedia({
+      video:{
+        facingMode:{ ideal:'environment' },
+        width:{ ideal:1280 },
+        height:{ ideal:720 },
+      },
+      audio:false,
+    });
+    const video=document.getElementById('scan-video');
+    if(!video) return;
+    video.srcObject=qrScanStream;
+    await video.play();
+    setScanStatus('Ready to scan');
+    qrScanLoopId=requestAnimationFrame(scanQrLoop);
+  }catch{
+    setScanStatus('Camera unavailable. Use manual fallback.');
+  }
+}
+
+function restartQrScanner(){
+  qrScanCooldownUntil=0;
+  qrLastScannedValue='';
+  startQrScanner();
+}
+
+async function processQrPayload(qrData, source='manual'){
+  if(qrScanBusy || qrPendingConfirm) return;
+  qrScanBusy=true;
+  setScanStatus(source==='camera' ? 'Checking ticket…' : 'Checking manual payload…');
+  try{
+    const result=await API.qr.scan({ qrData, confirm:false });
+    if(result?.success && result?.actionRequired){
+      qrPendingConfirm={ qrData };
+      renderScanResult(
+        result,
+        'success',
+        `<button class="btn btn-black btn-sm" onclick="confirmPendingScan()" style="border-radius:100px">OK</button><button class="btn btn-outline btn-sm" onclick="resetScanResult()" style="border-radius:100px">Cancel</button>`
+      );
+      setScanStatus('Review result and confirm entry');
+    }else if(result?.success){
+      renderScanResult(
+        result,
+        'success',
+        `<button class="btn btn-black btn-sm" onclick="resetScanResult()" style="border-radius:100px">OK</button>`
+      );
+      setScanStatus('Ticket processed');
+    }else{
+      const code=String(result?.code||'');
+      const tone=(code.includes('USED') || code.includes('REFUNDED') || code.includes('EXPIRED') || code.includes('INVALID')) ? 'error' : 'warning';
+      renderScanResult(
+        result||{ message:'Ticket could not be validated.' },
+        tone,
+        `<button class="btn btn-black btn-sm" onclick="resetScanResult()" style="border-radius:100px">OK</button>`
+      );
+      setScanStatus('Result ready');
+    }
+  }catch(e){
+    renderScanResult(
+      { message:e?.message||'QR scan service unavailable.' },
+      'error',
+      `<button class="btn btn-black btn-sm" onclick="resetScanResult()" style="border-radius:100px">OK</button>`
+    );
+    setScanStatus('Scan failed. Check backend services.');
+  }finally{
+    qrScanBusy=false;
+  }
+}
+
+async function confirmPendingScan(){
+  if(qrScanBusy || !qrPendingConfirm?.qrData) return;
+  qrScanBusy=true;
+  setScanStatus('Confirming entry…');
+  try{
+    const result=await API.qr.scan({ qrData: qrPendingConfirm.qrData, confirm:true });
+    qrPendingConfirm=null;
+    if(result?.success){
+      renderScanResult(
+        result,
+        'success',
+        `<button class="btn btn-black btn-sm" onclick="resetScanResult()" style="border-radius:100px">OK</button>`
+      );
+      setScanStatus('Entry confirmed');
+    }else{
+      renderScanResult(
+        result||{ message:'Ticket could not be confirmed.' },
+        'error',
+        `<button class="btn btn-black btn-sm" onclick="resetScanResult()" style="border-radius:100px">OK</button>`
+      );
+      setScanStatus('Confirmation failed');
+    }
+  }catch(e){
+    qrPendingConfirm=null;
+    renderScanResult(
+      { message:e?.message||'QR scan service unavailable.' },
+      'error',
+      `<button class="btn btn-black btn-sm" onclick="resetScanResult()" style="border-radius:100px">OK</button>`
+    );
+    setScanStatus('Confirmation failed');
+  }finally{
+    qrScanBusy=false;
+  }
+}
+
+function submitManualQrScan(){
+  const qrData=document.getElementById('scan-manual-input')?.value?.trim();
+  if(!qrData){
+    renderScanResult({ message:'Paste a QR payload first.' }, 'warning');
+    return;
+  }
+  processQrPayload(qrData, 'manual');
+}
+
+function openScanQrModal(){
+  openModal('scan-qr-modal');
+  startQrScanner();
+}
+
+function closeScanQrModal(){
+  stopQrScanner();
+  closeModal('scan-qr-modal');
+  qrScanCooldownUntil=0;
+  qrLastScannedValue='';
+  qrPendingConfirm=null;
+  if(location.hash==='#scan-qr'){
+    history.replaceState(null, '', `${location.pathname}${location.search}`);
+  }
+}
+
+function handleAdminHashAction(){
+  if(location.hash==='#scan-qr'){
+    openScanQrModal();
+  }
+}
+
 function showPanel(n,el){
   stopQueueMonitorAutoRefresh();
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
@@ -363,6 +895,7 @@ function showPanel(n,el){
     loadQueueConcertOptions();
     startQueueMonitorAutoRefresh();
   }
+  if(n==='payments') loadPaymentConcertOptions();
 }
 
 async function mapWithConcurrency(items, worker, limit=4){
@@ -383,6 +916,23 @@ async function mapWithConcurrency(items, worker, limit=4){
   return results;
 }
 
+async function enrichConcertsWithInventory(concerts=[]){
+  if(!concerts.length) return [];
+  const summaries=await mapWithConcurrency(concerts, c=>API.tickets.summary(c.concertId), 4);
+  return concerts.map((concert,index)=>{
+    const summary=summaries[index] || {};
+    const totalSeats=Number(summary.totalSeats || 0);
+    const availableSeats=Number(summary.availableSeats || 0);
+    return {
+      ...concert,
+      totalSeats,
+      availableSeats,
+      soldSeats: Math.max(totalSeats - availableSeats, 0),
+      inventorySummary: summary,
+    };
+  });
+}
+
 async function loadDashboard(){
   document.getElementById('kpi-concerts').textContent='—';
   document.getElementById('kpi-concerts-sub').textContent='Loading…';
@@ -394,7 +944,7 @@ async function loadDashboard(){
   document.getElementById('kpi-revenue-sub').textContent='Loading…';
 
   const d=await API.concerts.list();
-  const cs=d.concerts||d||[];
+  const cs=await enrichConcertsWithInventory(d.concerts||d||[]);
   const activeCount=cs.filter(c=>c.status==='ACTIVE').length;
   document.getElementById('kpi-concerts').textContent=String(cs.length).padStart(2,'0');
   document.getElementById('kpi-concerts-sub').textContent=`${activeCount} active`;
@@ -405,17 +955,13 @@ async function loadDashboard(){
       <div class="flex-c gap-16"><span class="text-sm text-muted">${c.availableSeats?.toLocaleString()} left</span>${Util.tag(c.status)}</div>
     </div>`).join('');
 
-  // Limit concurrent backend requests to keep admin fast and avoid request bursts.
-  const ticketResults = await mapWithConcurrency(cs, c=>API.tickets.list(c.concertId,'ALL'), 4);
   let totalTickets=0;
   let soldTickets=0;
   let availableTickets=0;
-  ticketResults.forEach(result=>{
-    const t=result?.tickets||[];
-    totalTickets += t.length;
-    const availableCount = t.filter(x=>x.status === 'AVAILABLE').length;
-    availableTickets += availableCount;
-    soldTickets += t.filter(x=>x.status && x.status !== 'AVAILABLE').length;
+  cs.forEach(concert=>{
+    totalTickets += Number(concert.totalSeats || 0);
+    availableTickets += Number(concert.availableSeats || 0);
+    soldTickets += Number(concert.soldSeats || 0);
   });
   document.getElementById('kpi-tickets').textContent=String(soldTickets).padStart(2,'0');
   document.getElementById('kpi-tickets-sub').textContent=totalTickets?`${availableTickets} available`:'No inventory';
@@ -469,17 +1015,17 @@ async function loadHealth(){
   }));
   document.getElementById('health-list').innerHTML=rows.map(r=>`
     <div class="health-row">
-      <div class="flex-c gap-12"><div class="hdot ${r.status}"></div><span style="font-size:0.88rem;font-weight:500">${r.name}</span></div>
-      <div class="flex-c gap-12">
+      <div class="health-row-main"><div class="hdot ${r.status}"></div><span class="health-row-name">${r.name}</span></div>
+      <div class="health-row-meta">
         ${r.ms?`<span class="text-xs text-muted">${r.ms}ms</span>`:''}
-        <span style="font-size:0.75rem;font-weight:700;color:${r.status==='ok'?'var(--teal)':r.status==='error'?'var(--pink)':'#888'}">${r.status==='ok'?'Online':r.status==='error'?'Offline':r.note||'Unknown'}</span>
+        <span class="health-row-status" style="color:${r.status==='ok'?'var(--teal)':r.status==='error'?'var(--pink)':'#888'}">${r.status==='ok'?'Online':r.status==='error'?'Offline':r.note||'Unknown'}</span>
       </div>
     </div>`).join('');
 }
 
 async function loadConcerts(){
   const d=await API.concerts.list();
-  const cs=d.concerts||d||[];
+  const cs=await enrichConcertsWithInventory(d.concerts||d||[]);
   const selectedStatus=document.getElementById('concert-status-filter')?.value || 'ALL';
   const filtered=selectedStatus==='ALL'
     ? cs
@@ -507,7 +1053,8 @@ async function loadConfigConcertOptions(selectedId=''){
   sel.innerHTML='<option value="">Choose concert to configure…</option>';
   try{
     const d=await API.concerts.listStrict();
-    (d.concerts||d||[]).forEach(c=>{
+    const concerts=await enrichConcertsWithInventory(d.concerts||d||[]);
+    concerts.forEach(c=>{
       const o=document.createElement('option');
       o.value=c.concertId;
       o.textContent=`${c.name} (${c.totalSeats||0} seats)`;
@@ -546,13 +1093,14 @@ function buildConfigRowOld(row={}){
   const name=row.categoryName||'';
   const seats=row.totalSeats||'';
   const price=row.basePrice||'';
-  const ceiling=row.resaleCeiling||'';
   return `<div class="config-row">
     <div class="form-group" style="margin:0"><label class="form-label">Category Name</label><input class="form-input cfg-name" value="${name}" placeholder="CAT 1 — FLOOR / PIT"></div>
     <div class="form-group" style="margin:0"><label class="form-label">Seats</label><input class="form-input cfg-seats" type="number" min="1" value="${seats}" placeholder="1000"></div>
     <div class="form-group" style="margin:0"><label class="form-label">Base Price</label><input class="form-input cfg-price" type="number" min="0" step="0.01" value="${price}" placeholder="98"></div>
-    <div class="form-group" style="margin:0"><label class="form-label">Resale Cap</label><input class="form-input cfg-cap" type="number" min="0" step="0.01" value="${ceiling}" placeholder="145"></div>
-    <button class="btn btn-sm btn-outline" onclick="this.parentElement.remove()" style="border-radius:100px">Remove</button>
+    <div class="config-actions">
+      <button class="btn btn-sm btn-outline cfg-lock-btn" type="button" style="border-radius:100px">Lock</button>
+      <button class="btn btn-sm btn-outline" type="button" onclick="this.closest('.config-row')?.remove()" style="border-radius:100px">Remove</button>
+    </div>
   </div>`;
 }
 
@@ -560,24 +1108,72 @@ function buildConfigRow(row={}){
   const name=row.categoryName||'';
   const seats=row.totalSeats||'';
   const price=row.basePrice||'';
-  const ceiling=row.resaleCeiling||'';
+  const resaleCap=row.resaleCeiling ?? '';
+  const originalPrice=row.originalBasePrice ?? price;
+  const originalCap=row.originalResaleCeiling ?? resaleCap;
+  const hasRule=row.hasRule ?? (originalPrice !== '' && originalPrice !== null && typeof originalPrice !== 'undefined');
   const mode=row.mode||'new';
   const isExisting=mode==='existing';
-  const locked= isExisting ? 'readonly' : '';
+  const lockedState = row.locked ?? isExisting;
+  const locked = lockedState ? 'readonly' : '';
   const needsPrice = isExisting && (price === '' || price === null || typeof price === 'undefined');
-  const action=isExisting
-    ? '<button class="btn btn-sm btn-outline" type="button" disabled title="This category already exists in the database and cannot be removed here." style="border-radius:100px;opacity:.65;cursor:default">Locked</button>'
-    : '<button class="btn btn-sm btn-outline" type="button" onclick="this.parentElement.remove()" style="border-radius:100px">Remove</button>';
+  const lockText = lockedState ? 'Unlock' : 'Lock';
+  const lockClass = lockedState ? 'is-locked' : '';
+  const removeDisabled = lockedState ? 'disabled style="border-radius:100px;opacity:.65;cursor:default"' : 'style="border-radius:100px"';
   const priceHint = needsPrice
     ? '<div class="text-xs text-muted" style="margin-top:6px">No price rule yet — set a base price to create it.</div>'
     : '';
-  return `<div class="config-row" data-mode="${mode}" data-category-id="${escapeAttr(row.categoryId||'')}" data-original-name="${escapeAttr(name)}" data-original-seats="${escapeAttr(seats)}" data-original-price="${escapeAttr(price)}" data-original-cap="${escapeAttr(ceiling)}">
+  return `<div class="config-row" data-mode="${mode}" data-locked="${lockedState ? '1' : '0'}" data-category-id="${escapeAttr(row.categoryId||'')}" data-original-name="${escapeAttr(name)}" data-original-seats="${escapeAttr(seats)}" data-original-available="${escapeAttr(row.availableSeats ?? seats)}" data-original-price="${escapeAttr(originalPrice)}" data-original-cap="${escapeAttr(originalCap)}" data-has-rule="${hasRule ? '1' : '0'}">
     <div class="form-group" style="margin:0"><label class="form-label">Category Name</label><input class="form-input cfg-name" value="${escapeAttr(name)}" placeholder="CAT 1 - FLOOR / PIT" ${locked}></div>
     <div class="form-group" style="margin:0"><label class="form-label">Seats</label><input class="form-input cfg-seats" type="number" min="1" value="${escapeAttr(seats)}" placeholder="1000" ${locked}></div>
-    <div class="form-group" style="margin:0"><label class="form-label">Base Price</label><input class="form-input cfg-price" type="number" min="0" step="0.01" value="${escapeAttr(price)}" placeholder="98">${priceHint}</div>
-    <div class="form-group" style="margin:0"><label class="form-label">Resale Cap</label><input class="form-input cfg-cap" type="number" min="0" step="0.01" value="${escapeAttr(ceiling)}" placeholder="145"></div>
-    ${action}
+    <div class="form-group" style="margin:0"><label class="form-label">Base Price</label><input class="form-input cfg-price" type="number" min="0" step="0.01" value="${escapeAttr(price)}" placeholder="98" ${locked}>${priceHint}</div>
+    <div class="config-actions">
+      <button class="btn btn-sm btn-outline cfg-lock-btn ${lockClass}" type="button" onclick="toggleConfigRowLock(this)" style="border-radius:100px">${lockText}</button>
+      <button class="btn btn-sm btn-outline cfg-remove-btn" type="button" onclick="this.closest('.config-row')?.remove()" ${removeDisabled}>Remove</button>
+    </div>
   </div>`;
+}
+
+function applyConfigRowVisualState(row){
+  if(!row) return;
+  const name=row.querySelector('.cfg-name')?.value.trim() || '';
+  const seats=row.querySelector('.cfg-seats')?.value.trim() || '';
+  const price=row.querySelector('.cfg-price')?.value.trim() || '';
+  const isFilled=Boolean(name || seats || price);
+  const locked=row.dataset.locked==='1';
+
+  row.classList.remove('row-empty','row-unlocked','row-locked');
+  if(!isFilled){
+    row.classList.add('row-empty');
+    return;
+  }
+  row.classList.add(locked ? 'row-locked' : 'row-unlocked');
+}
+
+function setConfigRowLocked(row, locked){
+  if(!row) return;
+  const isExisting=row.dataset.mode==='existing';
+  row.dataset.locked = locked ? '1' : '0';
+  const lockBtn=row.querySelector('.cfg-lock-btn');
+  if(lockBtn){
+    lockBtn.classList.toggle('is-locked', !!locked);
+    lockBtn.textContent = locked ? 'Unlock' : 'Lock';
+  }
+  const removeBtn=row.querySelector('.cfg-remove-btn');
+  if(removeBtn){
+    removeBtn.disabled = !!locked;
+  }
+  row.querySelectorAll('input').forEach(input=>{
+    input.readOnly = !!locked;
+  });
+  applyConfigRowVisualState(row);
+}
+
+function toggleConfigRowLock(btn){
+  const row=btn?.closest('.config-row');
+  if(!row) return;
+  const currentlyLocked=row.dataset.locked==='1';
+  setConfigRowLocked(row, !currentlyLocked);
 }
 
 function getMarkupPercent(){
@@ -592,42 +1188,18 @@ function autoCapFromPrice(basePrice){
   return Number((basePrice * (1 + markup / 100)).toFixed(2));
 }
 
-function applyAutoCap(row, force=false){
-  if(!row || row.dataset.mode==='existing') return;
-  const priceInput=row.querySelector('.cfg-price');
-  const capInput=row.querySelector('.cfg-cap');
-  if(!priceInput || !capInput) return;
+function resaleCeilingFromRow(row){
+  const priceInput=row?.querySelector('.cfg-price');
+  if(!priceInput) return null;
   const basePrice=Number(priceInput.value);
-  if(!Number.isFinite(basePrice) || basePrice < 0) return;
-  const autoAllowed=force || row.dataset.capAuto==='1' || capInput.value.trim()==='';
-  if(!autoAllowed) return;
-  capInput.value=String(autoCapFromPrice(basePrice));
-  row.dataset.capAuto='1';
+  if(!Number.isFinite(basePrice) || basePrice < 0) return null;
+  return autoCapFromPrice(basePrice);
 }
 
-function bindConfigRowAutoCap(row){
-  if(!row || row.dataset.mode==='existing') return;
-  const priceInput=row.querySelector('.cfg-price');
-  const capInput=row.querySelector('.cfg-cap');
-  if(!priceInput || !capInput) return;
-
-  row.dataset.capAuto = capInput.value.trim() ? '0' : '1';
-  priceInput.addEventListener('input', ()=>applyAutoCap(row));
-  capInput.addEventListener('input', ()=>{
-    if(capInput.value.trim()===''){
-      row.dataset.capAuto='1';
-      applyAutoCap(row, true);
-      return;
-    }
-    row.dataset.capAuto='0';
-  });
-  applyAutoCap(row, true);
-}
-
-function applyMarkupToNewRows(){
+function applyMarkupToRows(){
   document.querySelectorAll('#config-rows .config-row').forEach(row=>{
-    if(row.dataset.mode==='existing') return;
-    applyAutoCap(row, true);
+    const computed=resaleCeilingFromRow(row);
+    row.dataset.computedCap = computed===null ? '' : String(computed);
   });
 }
 
@@ -635,7 +1207,12 @@ function addConfigRow(row={}){
   const container=document.getElementById('config-rows');
   container.insertAdjacentHTML('beforeend', buildConfigRow(row));
   const latest=container.lastElementChild;
-  bindConfigRowAutoCap(latest);
+  applyMarkupToRows();
+  latest.querySelectorAll('.cfg-name,.cfg-seats,.cfg-price').forEach(input=>{
+    input.addEventListener('input', ()=>applyConfigRowVisualState(latest));
+  });
+  const defaultLocked = row.locked ?? (row.mode === 'existing');
+  setConfigRowLocked(latest, !!defaultLocked);
 }
 
 function slugifyCategory(name){
@@ -725,6 +1302,30 @@ function countBy(items, key){
   }, {});
 }
 
+function deriveCategoryPrefix(concertId, categories=[]){
+  const existingId=(categories||[])
+    .map(category=>String(category?.categoryId||''))
+    .find(id=>/-(\d+)$/.test(id));
+  if(existingId){
+    return existingId.replace(/-(\d+)$/, '');
+  }
+  return `CAT-${String(concertId||'').slice(-6)}`;
+}
+
+function getNextCategorySequence(prefix, categories=[]){
+  let maxSeq=0;
+  (categories||[]).forEach(category=>{
+    const id=String(category?.categoryId||'');
+    if(prefix && !id.startsWith(`${prefix}-`)) return;
+    const match=id.match(/-(\d+)$/);
+    if(match){
+      maxSeq=Math.max(maxSeq, Number(match[1]) || 0);
+    }
+  });
+  return maxSeq+1;
+}
+
+/* Legacy conflicted duplicate kept only for reference during merge.
 async function loadConfigPreview(){
   const concertId=document.getElementById('cfg-concert').value;
   const select=document.getElementById('cfg-concert');
@@ -732,7 +1333,8 @@ async function loadConfigPreview(){
   rows.innerHTML='';
   document.getElementById('config-alert').innerHTML='';
   if(!concertId){
-    select.dataset.existingCount='0';
+    select.dataset.nextSeq='1';
+    select.dataset.categoryPrefix='';
     document.getElementById('cfg-preview').textContent='Choose a concert to configure its categories.';
     return;
   }
@@ -754,6 +1356,53 @@ async function loadConfigPreview(){
   } else {
     addConfigRow();
   }
+
+  let concert, seatRes, priceRes, inventorySummary;
+  try{
+    [concert, seatRes, priceRes, inventorySummary] = await Promise.all([
+      API.concerts.getStrict(concertId),
+      API.concerts.seatsStrict(concertId),
+      API.pricing.listStrict(concertId).catch(e=>{
+        if(e?.status===404) return { prices: [] };
+        throw e;
+      }),
+      API.tickets.summary(concertId),
+    ]);
+  }catch(err){
+    select.dataset.nextSeq='1';
+    select.dataset.categoryPrefix='';
+    document.getElementById('cfg-preview').textContent='Could not load live concert configuration.';
+    document.getElementById('config-alert').innerHTML=`<div class="alert alert-danger">${err.message||'Could not load live concert configuration from the backend.'}</div>`;
+    return;
+  }
+
+  const categories=(seatRes.categories||[]).map(category=>{
+    const counts=inventorySummary?.byCategory?.[category.categoryId] || {};
+    const hasInventory=Number(counts.total || 0) > 0;
+    return {
+      ...category,
+      totalSeats: hasInventory ? Number(counts.total || 0) : Number(category.totalSeats || 0),
+      availableSeats: hasInventory ? Number(counts.available || 0) : Number(category.availableSeats ?? category.totalSeats ?? 0),
+      inventoryReady: hasInventory,
+    };
+  });
+  const prices=priceRes.prices||[];
+  const categoryPrefix=deriveCategoryPrefix(concertId, categories);
+  document.getElementById('cfg-event-date').value=toDateTimeLocalValue(concert?.eventDate);
+  select.dataset.categoryPrefix=categoryPrefix;
+  select.dataset.nextSeq=String(getNextCategorySequence(categoryPrefix, categories));
+  document.getElementById('cfg-preview').textContent=categories.length
+    ? `${concert.name} has ${categories.length} saved category(ies). Locked rows are grey. Unlock to edit, then save to apply and lock again.`
+    : `${concert.name} has no categories yet. Start with the empty row below, then save to lock it.`;
+  categories.forEach(category=>{
+    addConfigRow({
+      ...category,
+      basePrice: category.basePrice ?? '',
+      mode:'existing',
+      locked:true,
+    });
+  });
+  addConfigRow({ mode:'new', locked:false });
 }
 
 async function configureConcert(){
@@ -776,18 +1425,13 @@ async function configureConcert(){
     totalSeats:Number(row.querySelector('.cfg-seats').value),
     availableSeats:Number(row.querySelector('.cfg-seats').value),
     basePrice:Number(row.querySelector('.cfg-price').value),
-    resaleCeiling:row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
+    resaleCeiling:resaleCeilingFromRow(row),
   }));
 
   if(categories.some(c=>!c.categoryName || !Number.isFinite(c.totalSeats) || c.totalSeats <= 0 || !Number.isFinite(c.basePrice) || c.basePrice < 0)){
     toast('Each category needs a name, positive seats, and base price','warning');
     return;
   }
-  if(categories.some(c=>c.resaleCeiling !== null && c.resaleCeiling < c.basePrice)){
-    toast('Resale cap must be greater than or equal to base price','warning');
-    return;
-  }
-
   const tickets=categories.flatMap(category=>{
     const prefix=slugifyCategory(category.categoryName).slice(0,6);
     return Array.from({length: category.totalSeats}, (_, index)=>({
@@ -846,6 +1490,7 @@ async function configureConcert(){
   }
 }
 
+*/
 async function loadCancelOptions(){
   const sel=document.getElementById('cancel-id');
   sel.innerHTML='<option value="">Choose concert to cancel…</option>';
@@ -1017,60 +1662,348 @@ async function loadQueueConcertOptions(selectedId=''){
   }
 }
 
-async function loadConcertPays(){
-  const id=document.getElementById('p-concert').value; if(!id)return;
-  document.getElementById('pays-list').innerHTML='<div class="skel" style="height:200px;border-radius:var(--radius-lg)"></div>';
-  const d=await API.payment.byConcert(id);
-  const pays=d.payments||[];
-  document.getElementById('pays-list').innerHTML=pays.length
-    ?`<div class="table-wrap"><table><thead><tr><th>Payment ID</th><th>User</th><th>Type</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${pays.map(p=>`<tr><td class="text-sm">${p.paymentId}</td><td class="text-sm">${p.userId}</td><td>${Util.tag(p.type)}</td><td>SGD ${p.amount}</td><td>${Util.tag(p.status)}</td><td class="text-xs text-muted">${Util.formatDateShort(p.createdAt)}</td></tr>`).join('')}</tbody></table></div>`
-    :`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No payments</div>`;
+function paymentDateValue(payment){
+  const parsed=Util.parseDateParts(payment?.createdAt||payment?.created_at||payment?.timestamp||null);
+  return parsed?.date || null;
 }
 
-async function loadConfigPreview(){
-  const concertId=document.getElementById('cfg-concert').value;
+function startOfWeek(date){
+  const d=new Date(date);
+  const day=d.getDay();
+  const diff=(day+6)%7;
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate()-diff);
+  return d;
+}
+
+function startOfMonth(date){
+  const d=new Date(date);
+  d.setHours(0,0,0,0);
+  d.setDate(1);
+  return d;
+}
+
+function startOfYear(date){
+  const d=new Date(date);
+  d.setHours(0,0,0,0);
+  d.setMonth(0,1);
+  return d;
+}
+
+function endOfDay(date){
+  const d=new Date(date);
+  d.setHours(23,59,59,999);
+  return d;
+}
+
+function getPaymentRangeValue(){
+  return document.getElementById('p-range')?.value || 'week';
+}
+
+function getPaymentRangeLabel(range){
+  if(range==='month') return 'This Month';
+  if(range==='year') return 'This Year';
+  if(range==='custom') return 'Custom Range';
+  return 'This Week';
+}
+
+function getPaymentDateBounds(range, now=new Date()){
+  if(range==='month') return { start:startOfMonth(now), end:now, valid:true };
+  if(range==='year') return { start:startOfYear(now), end:now, valid:true };
+  if(range==='custom'){
+    const fromValue=document.getElementById('p-from')?.value || '';
+    const toValue=document.getElementById('p-to')?.value || '';
+    if(!fromValue || !toValue) return { valid:false, message:'Pick both From and To dates.' };
+    const start=new Date(`${fromValue}T00:00:00`);
+    const end=endOfDay(new Date(`${toValue}T00:00:00`));
+    if(Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return { valid:false, message:'Enter a valid custom date range.' };
+    if(start > end) return { valid:false, message:'From date must be on or before To date.' };
+    return { start, end, valid:true };
+  }
+  return { start:startOfWeek(now), end:now, valid:true };
+}
+
+function paymentFallsWithinRange(date, bounds){
+  if(!date || !bounds?.valid || !bounds.start || !bounds.end) return false;
+  return date >= bounds.start && date <= bounds.end;
+}
+
+function handlePaymentRangeChange(){
+  const isCustom=getPaymentRangeValue()==='custom';
+  const filterRow=document.getElementById('payment-filter-row');
+  const concertWrap=document.getElementById('p-concert-wrap');
+  const rangeWrap=document.getElementById('p-range-wrap');
+  const fromWrap=document.getElementById('p-custom-from-wrap');
+  const toWrap=document.getElementById('p-custom-to-wrap');
+  if(filterRow) filterRow.style.gap=isCustom ? '16px' : '24px';
+  if(concertWrap) concertWrap.style.flex=isCustom ? '1 1 280px' : '1 1 420px';
+  if(concertWrap) concertWrap.style.maxWidth=isCustom ? '420px' : '520px';
+  if(rangeWrap) rangeWrap.style.flex=isCustom ? '1 1 240px' : '1 1 320px';
+  if(rangeWrap) rangeWrap.style.maxWidth=isCustom ? '320px' : '420px';
+  if(fromWrap) fromWrap.style.flex=isCustom ? '1 1 180px' : '1 1 220px';
+  if(fromWrap) fromWrap.style.maxWidth=isCustom ? '220px' : '260px';
+  if(toWrap) toWrap.style.flex=isCustom ? '1 1 180px' : '1 1 220px';
+  if(toWrap) toWrap.style.maxWidth=isCustom ? '220px' : '260px';
+  document.getElementById('p-custom-from-wrap')?.classList.toggle('hidden', !isCustom);
+  document.getElementById('p-custom-to-wrap')?.classList.toggle('hidden', !isCustom);
+  loadConcertPays();
+}
+
+function getPrimaryPlatformPayments(payments=[]){
+  return payments.filter(p=>
+    String(p?.type||'').toUpperCase()==='PURCHASE'
+    && String(p?.status||'').toUpperCase()==='SUCCESS'
+  );
+}
+
+function setPaymentKpis({
+  weekSales='—',
+  weekSalesSub='All concerts',
+  weekRevenue='—',
+  weekRevenueSub='Primary charges only',
+  weekSalesKey='Tickets Sold This Week',
+  weekRevenueKey='SGD This Week',
+  avgOrder='—',
+  avgOrderSub='Successful primary sales',
+}={}){
+  document.getElementById('p-kpi-week-sales-key').textContent=weekSalesKey;
+  document.getElementById('p-kpi-week-gmv-key').textContent=weekRevenueKey;
+  document.getElementById('p-kpi-week-sales').textContent=weekSales;
+  document.getElementById('p-kpi-week-sales-sub').textContent=weekSalesSub;
+  document.getElementById('p-kpi-week-gmv').textContent=weekRevenue;
+  document.getElementById('p-kpi-week-gmv-sub').textContent=weekRevenueSub;
+  document.getElementById('p-kpi-aov').textContent=avgOrder;
+  document.getElementById('p-kpi-aov-sub').textContent=avgOrderSub;
+}
+
+async function fetchPrimaryPaymentsByScope(concertId=''){
+  if(concertId){
+    const result=await API.payment.byConcert(concertId);
+    return getPrimaryPlatformPayments(result.payments||[]);
+  }
+
+  const concertResult=API.concerts.listStrict ? await API.concerts.listStrict() : await API.concerts.list();
+  const concerts=(concertResult.concerts||concertResult||[]).filter(c=>c && c.concertId);
+  const paymentResults=await mapWithConcurrency(concerts, c=>API.payment.byConcert(c.concertId), 4);
+  return paymentResults.flatMap(result=>getPrimaryPlatformPayments(result?.payments||[]));
+}
+
+async function loadPaymentConcertOptions(){
+  const sel=document.getElementById('p-concert');
+  const panel=document.getElementById('pays-list');
+  const previous=sel.value;
+
+  sel.innerHTML='<option value="">Loading concerts…</option>';
+  const isCustom=getPaymentRangeValue()==='custom';
+  document.getElementById('p-custom-from-wrap')?.classList.toggle('hidden', !isCustom);
+  document.getElementById('p-custom-to-wrap')?.classList.toggle('hidden', !isCustom);
+  setPaymentKpis();
+  panel.innerHTML='<div class="skel" style="height:200px;border-radius:var(--radius-lg)"></div>';
+
+  try{
+    const d=API.concerts.listStrict ? await API.concerts.listStrict() : await API.concerts.list();
+    const concerts=(d.concerts||d||[])
+      .filter(c=>c && c.concertId)
+      .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+
+    sel.innerHTML='<option value="">All concerts</option>';
+    concerts.forEach(c=>{
+      const option=document.createElement('option');
+      option.value=c.concertId;
+      option.textContent=`${c.name} (${c.concertId})`;
+      sel.appendChild(option);
+    });
+
+    if(!concerts.length){
+      panel.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No concerts available</div>`;
+      return;
+    }
+
+    sel.value=concerts.some(c=>c.concertId===previous) ? previous : '';
+    await loadConcertPays();
+  }catch(e){
+    sel.innerHTML='<option value="">All concerts</option>';
+    panel.innerHTML=`<div class="alert alert-danger">Could not load concerts for Payments. ${e.message||'Please try again.'}</div>`;
+  }
+}
+
+async function loadConcertPays(){
+  const id=document.getElementById('p-concert').value;
+  document.getElementById('pays-list').innerHTML='<div class="skel" style="height:200px;border-radius:var(--radius-lg)"></div>';
+
+  try{
+    const scopeLabel=id ? 'Selected concert' : 'All concerts';
+    const range=getPaymentRangeValue();
+    const rangeLabel=getPaymentRangeLabel(range);
+    const bounds=getPaymentDateBounds(range);
+    if(!bounds.valid){
+      setPaymentKpis({
+        weekSalesKey:`Tickets Sold ${rangeLabel}`,
+        weekRevenueKey:`SGD ${rangeLabel}`,
+        weekSales:'—',
+        weekSalesSub:bounds.message || 'Could not apply date range',
+        weekRevenue:'—',
+        weekRevenueSub:bounds.message || 'Could not apply date range',
+        avgOrder:'—',
+        avgOrderSub:bounds.message || 'Could not apply date range',
+      });
+      document.getElementById('pays-list').innerHTML=`<div class="alert alert-warning">${bounds.message||'Could not apply date range.'}</div>`;
+      return;
+    }
+    const pays=(await fetchPrimaryPaymentsByScope(id))
+      .sort((a,b)=>(paymentDateValue(b)?.getTime()||0)-(paymentDateValue(a)?.getTime()||0));
+    const filteredPays=pays.filter(p=>paymentFallsWithinRange(paymentDateValue(p), bounds));
+    let weekSales=0;
+    let weekRevenue=0;
+    let totalRevenue=0;
+
+    filteredPays.forEach(p=>{
+      const amount=Number(p.amount||0);
+      totalRevenue += amount;
+      weekSales += 1;
+      weekRevenue += amount;
+    });
+
+    const avgOrder=filteredPays.length ? totalRevenue / filteredPays.length : 0;
+    setPaymentKpis({
+      weekSalesKey:`Tickets Sold ${rangeLabel}`,
+      weekRevenueKey:`SGD ${rangeLabel}`,
+      weekSales:String(weekSales),
+      weekSalesSub:weekSales ? `${scopeLabel} · primary tickets sold in ${rangeLabel.toLowerCase()}` : `${scopeLabel} · no primary tickets sold in ${rangeLabel.toLowerCase()}`,
+      weekRevenue:weekRevenue ? `$${Math.round(weekRevenue)}` : '$0',
+      weekRevenueSub:weekRevenue ? `${scopeLabel} · sum of primary sales in ${rangeLabel.toLowerCase()}` : `${scopeLabel} · no primary sales in ${rangeLabel.toLowerCase()}`,
+      avgOrder:filteredPays.length ? `$${Math.round(avgOrder)}` : '$0',
+      avgOrderSub:filteredPays.length ? `${scopeLabel} · ${filteredPays.length} primary sale(s) in ${rangeLabel.toLowerCase()}` : `${scopeLabel} · no successful primary sales in ${rangeLabel.toLowerCase()}`,
+    });
+
+    document.getElementById('pays-list').innerHTML=filteredPays.length
+      ?`<div class="table-wrap"><table><thead><tr>${id?'':'<th>Concert</th>'}<th>Payment ID</th><th>User</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${filteredPays.map(p=>`<tr>${id?'':`<td class="text-sm">${p.concertId}</td>`}<td class="text-sm">${p.paymentId}</td><td class="text-sm">${p.userId}</td><td>SGD ${Number(p.amount||0).toFixed(2)}</td><td>${Util.tag(p.status)}</td><td class="text-xs text-muted">${Util.formatDate(p.createdAt)}</td></tr>`).join('')}</tbody></table></div>`
+      :`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">${id?`No primary platform sales found for this concert in ${rangeLabel.toLowerCase()}`:`No primary platform sales found across all concerts in ${rangeLabel.toLowerCase()}`}</div>`;
+  }catch(e){
+    setPaymentKpis({
+      weekSalesKey:`Tickets Sold ${getPaymentRangeLabel(getPaymentRangeValue())}`,
+      weekRevenueKey:`SGD ${getPaymentRangeLabel(getPaymentRangeValue())}`,
+      weekSales:'—',
+      weekSalesSub:'Could not load payments',
+      weekRevenue:'—',
+      weekRevenueSub:'Could not load payments',
+      avgOrder:'—',
+      avgOrderSub:'Could not load payments',
+    });
+    document.getElementById('pays-list').innerHTML=`<div class="alert alert-danger">Could not load payment history. ${e.message||'Please try again.'}</div>`;
+  }
+}
+
+async function loadConfigPreview(selectedConcertId=''){
+  const concertId=selectedConcertId || document.getElementById('cfg-concert').value;
   const select=document.getElementById('cfg-concert');
   const rows=document.getElementById('config-rows');
   rows.innerHTML='';
   document.getElementById('config-alert').innerHTML='';
+  if(selectedConcertId && select.value !== selectedConcertId){
+    select.value=selectedConcertId;
+  }
   if(!concertId){
     select.dataset.existingCount='0';
+    select.dataset.nextSeq='1';
+    select.dataset.categoryPrefix='';
     document.getElementById('cfg-preview').textContent='Choose a concert to configure its categories.';
     return;
   }
-  let concert, seatRes, priceRes;
+  let concert, seatRes, priceRes, inventorySummary;
   try{
-    [concert, seatRes, priceRes] = await Promise.all([
+    [concert, seatRes, priceRes, inventorySummary] = await Promise.all([
       API.concerts.getStrict(concertId),
       API.concerts.seatsStrict(concertId),
       API.pricing.listStrict(concertId).catch(e=>{
         if(e?.status===404) return { prices: [] };
         throw e;
       }),
+      API.tickets.summary(concertId),
     ]);
   }catch(e){
     select.dataset.existingCount='0';
+    select.dataset.nextSeq='1';
+    select.dataset.categoryPrefix='';
     document.getElementById('cfg-preview').textContent='Could not load live concert configuration.';
     document.getElementById('config-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Could not load live concert configuration from the backend.'}</div>`;
     return;
   }
-  const categories=seatRes.categories||[];
-  document.getElementById('cfg-event-date').value=toDateTimeLocalValue(concert?.eventDate);
+
+  const categories=(seatRes.categories||[]).map(category=>{
+    const counts=inventorySummary?.byCategory?.[category.categoryId] || {};
+    const hasInventory=Number(counts.total || 0) > 0;
+    return {
+      ...category,
+      totalSeats: hasInventory ? Number(counts.total || 0) : Number(category.totalSeats || 0),
+      availableSeats: hasInventory ? Number(counts.available || 0) : Number(category.availableSeats ?? category.totalSeats ?? 0),
+      inventoryReady: hasInventory,
+    };
+  });
   const prices=priceRes.prices||[];
+  const categoryPrefix=deriveCategoryPrefix(concertId, categories);
+  document.getElementById('cfg-event-date').value=toDateTimeLocalValue(concert?.eventDate);
   select.dataset.existingCount=String(categories.length);
+  select.dataset.categoryPrefix=categoryPrefix;
+  select.dataset.nextSeq=String(getNextCategorySequence(categoryPrefix, categories));
   document.getElementById('cfg-preview').textContent=categories.length
-    ? `${concert.name} already has ${categories.length} category(ies). Existing categories are locked, but pricing can be updated. Add new categories below.`
-    : `${concert.name} currently has no categories configured. Click + Add Category to start configuring it.`;
+    ? `${concert.name} has ${categories.length} saved category(ies). Locked rows are grey. Unlock to edit, then save to apply and lock again.`
+    : `${concert.name} has no categories yet. Start with the suggested rows below, then save to lock them.`;
   categories.forEach(category=>{
-    const price=prices.find(entry=>entry.categoryId===category.categoryId) || {};
+    const priceRule=prices.find(entry=>entry.categoryId===category.categoryId);
+    const price=priceRule || {};
     addConfigRow({
       ...category,
       basePrice: price.basePrice ?? category.basePrice ?? '',
       resaleCeiling: price.resaleCeiling ?? '',
+      originalBasePrice: priceRule?.basePrice ?? '',
+      originalResaleCeiling: priceRule?.resaleCeiling ?? '',
+      hasRule: !!priceRule,
       mode:'existing',
+      locked:true,
     });
   });
-  addConfigRow();
+  if(categories.length){
+    addConfigRow({ mode:'new', locked:false });
+  }else{
+    addConfigRow({ categoryName:'CAT 1 - FLOOR / PIT', mode:'new', locked:false });
+    addConfigRow({ categoryName:'CAT 2 - LOWER TIER', mode:'new', locked:false });
+  }
+}
+
+async function upsertPricingRule(concertId, item, effectiveFrom, currency='SGD'){
+  try{
+    await API.pricing.update(concertId, item.categoryId, {
+      basePrice: item.basePrice,
+      resaleCeiling: item.resaleCeiling,
+      effectiveTo: null,
+    });
+    return;
+  }catch(e){
+    const missingRule = e?.status===404 || e?.code==='NOT_FOUND' || e?.code==='PRICE_NOT_FOUND';
+    if(!missingRule) throw e;
+  }
+
+  try{
+    await API.pricing.create(concertId, {
+      categoryId: item.categoryId,
+      basePrice: item.basePrice,
+      resaleCeiling: item.resaleCeiling,
+      currency,
+      effectiveFrom,
+    });
+  }catch(e){
+    // If another request created it first, retry update once.
+    if(e?.status===409 || e?.code==='DUPLICATE_RULE'){
+      await API.pricing.update(concertId, item.categoryId, {
+        basePrice: item.basePrice,
+        resaleCeiling: item.resaleCeiling,
+        effectiveTo: null,
+      });
+      return;
+    }
+    throw e;
+  }
 }
 
 async function configureConcert(){
@@ -1095,18 +2028,25 @@ async function configureConcert(){
     const name=row.querySelector('.cfg-name').value.trim();
     const seats=row.querySelector('.cfg-seats').value.trim();
     const price=row.querySelector('.cfg-price').value.trim();
-    const cap=row.querySelector('.cfg-cap').value.trim();
-    return name || seats || price || cap;
+    return name || seats || price;
   });
   const existingItems=existingRows.map(row=>({
     row,
     categoryId: row.dataset.categoryId,
+    categoryName: row.querySelector('.cfg-name').value.trim(),
+    totalSeats: Number(row.querySelector('.cfg-seats').value),
     basePrice: Number(row.querySelector('.cfg-price').value),
-    resaleCeiling: row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
+    resaleCeiling: resaleCeilingFromRow(row),
+    originalName: row.dataset.originalName || '',
+    originalSeats: Number(row.dataset.originalSeats || 0),
+    originalAvailable: Number(row.dataset.originalAvailable || 0),
     originalBasePrice: row.dataset.originalPrice === '' ? null : Number(row.dataset.originalPrice),
     originalResaleCeiling: row.dataset.originalCap === '' ? null : Number(row.dataset.originalCap),
-    hasRule: row.dataset.originalPrice !== '' || row.dataset.originalCap !== '',
+    hasRule: row.dataset.hasRule === '1',
   }));
+  const existingSeatUpdates=existingItems.filter(item=>
+    item.categoryName !== item.originalName || item.totalSeats !== item.originalSeats
+  );
   const existingMissing=existingItems.filter(item=>!item.hasRule);
   const existingUpdates=existingItems
     .filter(item=>item.hasRule)
@@ -1118,26 +2058,18 @@ async function configureConcert(){
     totalSeats:Number(row.querySelector('.cfg-seats').value),
     availableSeats:Number(row.querySelector('.cfg-seats').value),
     basePrice:Number(row.querySelector('.cfg-price').value),
-    resaleCeiling:row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
+    resaleCeiling: resaleCeilingFromRow(row),
   }));
 
   if(categories.some(c=>!c.categoryName || !Number.isFinite(c.totalSeats) || c.totalSeats <= 0 || !Number.isFinite(c.basePrice) || c.basePrice < 0)){
     toast('Each category needs a name, positive seats, and base price','warning');
     return;
   }
-  if(categories.some(c=>c.resaleCeiling !== null && c.resaleCeiling < c.basePrice)){
-    toast('Resale cap must be greater than or equal to base price','warning');
-    return;
-  }
-  if(existingItems.some(c=>!Number.isFinite(c.basePrice) || c.basePrice < 0)){
+  if(existingItems.some(c=>!c.categoryName || !Number.isFinite(c.totalSeats) || c.totalSeats <= 0 || !Number.isFinite(c.basePrice) || c.basePrice < 0)){
     toast('Existing categories need a valid base price','warning');
     return;
   }
-  if(existingItems.some(c=>c.resaleCeiling !== null && (!Number.isFinite(c.resaleCeiling) || c.resaleCeiling < c.basePrice))){
-    toast('Existing resale cap must be greater than or equal to base price','warning');
-    return;
-  }
-  if(!categories.length && !existingUpdates.length && !existingMissing.length){
+  if(!categories.length && !existingUpdates.length && !existingMissing.length && !existingSeatUpdates.length){
     document.getElementById('config-alert').innerHTML='<div class="alert alert-success">No configuration changes to save.</div>';
     return;
   }
@@ -1155,12 +2087,18 @@ async function configureConcert(){
   btn.disabled=true;
   btn.textContent='Saving...';
   try{
-    if(existingUpdates.length){
-      await Promise.all(existingUpdates.map(item=>API.pricing.update(concertId,item.categoryId,{
-        basePrice: item.basePrice,
-        resaleCeiling: item.resaleCeiling,
-        effectiveTo: null,
+    if(existingSeatUpdates.length){
+      await Promise.all(existingSeatUpdates.map(item=>API.concerts.updateSeat(concertId,item.categoryId,{
+        categoryName: item.categoryName,
+        totalSeats: item.totalSeats,
+        availableSeats: Math.min(item.totalSeats, Math.max(0, item.originalAvailable || 0)),
       })));
+    }
+
+    if(existingUpdates.length){
+      await Promise.all(existingUpdates.map(item=>
+        upsertPricingRule(concertId, item, effectiveFrom, concert.currency || 'SGD')
+      ));
     }
     if(existingMissing.length){
       await Promise.all(existingMissing.map(item=>API.pricing.create(concertId,{
@@ -1205,10 +2143,12 @@ async function configureConcert(){
     }
 
     const messages=[];
+    if(existingSeatUpdates.length) messages.push(`updated ${existingSeatUpdates.length} existing category row(s)`);
     if(existingUpdates.length) messages.push(`updated ${existingUpdates.length} existing pricing rule(s)`);
     if(existingMissing.length) messages.push(`created ${existingMissing.length} missing pricing rule(s)`);
     if(categories.length) messages.push(`configured ${categories.length} new category(ies) and generated ${tickets.length} tickets`);
     document.getElementById('config-alert').innerHTML=`<div class="alert alert-success">${messages.join('; ')}.</div>`;
+    rows.forEach(row=>setConfigRowLocked(row, true));
     toast('Concert configuration saved','success');
     loadDashboard();
     loadConcerts();
@@ -1223,7 +2163,14 @@ async function configureConcert(){
   }
 }
 
-document.getElementById('cfg-markup-pct')?.addEventListener('input', applyMarkupToNewRows);
+document.getElementById('cfg-markup-pct')?.addEventListener('input', ()=>{
+  const input=document.getElementById('cfg-markup-pct');
+  const value=Number(input?.value);
+  if(input && (!Number.isFinite(value) || value < 0)) input.value='0';
+  applyMarkupToRows();
+});
+window.addEventListener('hashchange', handleAdminHashAction);
+handleAdminHashAction();
 loadDashboard();
 </script>
 </body>

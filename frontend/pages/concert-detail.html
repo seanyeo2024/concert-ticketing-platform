@@ -2,11 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Concert — Solstitix</title>
+<title>Concert | Soltistix</title>
 <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
 <link rel="stylesheet" href="../assets/css/global.css">
 <style>
-/* ── Banner ─────────────────────────────── */
 .concert-banner {
   background: var(--black);
   padding: calc(var(--nav-h) + 56px) 0 0;
@@ -62,7 +61,6 @@
 .banner-meta-label { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #555; margin-bottom: 6px; }
 .banner-meta-value { font-family: var(--font-body); font-size: 0.9rem; font-weight: 700; color: var(--cream); }
 
-/* Banner sidebar */
 .banner-sidebar {
   padding: 0 0 56px 40px;
   display: flex; flex-direction: column; gap: 0;
@@ -85,11 +83,9 @@
 .avail-fill { height: 100%; background: var(--teal); border-radius: 3px; transition: width 0.5s; }
 .avail-sub { font-size: 0.7rem; color: #555; margin-top: 6px; letter-spacing: 0.06em; text-transform: uppercase; }
 
-/* ── Main content ───────────────────────── */
 .main-content { padding: 64px 0 80px; }
 .content-grid { display: grid; grid-template-columns: 1fr 380px; gap: 48px; }
 
-/* Category selector */
 .cat-row {
   display: flex; align-items: center; justify-content: space-between;
   padding: 20px 24px; border: 2px solid rgba(17,17,17,0.1);
@@ -117,7 +113,16 @@
 }
 .cat-row.selected .cat-selected-dot { display: block; }
 
-/* Resale CTA */
+.cat-row.admin-locked {
+  cursor: not-allowed !important;
+  opacity: 0.65;
+}
+.cat-row.admin-locked:hover {
+  border-color: rgba(17,17,17,0.1);
+  transform: none;
+  box-shadow: none;
+}
+
 .resale-cta-box {
   background: linear-gradient(135deg, rgba(240,62,138,0.08) 0%, rgba(124,77,255,0.08) 100%);
   border: 2px solid rgba(240,62,138,0.2);
@@ -131,7 +136,44 @@
   top: -50px; right: -50px;
 }
 
-/* Order sidebar */
+.admin-block-box {
+  background: var(--black); color: var(--cream);
+  border-radius: var(--radius-xl); padding: 32px;
+  position: sticky; top: calc(var(--nav-h) + 24px);
+  box-shadow: 0 24px 60px rgba(17,17,17,0.15);
+  overflow: hidden;
+  border: 2px solid rgba(240,62,138,0.3);
+}
+.admin-block-box::before {
+  content: '';
+  position: absolute; width: 250px; height: 250px;
+  background: var(--pink); opacity: 0.05; border-radius: 50%;
+  bottom: -80px; right: -80px;
+}
+.admin-block-icon {
+  font-size: 2.8rem; margin-bottom: 16px; position: relative; z-index: 1;
+}
+.admin-block-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(240,62,138,0.15); border: 1px solid rgba(240,62,138,0.35);
+  color: #f03e8a; font-size: 0.68rem; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  padding: 5px 12px; border-radius: 100px; margin-bottom: 20px;
+  position: relative; z-index: 1;
+}
+.admin-block-badge::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%; background: #f03e8a;
+}
+.admin-block-title {
+  font-family: var(--font-display); font-size: 1.45rem; font-weight: 900;
+  color: var(--cream); letter-spacing: -0.02em; margin-bottom: 10px;
+  font-style: italic; position: relative; z-index: 1;
+}
+.admin-block-msg {
+  font-size: 0.85rem; color: #888; line-height: 1.6;
+  position: relative; z-index: 1;
+}
+
 .order-box {
   background: var(--black); color: var(--cream);
   border-radius: var(--radius-xl); padding: 32px;
@@ -177,6 +219,7 @@
   .banner-main { border-right:none; padding-right:0; }
   .banner-meta-grid { grid-template-columns:1fr 1fr; }
   .order-box { position: static; }
+  .admin-block-box { position: static; }
 }
 
 @media(max-width:1200px){
@@ -230,7 +273,6 @@
 <nav class="navbar" id="navbar"></nav>
 <div id="toast-container"></div>
 
-<!-- Banner -->
 <div class="concert-banner" id="concert-banner">
   <div class="banner-blob-1"></div>
   <div class="banner-blob-2"></div>
@@ -238,11 +280,11 @@
   <div class="container">
     <div class="banner-inner">
       <div class="banner-main">
-        <div class="banner-eyebrow" id="b-eyebrow">Loading…</div>
+        <div class="banner-eyebrow" id="b-eyebrow">Loading...</div>
         <h1 class="banner-title" id="b-title">
           <span class="skel" style="display:inline-block;width:400px;height:80px;border-radius:12px"></span>
         </h1>
-        <p class="banner-subtitle" id="b-desc">Loading concert details…</p>
+        <p class="banner-subtitle" id="b-desc">Loading concert details...</p>
         <div class="banner-meta-grid" id="b-meta"></div>
       </div>
       <div class="banner-sidebar">
@@ -252,7 +294,7 @@
         </div>
         <div class="sidebar-section">
           <div class="sidebar-label">Availability</div>
-          <div class="sidebar-big" id="b-avail">—</div>
+          <div class="sidebar-big" id="b-avail">0</div>
           <div class="avail-bar"><div class="avail-fill" id="b-avail-bar" style="width:0%"></div></div>
           <div class="avail-sub" id="b-avail-sub"></div>
         </div>
@@ -265,11 +307,9 @@
   </div>
 </div>
 
-<!-- Main content -->
 <div class="main-content">
   <div class="container">
     <div class="content-grid">
-      <!-- Categories -->
       <div>
         <div class="section-label mb-16">Select Category</div>
         <div id="cat-list">
@@ -281,17 +321,16 @@
 
         <div class="divider mt-40"></div>
         <div class="section-label mb-16">About This Event</div>
-        <p id="b-about" style="max-width:560px;color:#555;font-size:0.95rem">Loading…</p>
+        <p id="b-about" style="max-width:560px;color:#555;font-size:0.95rem">Loading...</p>
 
         <div id="resale-cta" class="hidden mt-40 resale-cta-box">
           <div style="font-family:var(--font-display);font-size:1.8rem;font-weight:900;letter-spacing:-0.02em;margin-bottom:8px">Sold Out?</div>
-          <p class="text-sm text-muted mb-16">Check the resale marketplace — fans resell tickets at capped prices.</p>
+          <p class="text-sm text-muted mb-16">Check the resale marketplace - fans resell tickets at capped prices.</p>
           <a id="resale-link" href="resale.html" class="btn btn-pink">Browse Resale →</a>
         </div>
       </div>
 
-      <!-- Order sidebar -->
-      <div>
+      <div id="sidebar-wrapper">
         <div class="order-box" id="order-box">
           <div class="order-title">Your Order</div>
           <div class="order-empty" id="order-empty">
@@ -324,176 +363,267 @@
             <div class="alert alert-danger">This concert is not currently available for purchase.</div>
           </div>
         </div>
+
+        <div class="admin-block-box hidden" id="admin-block-box">
+          <div class="admin-block-icon">🔒</div>
+          <div class="admin-block-badge">Admin Account</div>
+          <div class="admin-block-title">Admin View</div>
+          <p class="admin-block-msg">Note to administrators: this is a read-only configuration view of the concert. Purchase checkout remains for public users only.</p>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
-<script src="../assets/js/api.js"></script>
+<script src="../assets/js/api.js?v=2"></script>
 <script>
-let concertId, concert, categories=[], prices=[], selectedCat=null;
-let isLoadingConcert = true;
-let isLoadingCats = true;
+let concertId, concert;
+let categories = [], prices = [], selectedCat = null;
+let isAdmin = false;
+let inventorySummary = { totalSeats: 0, availableSeats: 0, byCategory: {} };
+
 renderNav('concerts');
 
-function countAvailableByCategory(tickets){
-  return (tickets||[]).reduce((acc,ticket)=>{
-    if(ticket?.status==='AVAILABLE'){
-      acc[ticket.categoryId]=(acc[ticket.categoryId]||0)+1;
-    }
-    return acc;
-  },{});
+function checkIfAdmin() {
+  try {
+    const user = Auth.getUser
+      ? Auth.getUser()
+      : JSON.parse(localStorage.getItem('ctms_user') || sessionStorage.getItem('ctms_user') || 'null');
+    return user?.role === 'ADMIN' || user?.role === 'admin' || user?.isAdmin === true;
+  } catch {
+    return false;
+  }
 }
 
-async function init(){
-  concertId=Util.getParam('id');
-  if(!concertId){window.location.href='index.html';return;}
-  isLoadingConcert = true;
-  isLoadingCats = true;
-  renderCats();
-  try{
-    concert=await API.concerts.get(concertId);
-    if(!concert){window.location.href='index.html';return;}
-    document.title=`${concert.name} — Solstitix`;
+function resolveCategoryPrice(cat) {
+  if (!cat) return null;
+  const fromPricing = prices.find(p => p.categoryId === cat.categoryId);
+  const candidate = fromPricing?.basePrice ?? cat.basePrice;
+  const amount = Number(candidate);
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+async function init() {
+  concertId = Util.getParam('id');
+  if (!concertId) {
+    window.location.href = 'index.html';
+    return;
+  }
+
+  isAdmin = checkIfAdmin();
+
+  if (isAdmin) {
+    document.getElementById('order-box').style.display = 'none';
+    document.getElementById('admin-block-box').classList.remove('hidden');
+  }
+
+  try {
+    concert = await API.concerts.get(concertId);
+    if (!concert) {
+      window.location.href = 'index.html';
+      return;
+    }
+
+    document.title = `${concert.name} | Soltistix`;
     renderBanner();
-    let catRes={ categories: [] }, priceRes={ prices: [] };
+
+    let catRes = { categories: [] };
+    let priceRes = { prices: [] };
+
     try {
-      const [seatData, priceData, ticketData] = await Promise.all([
+      [catRes, priceRes, inventorySummary] = await Promise.all([
         API.concerts.seats(concertId),
         API.pricing.list(concertId),
-        API.tickets.list(concertId,'ALL').catch(()=>({ tickets: [] })),
+        API.tickets.summary(concertId),
       ]);
-      catRes = seatData;
-      priceRes = priceData;
-      const availableByCategory=countAvailableByCategory(ticketData.tickets||[]);
-      if(Array.isArray(catRes.categories)){
-        catRes.categories=catRes.categories.map(category=>({
-          ...category,
-          availableSeats: typeof availableByCategory[category.categoryId]==='number'
-            ? availableByCategory[category.categoryId]
-            : category.availableSeats,
-        }));
-      }
     } catch (e) {
-      catRes = { categories: [] };
-      priceRes = { prices: [] };
+      console.error('Failed loading categories/prices:', e);
     }
-    categories=catRes.categories||[];
-    prices=priceRes.prices||[];
-    isLoadingConcert = false;
-    isLoadingCats = false;
+
+    categories = (catRes.categories || []).map(cat => {
+      const counts = inventorySummary?.byCategory?.[cat.categoryId] || {};
+      return {
+        ...cat,
+        totalSeats: Number(counts.total || 0),
+        availableSeats: Number(counts.available || 0),
+        inventoryReady: Number(counts.total || 0) > 0,
+        basePrice: Number(cat.basePrice ?? 0),
+      };
+    });
+
+    prices = priceRes.prices || [];
+    concert.totalSeats = Number(inventorySummary?.totalSeats || 0);
+    concert.availableSeats = Number(inventorySummary?.availableSeats || 0);
+
+    renderBanner();
     renderCats();
-    const minPrice=Math.min(...prices.map(p=>p.basePrice).filter(Boolean));
-    if(isFinite(minPrice)) document.getElementById('b-price-from').textContent=`SGD ${minPrice}`;
-  }catch(e){
-    isLoadingConcert = false;
-    isLoadingCats = false;
-    renderCats();
-    toast('Could not load concert','error');
+
+    const validPrices = categories
+      .map(resolveCategoryPrice)
+      .filter(amount => Number.isFinite(amount) && amount > 0);
+
+    document.getElementById('b-price-from').textContent = validPrices.length
+      ? `SGD ${Math.min(...validPrices).toFixed(2)}`
+      : 'SGD —';
+  } catch (e) {
+    console.error(e);
+    toast('Could not load concert', 'error');
   }
 }
 
-function renderBanner(){
-  document.getElementById('b-eyebrow').textContent=concert.artistName?.toUpperCase()||'ARTIST';
-  document.getElementById('b-title').textContent=concert.name;
-  document.getElementById('b-status').innerHTML=Util.tag(concert.status);
-  document.getElementById('b-about').textContent=`Experience ${concert.artistName} live at ${concert.venue}. An unmissable event on Singapore's concert calendar — don't miss your chance.`;
-  const pct=concert.totalSeats?Math.round((concert.totalSeats-concert.availableSeats)/concert.totalSeats*100):0;
-  document.getElementById('b-avail').textContent=concert.availableSeats?.toLocaleString()||'—';
-  document.getElementById('b-avail-bar').style.width=`${pct}%`;
-  document.getElementById('b-avail-sub').textContent=`${pct}% of ${concert.totalSeats?.toLocaleString()} seats sold`;
-  document.getElementById('b-meta').innerHTML=`
-    <div class="banner-meta-item"><div class="banner-meta-label">Date</div><div class="banner-meta-value">${Util.formatConcertDateTime(concert.eventDate)}</div></div>
-    <div class="banner-meta-item"><div class="banner-meta-label">Venue</div><div class="banner-meta-value">${concert.venue}</div></div>
-    <div class="banner-meta-item"><div class="banner-meta-label">Currency</div><div class="banner-meta-value">${concert.currency||'SGD'}</div></div>`;
-  document.getElementById('b-desc').textContent=`${concert.artistName} · ${concert.venue?.split(',')[0]} · ${Util.dateYear(concert.eventDate)}`;
-  if(concert.status==='SOLD_OUT'||concert.status==='CANCELLED'){
+function renderBanner() {
+  const artist = concert.artistName || 'Artist';
+  const venue = concert.venue || 'Venue';
+
+  document.getElementById('b-eyebrow').textContent = artist.toUpperCase();
+  document.getElementById('b-title').textContent = concert.name || 'Untitled Event';
+  document.getElementById('b-status').innerHTML = Util.tag(concert.status);
+  document.getElementById('b-about').textContent =
+    `Experience ${artist} live at ${venue}. An unmissable event on Singapore's concert calendar - don't miss your chance.`;
+
+  const totalSeats = Number(concert.totalSeats || 0);
+  const availableSeats = Number(concert.availableSeats || 0);
+  const pct = totalSeats
+    ? Math.round((totalSeats - availableSeats) / totalSeats * 100)
+    : 0;
+
+  document.getElementById('b-avail-bar').style.width = `${pct}%`;
+  document.getElementById('b-avail').textContent = availableSeats.toLocaleString();
+  document.getElementById('b-avail-sub').textContent = totalSeats
+    ? `${pct}% of ${totalSeats.toLocaleString()} seats sold`
+    : 'Inventory not released';
+
+  document.getElementById('b-meta').innerHTML = `
+    <div class="banner-meta-item">
+      <div class="banner-meta-label">Date</div>
+      <div class="banner-meta-value">${Util.formatDate(concert.eventDate)}</div>
+    </div>
+    <div class="banner-meta-item">
+      <div class="banner-meta-label">Venue</div>
+      <div class="banner-meta-value">${venue}</div>
+    </div>
+    <div class="banner-meta-item">
+      <div class="banner-meta-label">Currency</div>
+      <div class="banner-meta-value">${concert.currency || 'SGD'}</div>
+    </div>
+  `;
+
+  document.getElementById('b-desc').textContent =
+    `${artist} · ${venue.split(',')[0]} · ${new Date(concert.eventDate).getFullYear()}`;
+
+  if (concert.status === 'SOLD_OUT' || concert.status === 'CANCELLED') {
     document.getElementById('resale-cta').classList.remove('hidden');
-    document.getElementById('resale-link').href=`resale.html?id=${concertId}`;
+    document.getElementById('resale-link').href = `resale.html?id=${concertId}`;
   }
-  if(concert.status!=='ACTIVE') document.getElementById('order-blocked').classList.remove('hidden');
+
+  if (concert.status !== 'ACTIVE') {
+    document.getElementById('order-blocked').classList.remove('hidden');
+  }
 }
 
-function renderCats(){
-  const list=document.getElementById('cat-list');
-  if(isLoadingCats){
-    list.innerHTML=`
-      <div class="skel" style="height:80px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
-      <div class="skel" style="height:80px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
-      <div class="skel" style="height:80px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
-      <div class="skel" style="height:80px;border-radius:var(--radius-lg)"></div>
-      <div style="margin-top:14px;color:#666;font-size:0.85rem">Loading ticket categories…</div>
+function renderCats() {
+  const list = document.getElementById('cat-list');
+
+  if (!categories.length) {
+    list.innerHTML = `
+      <div class="alert alert-warning">
+        Ticket categories have not been configured for this concert yet.
+      </div>
     `;
     return;
   }
-  if(!categories.length){
-    list.innerHTML=`<div class="alert alert-warning">Ticket categories have not been configured for this concert yet.</div>`;
-    document.getElementById('order-empty').classList.add('hidden');
-    document.getElementById('order-actions').classList.add('hidden');
-    document.getElementById('order-blocked').classList.remove('hidden');
-    document.getElementById('b-price-from').textContent='SGD —';
-    return;
-  }
-  list.innerHTML=categories.map(cat=>{
-    const price=prices.find(p=>p.categoryId===cat.categoryId);
-    const soldOut=cat.availableSeats===0;
-    return `<div class="cat-row ${soldOut?'opacity-50':''}" id="cr-${cat.categoryId}" onclick="selectCat('${cat.categoryId}')">
-      <div class="cat-selected-dot"></div>
-      <div>
-        <div class="cat-row-name">${cat.categoryName}</div>
-        <div class="cat-row-avail">${soldOut?'Sold out':`${cat.availableSeats?.toLocaleString()} seats left`}</div>
+
+  list.innerHTML = categories.map(cat => {
+    const amount = resolveCategoryPrice(cat);
+    const availableSeats = Number(cat.availableSeats || 0);
+    const inventoryReady = Boolean(cat.inventoryReady);
+    const hasPrice = amount !== null;
+    const soldOut = (inventoryReady && availableSeats === 0) || (!inventoryReady && hasPrice);
+    const notReleased = !inventoryReady && !hasPrice;
+    const disabled = !inventoryReady || soldOut || isAdmin;
+    const availabilityLabel = notReleased
+      ? 'Not released'
+      : soldOut
+        ? 'Sold out'
+        : `${availableSeats} seats left`;
+
+    return `
+      <div class="cat-row ${disabled ? 'opacity-50 admin-locked' : ''}"
+           id="cr-${cat.categoryId}"
+           ${!disabled ? `onclick="selectCat('${cat.categoryId}')"` : ''}>
+        <div class="cat-selected-dot"></div>
+        <div>
+          <div class="cat-row-name">${cat.categoryName}</div>
+          <div class="cat-row-avail">${availabilityLabel}</div>
+        </div>
+        <div>
+          <div class="cat-row-price">${amount !== null ? `SGD ${amount.toFixed(2)}` : '—'}</div>
+        </div>
       </div>
-      <div>
-        <div class="cat-row-price">${price?`SGD ${price.basePrice}`:'Sold Out'}</div>
-        ${price?.resaleCeiling?`<div class="cat-row-ceiling">Resale cap: SGD ${price.resaleCeiling}</div>`:''}
-        ${soldOut?`<span class="tag tag-sold-out" style="margin-top:6px">Sold Out</span>`:''}
-      </div>
-    </div>`;
+    `;
   }).join('');
 }
 
-function selectCat(catId){
-  if(concert?.status!=='ACTIVE') return;
-  document.querySelectorAll('.cat-row').forEach(r=>r.classList.remove('selected'));
+function selectCat(catId) {
+  if (isAdmin) {
+    toast('Administrators cannot purchase tickets', 'error');
+    return;
+  }
+
+  if (concert?.status !== 'ACTIVE') return;
+
+  const cat = categories.find(c => c.categoryId === catId);
+  if (!cat || !cat.inventoryReady || Number(cat.availableSeats || 0) === 0) return;
+
+  document.querySelectorAll('.cat-row').forEach(r => r.classList.remove('selected'));
   document.getElementById(`cr-${catId}`)?.classList.add('selected');
-  selectedCat=categories.find(c=>c.categoryId===catId);
-  if(!selectedCat||selectedCat.availableSeats===0) return;
-  const price=prices.find(p=>p.categoryId===catId);
+
+  selectedCat = cat;
+  const amount = resolveCategoryPrice(cat);
+
   document.getElementById('order-empty').classList.add('hidden');
   document.getElementById('order-detail').classList.remove('hidden');
   document.getElementById('order-actions').classList.remove('hidden');
-  document.getElementById('o-concert').textContent=concert.name;
-  document.getElementById('o-cat').textContent=selectedCat.categoryName;
-  document.getElementById('o-price').textContent=price?`SGD ${price.basePrice}`:'—';
+
+  document.getElementById('o-concert').textContent = concert.name;
+  document.getElementById('o-cat').textContent = cat.categoryName;
+  document.getElementById('o-price').textContent =
+    amount !== null ? `SGD ${amount.toFixed(2)}` : '—';
 }
 
-async function joinQueue(){
-  const user=Auth.require();if(!user)return;
-  if(!selectedCat){toast('Select a category first','warning');return;}
-  const btn=document.getElementById('join-btn');
-  btn.disabled=true;btn.textContent='Joining…';
-  try{
-    const queueRes=await API.queue.join(concertId,{userId:user.userId});
-    const queueSessionStorageKey=`ctms_queue_session_${concertId}_${user.userId}`;
-    if(queueRes?.sessionToken){
-      sessionStorage.setItem(queueSessionStorageKey, JSON.stringify({
-        sessionToken: queueRes.sessionToken,
-        sessionExpiresAt: queueRes.sessionExpiresAt || queueRes.windowExpiresAt,
-        concertId,
-        userId: user.userId,
-      }));
-    }else{
-      sessionStorage.removeItem(queueSessionStorageKey);
-    }
-    toast('You\'re in the queue!','success');
-    setTimeout(()=>window.location.href=`queue.html?id=${concertId}&cat=${selectedCat.categoryId}`,700);
-  }catch(e){
-    if(e.code==='ALREADY_IN_QUEUE'||e.status===400){
-      toast('Already in queue — redirecting','info');
-      setTimeout(()=>window.location.href=`queue.html?id=${concertId}&cat=${selectedCat.categoryId}`,500);
-    }else{toast(e.message||'Could not join queue','error');btn.disabled=false;btn.textContent='Join Queue →';}
+async function joinQueue() {
+  if (isAdmin) {
+    toast('Administrators cannot purchase tickets', 'error');
+    return;
+  }
+
+  const user = Auth.require();
+  if (!user) return;
+
+  if (!selectedCat) {
+    toast('Select a category first', 'warning');
+    return;
+  }
+
+  const btn = document.getElementById('join-btn');
+  btn.disabled = true;
+  btn.textContent = 'Joining...';
+
+  try {
+    await API.queue.join(concertId, { userId: user.userId });
+    toast('You\'re in the queue!', 'success');
+
+    setTimeout(() => {
+      window.location.href = `queue.html?id=${concertId}&cat=${selectedCat.categoryId}`;
+    }, 600);
+  } catch (e) {
+    console.error(e);
+    toast(e.message || 'Could not join queue', 'error');
+    btn.disabled = false;
+    btn.textContent = 'Join Queue →';
   }
 }
+
 init();
 </script>
 </body>

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>My Tickets — Solstitix</title>
+<title>My Tickets — Soltistix</title>
 <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
 <link rel="stylesheet" href="../assets/css/global.css">
 <style>
@@ -277,6 +277,23 @@
   </div>
 </div>
 
+<!-- Contact required modal -->
+<div class="modal-overlay" id="contact-required-modal">
+  <div class="modal" style="text-align:center">
+    <button class="modal-close" onclick="closeModal('contact-required-modal')">✕</button>
+    <div style="font-size:3.2rem;margin-bottom:8px">🔒</div>
+    <div class="modal-title">Contact Details Required</div>
+    <div class="modal-sub" style="margin-bottom:16px">Please save your notification email and contact number in Profile Settings before opening a ticket.</div>
+    <div style="background:rgba(17,17,17,0.03);border:1.5px solid rgba(17,17,17,0.08);border-radius:var(--radius-lg);padding:18px;margin:0 auto 20px;text-align:left">
+      <div style="font-size:0.85rem;color:#555;line-height:1.6">We use these details for ticket notifications and access confirmation. You can edit them later, but they must be saved first.</div>
+    </div>
+    <div class="grid-2" style="gap:10px">
+      <button class="btn btn-outline w-full" onclick="closeModal('contact-required-modal')" style="border-radius:var(--radius)">Maybe Later</button>
+      <button class="btn btn-black w-full" onclick="goToProfileSettings()" style="border-radius:var(--radius)">Go to Profile Settings →</button>
+    </div>
+  </div>
+</div>
+
 <!-- Resale modal -->
 <div class="modal-overlay" id="resale-modal">
   <div class="modal">
@@ -290,6 +307,14 @@
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap" id="price-suggestions"></div>
       <input class="form-input" type="number" id="resale-price" placeholder="e.g. 300.00" step="0.01">
     </div>
+    <div class="form-group">
+      <label class="form-label">Contact Number</label>
+      <input class="form-input" type="tel" id="resale-phone" placeholder="+6596604136 or 96604136" autocomplete="tel">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Email For Resale Notifications</label>
+      <input class="form-input" type="email" id="resale-email" placeholder="you@example.com" autocomplete="email">
+    </div>
     <button class="btn btn-black w-full" onclick="submitResale()" style="border-radius:var(--radius)">List Ticket →</button>
   </div>
 </div>
@@ -302,6 +327,8 @@ let isLoadingTickets = true;
 let autoRefreshTimer=null;
 let liveSyncUnsub=null;
 let refreshQueued=false;
+let contactPrefill=null;
+let contactState=null;
 const LIVE_REFRESH_MS=8000;
 const STATUS_TABS={ upcoming:['CONFIRMED','PENDING'], past:['USED'], reselling:['RESALE_LISTED','RESALE_PENDING'], refunded:['REFUNDED'], all:null };
 let concertIndex={};
@@ -324,6 +351,44 @@ function setupLiveSync(){
   document.addEventListener('visibilitychange', ()=>{
     if(document.visibilityState==='visible') queueRefresh();
   });
+}
+
+async function ensureContactPrefill(){
+  if(contactPrefill) return contactPrefill;
+  const cachedContact=ContactProfile.readCached(user?.userId)||{};
+  try{
+    const remoteContact=await ContactProfile.fetch(user);
+    contactPrefill={
+      email:(remoteContact?.email||cachedContact?.email||user?.contactEmail||user?.email||'').trim(),
+      phoneNumber:(remoteContact?.phoneNumber||cachedContact?.phoneNumber||user?.contactPhone||user?.phone||'').trim(),
+      smsOptIn:Number(remoteContact?.smsOptIn||cachedContact?.smsOptIn||0),
+    };
+  }catch{
+    contactPrefill={
+      email:(cachedContact?.email||user?.contactEmail||user?.email||'').trim(),
+      phoneNumber:(cachedContact?.phoneNumber||user?.contactPhone||user?.phone||'').trim(),
+      smsOptIn:Number(cachedContact?.smsOptIn||0),
+    };
+  }
+  return contactPrefill;
+}
+
+function hasCompleteContact(contact){
+  const email=String(contact?.email||'').trim();
+  const phone=String(contact?.phoneNumber||'').trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && /^\+[1-9]\d{7,14}$/.test(phone.replace(/\s+/g,''));
+}
+
+async function ensureContactReady(){
+  contactState=await ensureContactPrefill();
+  if(hasCompleteContact(contactState)) return true;
+  openModal('contact-required-modal');
+  return false;
+}
+
+function goToProfileSettings(){
+  closeModal('contact-required-modal');
+  window.location.href='profile.html?tab=settings';
 }
 
 function startAutoRefresh(){
@@ -357,6 +422,18 @@ function formatPurchaseDateTime(ticket){
   });
 }
 
+function getPurchaseTimestamp(ticket){
+  const dt=
+    purchaseTimeByTicketId[ticket.ticketId] ||
+    ticket.purchasedAt ||
+    ticket.purchaseTime ||
+    ticket.createdAt ||
+    ticket.updatedAt ||
+    ticket.payoutAt;
+  const parsed=dt ? new Date(dt) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed.getTime() : 0;
+}
+
 function getConcertDateTime(ticket){
   const eventDate=concertIndex[ticket.concertId]?.eventDate;
   if(!eventDate) return null;
@@ -388,22 +465,38 @@ function formatConcertDateTime(ticket){
 async function syncTransferredTicket() {
   const refreshTicketId = Util.getParam('refreshTicket');
   const refreshConcertId = Util.getParam('refreshConcert');
-  const expectedOwner = Util.getParam('owner');
   if (!refreshTicketId || !refreshConcertId) return;
+
+  const clearRefreshParams=()=>{
+    try{
+      const url=new URL(window.location.href);
+      url.searchParams.delete('refreshTicket');
+      url.searchParams.delete('refreshConcert');
+      window.history.replaceState({},'',`${url.pathname}${url.search}${url.hash}`);
+    }catch{}
+  };
 
   // Poll briefly so buyer sees the transferred ticket even under short backend propagation delay.
   for (let i = 0; i < 8; i++) {
     try {
       const t = await API.tickets.get(refreshConcertId, refreshTicketId);
-      if (t && t.ownerId === (expectedOwner || user.userId)) {
+      if (t && t.ownerId && t.ownerId !== user.userId) {
+        // The user may have opened an older notification link after ownership changed.
+        // Do not force account switching from here; keep the current session stable.
+        clearRefreshParams();
+        return;
+      }
+      if (t && t.ownerId === user.userId) {
         const idx = allTickets.findIndex(x=>x.ticketId===refreshTicketId);
         if (idx >= 0) allTickets[idx] = t;
         else allTickets.push(t);
+        clearRefreshParams();
         return;
       }
     } catch {}
     await new Promise(r=>setTimeout(r, 500));
   }
+  clearRefreshParams();
 }
 
 async function load({ silent=false }={}){
@@ -479,6 +572,21 @@ function switchTab(tab,el){
   el.classList.add('active'); activeTab=tab; render();
 }
 
+function normalizePhoneInput(value=''){
+  return String(value).replace(/[^\d+\s()-]/g,'').trim();
+}
+
+function toE164Phone(value=''){
+  const cleaned=normalizePhoneInput(value).replace(/[\s()-]/g,'');
+  if(/^\+[1-9]\d{7,14}$/.test(cleaned)) return cleaned;
+  if(/^\d{8}$/.test(cleaned)) return `+65${cleaned}`;
+  return null;
+}
+
+function isValidEmail(value=''){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value||'').trim());
+}
+
 function policyToneForTicket(ticket,isResaleOwned){
   const lifecycle=ticketLifecycle(ticket);
   if(lifecycle==='past') return 'tone-closed';
@@ -504,7 +612,9 @@ function ticketLifecycle(ticket){
 function render(){
   let baseList=[...allTickets];
   if(activeTab==='upcoming'){
-    baseList=allTickets.filter(t=>ticketLifecycle(t)==='upcoming');
+    baseList=allTickets
+      .filter(t=>ticketLifecycle(t)==='upcoming')
+      .sort((a,b)=>getPurchaseTimestamp(b)-getPurchaseTimestamp(a));
   }else if(activeTab==='past'){
     baseList=allTickets.filter(t=>ticketLifecycle(t)==='past');
   }else if(activeTab==='reselling'){
@@ -576,6 +686,8 @@ function render(){
 }
 
 async function viewQR(tid,cid,seat){
+  const ready=await ensureContactReady();
+  if(!ready) return;
   document.getElementById('qr-sub').textContent=`${concertIndex[cid]?.name||cid} · Seat ${seat}`;
   document.getElementById('qr-area').innerHTML=`<div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:#666">Loading…</div>`;
   document.getElementById('qr-data').textContent='';
@@ -592,10 +704,15 @@ async function viewQR(tid,cid,seat){
 }
 
 async function openResale(tid,cid,catId,purchasePrice){
+  const profileContact=await ensureContactPrefill();
   resaleTarget={tid,cid,catId,purchasePrice};
   document.getElementById('resale-sub').textContent=`Ticket ${tid}`;
   document.getElementById('resale-alert').innerHTML='';
   document.getElementById('resale-price').value='';
+  const resalePhoneInput=document.getElementById('resale-phone');
+  if(resalePhoneInput) resalePhoneInput.value=profileContact?.phoneNumber||user?.phone||'';
+  const resaleEmailInput=document.getElementById('resale-email');
+  if(resaleEmailInput) resaleEmailInput.value=profileContact?.email||user?.email||'';
   document.getElementById('price-suggestions').innerHTML='';
   document.getElementById('ceiling-display').textContent='Loading…';
   openModal('resale-modal');
@@ -610,9 +727,29 @@ async function openResale(tid,cid,catId,purchasePrice){
 
 async function submitResale(){
   const price=parseFloat(document.getElementById('resale-price').value);
+  const rawPhone=document.getElementById('resale-phone')?.value||'';
+  const resaleEmail=(document.getElementById('resale-email')?.value||'').trim();
   if(!price||price<=0){toast('Enter a valid price','warning');return;}
+  const phoneNumber=toE164Phone(rawPhone);
+  if(!phoneNumber){
+    document.getElementById('resale-alert').innerHTML='<div class="alert alert-danger">Enter a valid phone number in E.164 format (for SG, use +65XXXXXXXX or XXXXXXXX).</div>';
+    return;
+  }
+  if(!isValidEmail(resaleEmail)){
+    document.getElementById('resale-alert').innerHTML='<div class="alert alert-danger">Enter a valid email address for resale seller notifications.</div>';
+    return;
+  }
   try{
-    await API.resaleTicket.list({sellerId:user.userId,ticketId:resaleTarget.tid,concertId:resaleTarget.cid,resalePrice:price});
+    await API.resaleTicket.list({
+      sellerId:user.userId,
+      ticketId:resaleTarget.tid,
+      concertId:resaleTarget.cid,
+      resalePrice:price,
+      phoneNumber,
+      sellerEmail:resaleEmail,
+      contactEmail:resaleEmail,
+      toEmail:resaleEmail,
+    });
     const t=allTickets.find(x=>x.ticketId===resaleTarget.tid);
     if(t){t.status='RESALE_LISTED';t.resalePrice=price;}
     LiveSync.emit('resale-listed',{ticketId:resaleTarget.tid,concertId:resaleTarget.cid,sellerId:user.userId});
