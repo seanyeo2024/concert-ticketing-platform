@@ -64,8 +64,10 @@ def resolve_sms_recipient(payload, data, user_id):
     for candidate in (
         payload.get("phoneNumber"),
         payload.get("toNumber"),
+        payload.get("contactPhone"),
         data.get("phoneNumber"),
         data.get("toNumber"),
+        data.get("contactPhone"),
         data.get("sellerPhoneNumber"),
         data.get("buyerPhoneNumber"),
     ):

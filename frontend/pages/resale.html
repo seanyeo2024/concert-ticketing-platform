@@ -258,6 +258,10 @@ input[type=range] { width: 100%; accent-color: var(--black); }
       <div class="form-group"><label class="form-label" style="color:#666">Expiry</label><input class="form-input" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1);color:var(--cream)" placeholder="MM / YY"></div>
       <div class="form-group"><label class="form-label" style="color:#666">CVC</label><input class="form-input" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1);color:var(--cream)" placeholder="123"></div>
     </div>
+    <div class="form-group">
+      <label class="form-label" style="color:#666">Phone Number For Ticket SMS</label>
+      <input class="form-input" id="buy-phone" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1);color:var(--cream)" placeholder="+6596604136" autocomplete="tel">
+    </div>
     <button class="btn btn-yellow w-full btn-lg" id="buy-btn" onclick="confirmBuy()" style="border-radius:var(--radius)">Confirm Purchase →</button>
     <div style="font-size:0.65rem;text-align:center;color:#555;margin-top:10px;letter-spacing:0.04em">🔒 Secured by Stripe · QR delivered instantly</div>
   </div>
@@ -583,15 +587,34 @@ function proceedToBuyModal(){
   document.getElementById('b-seat').textContent=selectedListing.seatNumber;
   document.getElementById('b-event-time').textContent=Util.formatConcertDateTime(concertMeta.eventDate);
   document.getElementById('b-price').textContent=`SGD ${selectedListing.resalePrice}`;
+  const phoneInput=document.getElementById('buy-phone');
+  if(phoneInput) phoneInput.value='';
   document.getElementById('buy-alert').innerHTML='';
   openModal('buy-modal');
 }
 
+function normalizePhoneInput(value=''){
+  return String(value).replace(/[^\d+\s()-]/g,'').trim();
+}
+
+function toE164Phone(value=''){
+  const cleaned=normalizePhoneInput(value).replace(/[\s()-]/g,'');
+  if(/^\+[1-9]\d{7,14}$/.test(cleaned)) return cleaned;
+  if(/^\d{8}$/.test(cleaned)) return `+65${cleaned}`;
+  return null;
+}
+
 async function confirmBuy(){
   if(!selectedListing)return;
+  const rawPhone=document.getElementById('buy-phone')?.value||'';
+  const phoneNumber=toE164Phone(rawPhone);
+  if(!phoneNumber){
+    document.getElementById('buy-alert').innerHTML='<div class="alert alert-danger">Enter a valid phone number in E.164 format (for SG, use +65XXXXXXXX or XXXXXXXX).</div>';
+    return;
+  }
   const btn=document.getElementById('buy-btn'); btn.disabled=true; btn.textContent='Processing…';
   try{
-    const result=await API.resaleTicket.purchase({buyerId:user.userId,ticketId:selectedListing.ticketId,concertId:selectedListing.concertId,stripeToken:'tok_visa'});
+    const result=await API.resaleTicket.purchase({buyerId:user.userId,ticketId:selectedListing.ticketId,concertId:selectedListing.concertId,stripeToken:'tok_visa',phoneNumber});
     LiveSync.emit('resale-purchased', {
       ticketId: selectedListing.ticketId,
       concertId: selectedListing.concertId,
@@ -613,6 +636,7 @@ async function confirmBuy(){
     qrNote.textContent=result?.sellerQrInvalidated
       ? "The resale service replaced the seller's QR and issued a fresh QR for your ownership record."
       : 'The ticket was transferred. Refresh My Tickets if the QR preview does not appear immediately.';
+    qrNote.textContent += ` SMS was sent to ${phoneNumber}.`;
     allListings=allListings.filter(t=>t.ticketId!==selectedListing.ticketId);
     applyFilters();
   }catch(e){

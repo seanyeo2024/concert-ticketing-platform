@@ -72,8 +72,11 @@ def purchase(concert_id):
     seat_number = data.get("seatNumber")
     session_token = data.get("sessionToken")
     stripe_token = data.get("stripeToken", "tok_simulated")
+    contact_phone = data.get("contactPhone") or data.get("phoneNumber") or data.get("toNumber")
     if not all([user_id, ticket_id, session_token]):
         return err("MISSING_FIELDS", "userId, ticketId, and sessionToken are required")
+    if not contact_phone:
+        return err("MISSING_FIELDS", "contactPhone is required")
 
     # Step 1 — verify queue window is WINDOW_GRANTED and not expired
     q = requests.get(f"{QUEUE_URL}/queue/v1/queue/{concert_id}/{user_id}", timeout=5)
@@ -200,18 +203,14 @@ def purchase(concert_id):
 
     # Step 9 — publish notification event (non-critical)
     try:
-        user_phone = data.get("phoneNumber") or data.get("toNumber")
         event_payload = {
             "eventType": "ticket.purchased", "channel": "SMS", "userId": user_id,
+            "phoneNumber": contact_phone,
             "timestamp": datetime.utcnow().isoformat(),
             "data": {"ticketId": ticket_id, "concertId": concert_id,
                      "seatNumber": ticket.get("seatNumber"), "amount": amount, "currency": currency,
-                     "qrImageUrl": qr_data.get("qrImageUrl")}
+                     "qrImageUrl": qr_data.get("qrImageUrl"), "phoneNumber": contact_phone}
         }
-        if user_phone:
-            event_payload["phoneNumber"] = user_phone
-            event_payload["data"]["phoneNumber"] = user_phone
-
         mq_publish("ticket.purchased", {
             **event_payload
         })

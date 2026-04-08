@@ -125,6 +125,9 @@ def purchase_resale():
     data = request.get_json()
     required = ["buyerId", "ticketId", "concertId", "stripeToken"]
     if not all(k in data for k in required): return err("MISSING_FIELDS", f"Required: {required}")
+    buyer_phone = data.get("phoneNumber") or data.get("contactPhone") or data.get("toNumber")
+    if not buyer_phone:
+        return err("MISSING_FIELDS", "phoneNumber is required for buyer SMS notifications")
 
     # Step 1 — verify ticket is RESALE_LISTED
     t = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{data['concertId']}/{data['ticketId']}", timeout=5)
@@ -257,6 +260,23 @@ def purchase_resale():
             event_payload["phoneNumber"] = seller_phone
             event_payload["data"]["phoneNumber"] = seller_phone
         mq_publish("ticket.resale.sold", event_payload)
+
+        mq_publish("ticket.purchased", {
+            "eventType": "ticket.purchased",
+            "channel": "SMS",
+            "userId": data["buyerId"],
+            "phoneNumber": buyer_phone,
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "ticketId": data["ticketId"],
+                "concertId": data["concertId"],
+                "seatNumber": ticket.get("seatNumber"),
+                "amount": resale_price,
+                "currency": "SGD",
+                "phoneNumber": buyer_phone,
+                "qrImageUrl": qr_data.get("qrImageUrl"),
+            },
+        })
     except Exception: pass
 
     return jsonify({"success": True, "ticketId": data["ticketId"],
