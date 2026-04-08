@@ -163,13 +163,27 @@ def purchase_resale():
         return err("PAYMENT_FAILED", "Payment declined", 402)
     payment_data = pay.json()
 
-    # Step 5 — payout to seller (simulated in demo)
+    # Step 5 — record seller payout against the buyer's successful resale payment
+    seller_payout_recorded = False
+    seller_payout_id = None
     try:
-        requests.post(f"{PAYMENT_URL}/payment/v1/payment/refund",
-                      json={"userId": seller_id, "ticketId": data["ticketId"],
-                            "paymentId": payment_data["paymentId"],
-                            "amount": resale_price, "reason": "RESALE_PAYOUT"}, timeout=5)
-    except Exception: pass
+        payout = requests.post(
+            f"{PAYMENT_URL}/payment/v1/payment/resale-payout",
+            json={
+                "sellerId": seller_id,
+                "ticketId": data["ticketId"],
+                "concertId": data["concertId"],
+                "buyerPaymentId": payment_data["paymentId"],
+                "amount": resale_price,
+            },
+            timeout=5,
+        )
+        if payout.status_code == 201:
+            payout_data = payout.json()
+            seller_payout_recorded = True
+            seller_payout_id = payout_data.get("paymentId")
+    except Exception:
+        seller_payout_recorded = False
 
     # Step 6 — invalidate seller's QR
     seller_qr_invalidated = False
@@ -236,6 +250,8 @@ def purchase_resale():
 
     return jsonify({"success": True, "ticketId": data["ticketId"],
                     "newOwner": data["buyerId"], "paymentId": payment_data["paymentId"],
+                    "sellerPayoutRecorded": seller_payout_recorded,
+                    "sellerPayoutId": seller_payout_id,
                     "sellerQrInvalidated": seller_qr_invalidated,
                     "qrReady": qr_ready,
                     "qrId": qr_data.get("qrId"),

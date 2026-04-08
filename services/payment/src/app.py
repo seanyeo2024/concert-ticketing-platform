@@ -220,6 +220,16 @@ def insert_payment_record(
     db.close()
 
 
+def fetch_payment(payment_id):
+    db = get_db()
+    cur = db.cursor(dictionary=True)
+    cur.execute("SELECT * FROM payment_record WHERE paymentId=%s", (payment_id,))
+    row = cur.fetchone()
+    cur.close()
+    db.close()
+    return row
+
+
 ensure_schema()
 
 
@@ -396,14 +406,80 @@ def create_refund():
     )
 
 
-@app.route("/payment/v1/payment/<payment_id>", methods=["GET"])
-def get_payment(payment_id):
+@app.route("/payment/v1/payment/resale-payout", methods=["POST"])
+def create_resale_payout():
+    data = request.get_json() or {}
+    required = ["sellerId", "ticketId", "concertId", "buyerPaymentId", "amount"]
+    if not all(data.get(key) not in (None, "") for key in required):
+        return err("MISSING_FIELDS", f"Required: {required}")
+
+    try:
+        amount = parse_amount(data["amount"])
+    except ValueError as exc:
+        return err("INVALID_PAYMENT_INPUT", str(exc), 400)
+
+    original = fetch_payment(str(data["buyerPaymentId"]))
+    if not original:
+        return err("NOT_FOUND", "Buyer payment not found", 404)
+    if str(original.get("status", "")).upper() != "SUCCESS":
+        return err("INVALID_PAYMENT_STATE", "Buyer payment is not successful", 409)
+    if str(original.get("type", "")).upper() != "RESALE_PURCHASE":
+        return err("INVALID_PAYMENT_TYPE", "buyerPaymentId must reference a RESALE_PURCHASE payment", 409)
+
     db = get_db()
     cur = db.cursor(dictionary=True)
-    cur.execute("SELECT * FROM payment_record WHERE paymentId=%s", (payment_id,))
-    row = cur.fetchone()
+    cur.execute(
+        "SELECT paymentId FROM payment_record WHERE originalPaymentId=%s AND reason=%s",
+        (str(data["buyerPaymentId"]), "RESALE_PAYOUT"),
+    )
+    if cur.fetchone():
+        cur.close()
+        db.close()
+        return err("PAYOUT_EXISTS", "Resale payout already recorded for this buyer payment", 409)
+
+    payout_id = f"PAY-{uuid.uuid4().hex[:8].upper()}"
+    cur.execute(
+        """
+        INSERT INTO payment_record
+            (paymentId, userId, ticketId, concertId, type, amount, currency, status,
+             originalPaymentId, reason)
+        VALUES (%s, %s, %s, %s, 'REFUND', %s, %s, 'SUCCESS', %s, 'RESALE_PAYOUT')
+        """,
+        (
+            payout_id,
+            str(data["sellerId"]),
+            str(data["ticketId"]),
+            str(data["concertId"]),
+            str(amount),
+            str(original["currency"]).upper(),
+            str(data["buyerPaymentId"]),
+        ),
+    )
+    db.commit()
     cur.close()
     db.close()
+
+    return (
+        jsonify(
+            {
+                "paymentId": payout_id,
+                "type": "REFUND",
+                "status": "SUCCESS",
+                "reason": "RESALE_PAYOUT",
+                "amount": str(amount),
+                "currency": str(original["currency"]).upper(),
+                "originalPaymentId": str(data["buyerPaymentId"]),
+                "createdAt": utcnow_iso(),
+                "mode": "demo_internal_settlement",
+            }
+        ),
+        201,
+    )
+
+
+@app.route("/payment/v1/payment/<payment_id>", methods=["GET"])
+def get_payment(payment_id):
+    row = fetch_payment(payment_id)
     if not row:
         return err("NOT_FOUND", "Payment not found", 404)
     return jsonify(row)

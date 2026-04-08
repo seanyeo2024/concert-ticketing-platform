@@ -9,6 +9,7 @@ This service handles:
 - ticket purchase payments
 - resale purchase payments
 - refunds
+- resale seller payout records
 - payment record persistence in MySQL
 
 It is designed for demo and test flows only. It uses a Stripe **test secret key** from the root `.env`, but the frontend does **not** use Stripe.js or real card tokenization.
@@ -48,6 +49,80 @@ Current behavior:
 5. The result is saved into `payment_record`.
 
 This keeps the existing purchase orchestration intact while still allowing test success and test failure scenarios.
+
+## Payment Model
+
+This project currently uses a platform-mediated settlement model.
+
+### Primary ticket purchase
+
+- the buyer pays the platform
+- Stripe charges the buyer through the platform account
+- the service records a `PURCHASE` payment
+
+### Resale ticket purchase
+
+- the new buyer pays the platform
+- Stripe charges the buyer through the platform account
+- the service records a `RESALE_PURCHASE` payment
+- the platform then records a seller payout entry after the resale purchase succeeds
+
+Important:
+
+- this is **not** a real Stripe customer-to-customer transfer
+- this is **not** Stripe Connect
+- the seller-side payout is currently an internal platform settlement record for demo purposes
+
+In other words:
+
+- buyer -> platform is handled through Stripe test payments
+- platform -> seller is currently represented by an internal payout record in `payment_record`
+
+## Resale Settlement Flow
+
+The resale path is:
+
+1. buyer pays for the resale ticket
+2. payment service creates a `RESALE_PURCHASE` payment
+3. ownership transfer continues in the resale orchestration
+4. payment service records a seller payout entry linked to that buyer payment
+
+The seller payout record uses:
+
+- `type='REFUND'`
+- `reason='RESALE_PAYOUT'`
+
+This keeps the existing UI and payment history logic working for demo use.
+
+## Concert Cancellation Refund Behavior
+
+Concert cancellation currently uses the Stripe-backed refund endpoint.
+
+Current orchestration:
+
+1. the concert is marked `CANCELLED`
+2. eligible tickets are moved to `REFUNDED`
+3. QR codes are invalidated
+4. the cancellation service fetches all concert payments of type:
+   - `PURCHASE`
+   - `RESALE_PURCHASE`
+5. the cancellation service selects the latest successful purchase per ticket
+6. each selected payment record is sent to `POST /payment/v1/payment/refund`
+
+Current refund-selection rule:
+
+- one refund path is chosen per ticket
+- for a resold ticket, the latest successful purchase is refunded
+- in practice, that means the current effective holder path is refunded instead of every historical buyer
+
+It does **not** refund the internal resale seller payout record, because the concert payment lookup excludes `REFUND` rows.
+
+So the current cancellation behavior is:
+
+- refund the latest successful purchase-side payment per ticket
+- not every historical purchase for that ticket
+
+This is a known limitation of the current demo approach and should be described as such in demos and API documentation.
 
 ## Supported Test Cards
 
@@ -133,6 +208,53 @@ Example request:
 }
 ```
 
+Use this endpoint for true refund scenarios such as:
+
+- concert cancellation
+- refunding an earlier successful payment
+
+Do **not** use this endpoint for resale seller settlement.
+
+### Record Resale Seller Payout
+
+- `POST /payment/v1/payment/resale-payout`
+
+This endpoint records the seller-side payout after a buyer has successfully completed a resale purchase.
+
+Example request:
+
+```json
+{
+  "sellerId": "USR-0099",
+  "ticketId": "TKT-10003",
+  "concertId": "CONC-000001",
+  "buyerPaymentId": "PAY-AB12CD34",
+  "amount": 388.00
+}
+```
+
+Example success response:
+
+```json
+{
+  "paymentId": "PAY-CD34EF56",
+  "type": "REFUND",
+  "status": "SUCCESS",
+  "reason": "RESALE_PAYOUT",
+  "amount": "388.00",
+  "currency": "SGD",
+  "originalPaymentId": "PAY-AB12CD34",
+  "createdAt": "2026-04-08T12:00:00.000000",
+  "mode": "demo_internal_settlement"
+}
+```
+
+Rules:
+
+- `buyerPaymentId` must exist
+- it must reference a successful `RESALE_PURCHASE`
+- only one payout record can exist for the same resale buyer payment
+
 ### Lookup Endpoints
 
 - `GET /payment/v1/payment/<paymentId>`
@@ -157,6 +279,35 @@ Stores:
 - Stripe payment intent ID
 - Stripe refund ID
 - original payment linkage for refunds
+- resale payout linkage through `originalPaymentId`
+
+## Payment Types and Reasons
+
+Common values currently used in `payment_record`:
+
+- `type='PURCHASE'`
+- `type='RESALE_PURCHASE'`
+- `type='REFUND'`
+
+Common `reason` values:
+
+- `CONCERT_CANCELLED`
+- `RESALE_PAYOUT`
+
+Interpretation:
+
+- `PURCHASE` = primary sale buyer charge
+- `RESALE_PURCHASE` = resale buyer charge
+- `REFUND` + `RESALE_PAYOUT` = seller payout record in the current demo model
+
+## API Usage by Other Services
+
+Current internal usage:
+
+- `purchase_window` calls `POST /payment/v1/payment` for primary ticket purchases
+- `concert_cancellation` calls `POST /payment/v1/payment/refund` for concert refunds
+- `resale_purchase` calls `POST /payment/v1/payment` for the buyer charge
+- `resale_purchase` then calls `POST /payment/v1/payment/resale-payout` for seller settlement
 
 ## Secret Key vs Publishable Key
 
@@ -197,6 +348,8 @@ Because the current setup is a demo/test integration:
 
 So for your current scope, the **secret key is enough** for backend test payments.
 
+The resale payout record does not require a Stripe publishable key either, because it is not a browser-side Stripe payment flow.
+
 ## Important Limitation
 
 This is acceptable for demo purposes, but it is **not** a production-safe card integration model.
@@ -206,6 +359,7 @@ For a real payment deployment, you would want:
 - a Stripe publishable key in the frontend
 - Stripe.js or Checkout
 - no raw/demo card handling logic in your own page
+- a real seller payout/transfer model such as Stripe Connect if resale money must move to sellers through Stripe
 
 ## Run Notes
 
