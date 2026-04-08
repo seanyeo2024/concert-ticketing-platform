@@ -112,12 +112,59 @@ body {
   display: grid; gap: 12px; margin: 24px 0;
 }
 .config-row {
-  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto;
+  display: grid; grid-template-columns: 2fr 1fr 1fr auto auto;
   gap: 12px; align-items: end;
   padding: 16px; background: var(--white); border-radius: var(--radius);
   border: 2px solid rgba(17,17,17,0.08);
 }
 .config-row .btn { white-space: nowrap; }
+.config-row .btn.btn-sm {
+  min-width: 92px;
+  padding: 7px 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.config-row.row-empty {
+  background: #f9f9f9;
+  border-style: dashed;
+  border-color: rgba(17,17,17,0.16);
+}
+.config-row.row-unlocked {
+  background: #fff;
+}
+.config-row.row-locked {
+  background: #ececef;
+  border-color: rgba(17,17,17,0.18);
+}
+.config-row.row-locked .form-input {
+  background: #e3e3e6;
+  color: #666;
+  border-color: rgba(17,17,17,0.16);
+}
+
+/* Unlock default: grey. Hover: pink */
+.cfg-lock-toggle.is-unlocked {
+  background: #f3f3f3 !important;
+  border: 2px solid rgba(17,17,17,0.2) !important;
+  color: var(--black) !important;
+}
+.cfg-lock-toggle.is-unlocked:hover {
+  background: linear-gradient(180deg, #f35198 0%, #df3e85 100%) !important;
+  border-color: #cf2f76 !important;
+  color: var(--white) !important;
+}
+
+/* Locked default: pink. Hover: grey */
+.cfg-lock-toggle.is-locked {
+  background: linear-gradient(180deg, #f35198 0%, #df3e85 100%) !important;
+  border-color: #cf2f76 !important;
+  color: var(--white) !important;
+}
+.cfg-lock-toggle.is-locked:hover {
+  background: #f3f3f3 !important;
+  border-color: rgba(17,17,17,0.2) !important;
+  color: var(--black) !important;
+}
 
 @media(max-width:900px){
   .admin-wrap { grid-template-columns: 1fr; }
@@ -569,100 +616,126 @@ function escapeAttr(value=''){
     .replace(/>/g,'&gt;');
 }
 
-function buildConfigRowOld(row={}){
-  const name=row.categoryName||'';
-  const seats=row.totalSeats||'';
-  const price=row.basePrice||'';
-  const ceiling=row.resaleCeiling||'';
-  return `<div class="config-row">
-    <div class="form-group" style="margin:0"><label class="form-label">Category Name</label><input class="form-input cfg-name" value="${name}" placeholder="CAT 1 — FLOOR / PIT"></div>
-    <div class="form-group" style="margin:0"><label class="form-label">Seats</label><input class="form-input cfg-seats" type="number" min="1" value="${seats}" placeholder="1000"></div>
-    <div class="form-group" style="margin:0"><label class="form-label">Base Price</label><input class="form-input cfg-price" type="number" min="0" step="0.01" value="${price}" placeholder="98"></div>
-    <div class="form-group" style="margin:0"><label class="form-label">Resale Cap</label><input class="form-input cfg-cap" type="number" min="0" step="0.01" value="${ceiling}" placeholder="145"></div>
-    <button class="btn btn-sm btn-outline" onclick="this.parentElement.remove()" style="border-radius:100px">Remove</button>
-  </div>`;
-}
-
-function buildConfigRow(row={}){
-  const name=row.categoryName||'';
-  const seats=row.totalSeats||'';
-  const price=row.basePrice||'';
-  const ceiling=row.resaleCeiling||'';
-  const mode=row.mode||'new';
-  const isExisting=mode==='existing';
-  const locked= isExisting ? 'readonly' : '';
-  const needsPrice = isExisting && (price === '' || price === null || typeof price === 'undefined');
-  const action=isExisting
-    ? '<button class="btn btn-sm btn-outline" type="button" disabled title="This category already exists in the database and cannot be removed here." style="border-radius:100px;opacity:.65;cursor:default">Locked</button>'
-    : '<button class="btn btn-sm btn-outline" type="button" onclick="this.parentElement.remove()" style="border-radius:100px">Remove</button>';
-  const priceHint = needsPrice
-    ? '<div class="text-xs text-muted" style="margin-top:6px">No price rule yet — set a base price to create it.</div>'
-    : '';
-  return `<div class="config-row" data-mode="${mode}" data-category-id="${escapeAttr(row.categoryId||'')}" data-original-name="${escapeAttr(name)}" data-original-seats="${escapeAttr(seats)}" data-original-price="${escapeAttr(price)}" data-original-cap="${escapeAttr(ceiling)}">
-    <div class="form-group" style="margin:0"><label class="form-label">Category Name</label><input class="form-input cfg-name" value="${escapeAttr(name)}" placeholder="CAT 1 - FLOOR / PIT" ${locked}></div>
-    <div class="form-group" style="margin:0"><label class="form-label">Seats</label><input class="form-input cfg-seats" type="number" min="1" value="${escapeAttr(seats)}" placeholder="1000" ${locked}></div>
-    <div class="form-group" style="margin:0"><label class="form-label">Base Price</label><input class="form-input cfg-price" type="number" min="0" step="0.01" value="${escapeAttr(price)}" placeholder="98">${priceHint}</div>
-    <div class="form-group" style="margin:0"><label class="form-label">Resale Cap</label><input class="form-input cfg-cap" type="number" min="0" step="0.01" value="${escapeAttr(ceiling)}" placeholder="145"></div>
-    ${action}
-  </div>`;
-}
-
 function getMarkupPercent(){
-  const raw=document.getElementById('cfg-markup-pct')?.value;
-  const pct=Number(raw);
+  const pct=Number(document.getElementById('cfg-markup-pct')?.value);
   if(!Number.isFinite(pct) || pct<0) return 0;
   return pct;
 }
 
-function autoCapFromPrice(basePrice){
+function computeResaleCapFromPrice(basePrice){
   const markup=getMarkupPercent();
   return Number((basePrice * (1 + markup / 100)).toFixed(2));
 }
 
-function applyAutoCap(row, force=false){
-  if(!row || row.dataset.mode==='existing') return;
-  const priceInput=row.querySelector('.cfg-price');
-  const capInput=row.querySelector('.cfg-cap');
-  if(!priceInput || !capInput) return;
-  const basePrice=Number(priceInput.value);
-  if(!Number.isFinite(basePrice) || basePrice < 0) return;
-  const autoAllowed=force || row.dataset.capAuto==='1' || capInput.value.trim()==='';
-  if(!autoAllowed) return;
-  capInput.value=String(autoCapFromPrice(basePrice));
-  row.dataset.capAuto='1';
+function deriveCategoryPrefix(concertId, categories=[]){
+  const fromExisting=(categories||[])
+    .map(c=>String(c?.categoryId||''))
+    .find(id=>/^CAT-[^-]+-\d+$/.test(id));
+  if(fromExisting){
+    return fromExisting.replace(/\d+$/,'');
+  }
+  const suffix=String(concertId||'').slice(-3).padStart(3,'0');
+  return `CAT-C${suffix}-`;
 }
 
-function bindConfigRowAutoCap(row){
-  if(!row || row.dataset.mode==='existing') return;
-  const priceInput=row.querySelector('.cfg-price');
-  const capInput=row.querySelector('.cfg-cap');
-  if(!priceInput || !capInput) return;
-
-  row.dataset.capAuto = capInput.value.trim() ? '0' : '1';
-  priceInput.addEventListener('input', ()=>applyAutoCap(row));
-  capInput.addEventListener('input', ()=>{
-    if(capInput.value.trim()===''){
-      row.dataset.capAuto='1';
-      applyAutoCap(row, true);
-      return;
-    }
-    row.dataset.capAuto='0';
-  });
-  applyAutoCap(row, true);
+function parseCategorySequence(categoryPrefix, categoryId){
+  if(!categoryPrefix || !categoryId) return 0;
+  if(!String(categoryId).startsWith(categoryPrefix)) return 0;
+  const seq=Number(String(categoryId).slice(categoryPrefix.length));
+  return Number.isFinite(seq) ? seq : 0;
 }
 
-function applyMarkupToNewRows(){
-  document.querySelectorAll('#config-rows .config-row').forEach(row=>{
-    if(row.dataset.mode==='existing') return;
-    applyAutoCap(row, true);
+function getNextCategorySequence(categoryPrefix, categories=[]){
+  let maxSeq=0;
+  categories.forEach(category=>{
+    maxSeq=Math.max(maxSeq, parseCategorySequence(categoryPrefix, category?.categoryId));
   });
+  return maxSeq + 1;
+}
+
+function isConfigRowFilled(row){
+  const name=row.querySelector('.cfg-name')?.value.trim() || '';
+  const seats=row.querySelector('.cfg-seats')?.value.trim() || '';
+  const price=row.querySelector('.cfg-price')?.value.trim() || '';
+  return !!(name || seats || price);
+}
+
+function updateConfigRowVisualState(row){
+  const locked=row.dataset.locked==='1';
+  const filled=isConfigRowFilled(row);
+  row.classList.remove('row-empty','row-unlocked','row-locked');
+  if(!filled) row.classList.add('row-empty');
+  else if(locked) row.classList.add('row-locked');
+  else row.classList.add('row-unlocked');
+}
+
+function setConfigRowLocked(row, locked){
+  row.dataset.locked=locked ? '1' : '0';
+  row.querySelectorAll('.cfg-name,.cfg-seats,.cfg-price').forEach(input=>{
+    if(locked) input.setAttribute('readonly','readonly');
+    else input.removeAttribute('readonly');
+  });
+
+  const lockBtn=row.querySelector('.cfg-lock-toggle');
+  if(lockBtn){
+    lockBtn.textContent=locked ? 'Unlock' : 'Lock';
+    lockBtn.classList.remove('is-locked','is-unlocked');
+    lockBtn.classList.add(locked ? 'is-locked' : 'is-unlocked');
+  }
+
+  const removeBtn=row.querySelector('.cfg-remove-btn');
+  if(removeBtn){
+    removeBtn.disabled=locked;
+    removeBtn.style.opacity=locked ? '0.5' : '1';
+  }
+
+  updateConfigRowVisualState(row);
+}
+
+function buildConfigRow(row={}){
+  const rowId=`cfg-row-${Math.random().toString(36).slice(2,9)}`;
+  const mode=row.mode || 'new';
+  const locked=Boolean(row.locked ?? (mode==='existing'));
+  const name=escapeAttr(row.categoryName || '');
+  const seats=escapeAttr(row.totalSeats ?? '');
+  const price=escapeAttr(row.basePrice ?? '');
+  return `<div class="config-row" data-row-id="${rowId}" data-mode="${mode}" data-locked="${locked ? '1' : '0'}" data-category-id="${escapeAttr(row.categoryId||'')}" data-original-name="${name}" data-original-seats="${escapeAttr(row.totalSeats ?? '')}" data-original-available="${escapeAttr(row.availableSeats ?? row.totalSeats ?? '')}" data-original-price="${price}">
+    <div class="form-group" style="margin:0"><label class="form-label">Category Name</label><input class="form-input cfg-name" value="${name}" placeholder="CAT 1 - FLOOR / PIT"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">Seats</label><input class="form-input cfg-seats" type="number" min="1" value="${seats}" placeholder="1000"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">Base Price</label><input class="form-input cfg-price" type="number" min="0" step="0.01" value="${price}" placeholder="98"></div>
+    <button class="btn btn-sm cfg-lock-toggle ${locked ? 'is-locked' : 'is-unlocked'}" type="button" onclick="toggleConfigRowLock('${rowId}')" style="border-radius:100px">${locked ? 'Unlock' : 'Lock'}</button>
+    <button class="btn btn-sm btn-outline cfg-remove-btn" type="button" onclick="removeConfigRow('${rowId}')" style="border-radius:100px">Remove</button>
+  </div>`;
 }
 
 function addConfigRow(row={}){
   const container=document.getElementById('config-rows');
   container.insertAdjacentHTML('beforeend', buildConfigRow(row));
   const latest=container.lastElementChild;
-  bindConfigRowAutoCap(latest);
+  latest.querySelectorAll('.cfg-name,.cfg-seats,.cfg-price').forEach(input=>{
+    input.addEventListener('input', ()=>updateConfigRowVisualState(latest));
+  });
+  setConfigRowLocked(latest, latest.dataset.locked==='1');
+}
+
+function getConfigRowById(rowId){
+  return document.querySelector(`#config-rows .config-row[data-row-id="${rowId}"]`);
+}
+
+function toggleConfigRowLock(rowId){
+  const row=getConfigRowById(rowId);
+  if(!row) return;
+  setConfigRowLocked(row, row.dataset.locked!=='1');
+}
+
+function removeConfigRow(rowId){
+  const row=getConfigRowById(rowId);
+  if(!row) return;
+  if(row.dataset.locked==='1'){
+    toast('Unlock the row before removing it','warning');
+    return;
+  }
+  row.remove();
 }
 
 function slugifyCategory(name){
@@ -759,117 +832,186 @@ async function loadConfigPreview(){
   rows.innerHTML='';
   document.getElementById('config-alert').innerHTML='';
   if(!concertId){
-    select.dataset.existingCount='0';
+    select.dataset.nextSeq='1';
+    select.dataset.categoryPrefix='';
     document.getElementById('cfg-preview').textContent='Choose a concert to configure its categories.';
     return;
   }
-  const concert=await API.concerts.get(concertId);
-  let categories=[];
+
+  let concert, seatRes, priceRes;
   try{
-    const seatRes=await API.concerts.seats(concertId);
-    categories=seatRes.categories||[];
-  }catch(e){
-    categories=[];
+    [concert, seatRes, priceRes] = await Promise.all([
+      API.concerts.getStrict(concertId),
+      API.concerts.seatsStrict(concertId),
+      API.pricing.listStrict(concertId).catch(e=>{
+        if(e?.status===404) return { prices: [] };
+        throw e;
+      }),
+    ]);
+  }catch(err){
+    select.dataset.nextSeq='1';
+    select.dataset.categoryPrefix='';
+    document.getElementById('cfg-preview').textContent='Could not load live concert configuration.';
+    document.getElementById('config-alert').innerHTML=`<div class="alert alert-danger">${err.message||'Could not load live concert configuration from the backend.'}</div>`;
+    return;
   }
-  select.dataset.existingCount=String(categories.length);
+
+  const categories=seatRes.categories||[];
+  const prices=priceRes.prices||[];
+  const categoryPrefix=deriveCategoryPrefix(concertId, categories);
+  document.getElementById('cfg-event-date').value=toDateTimeLocalValue(concert?.eventDate);
+  select.dataset.categoryPrefix=categoryPrefix;
+  select.dataset.nextSeq=String(getNextCategorySequence(categoryPrefix, categories));
   document.getElementById('cfg-preview').textContent=categories.length
-    ? `${concert.name} already has ${categories.length} category(ies). Add only new categories below.`
-    : `${concert.name} currently has no categories configured. Add categories below to make it purchasable.`;
-  if(!categories.length){
-    addConfigRow({ categoryName:'CAT 1 — FLOOR / PIT' });
-    addConfigRow({ categoryName:'CAT 2 — LOWER TIER' });
-  } else {
-    addConfigRow();
-  }
+    ? `${concert.name} has ${categories.length} saved category(ies). Locked rows are grey. Unlock to edit, then save to apply and lock again.`
+    : `${concert.name} has no categories yet. Start with the empty row below, then save to lock it.`;
+  categories.forEach(category=>{
+    const price=prices.find(entry=>entry.categoryId===category.categoryId) || {};
+    addConfigRow({
+      ...category,
+      basePrice: price.basePrice ?? category.basePrice ?? '',
+      mode:'existing',
+      locked:true,
+    });
+  });
+  addConfigRow({ mode:'new', locked:false });
 }
 
 async function configureConcert(){
   const concertId=document.getElementById('cfg-concert').value;
   if(!concertId){toast('Select a concert first','warning');return;}
-  const concert=await API.concerts.get(concertId);
+  const concert=await API.concerts.getStrict(concertId);
   const effectiveFrom=toMysqlDateTime(concert.eventDate);
   if(!effectiveFrom){
     document.getElementById('config-alert').innerHTML='<div class="alert alert-danger">This concert has an invalid event date for pricing. Use a year of 1000 or later, then try again.</div>';
     toast('Concert date is invalid for pricing','error');
     return;
   }
-  const existingCount=Number(document.getElementById('cfg-concert').dataset.existingCount || '0');
+
   const rows=[...document.querySelectorAll('#config-rows .config-row')];
-  if(!rows.length){toast('Add at least one category','warning');return;}
-
-  const categories=rows.map((row, index)=>({
-    categoryId:`CAT-${concertId.slice(-6)}-${String(existingCount+index+1).padStart(2,'0')}`,
-    categoryName:row.querySelector('.cfg-name').value.trim(),
-    totalSeats:Number(row.querySelector('.cfg-seats').value),
-    availableSeats:Number(row.querySelector('.cfg-seats').value),
-    basePrice:Number(row.querySelector('.cfg-price').value),
-    resaleCeiling:row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
-  }));
-
-  if(categories.some(c=>!c.categoryName || !Number.isFinite(c.totalSeats) || c.totalSeats <= 0 || !Number.isFinite(c.basePrice) || c.basePrice < 0)){
-    toast('Each category needs a name, positive seats, and base price','warning');
-    return;
-  }
-  if(categories.some(c=>c.resaleCeiling !== null && c.resaleCeiling < c.basePrice)){
-    toast('Resale cap must be greater than or equal to base price','warning');
+  const nonEmptyRows=rows.filter(isConfigRowFilled);
+  if(!nonEmptyRows.length){
+    document.getElementById('config-alert').innerHTML='<div class="alert alert-success">No configuration changes to save.</div>';
     return;
   }
 
-  const tickets=categories.flatMap(category=>{
-    const prefix=slugifyCategory(category.categoryName).slice(0,6);
-    return Array.from({length: category.totalSeats}, (_, index)=>({
-      concertId,
-      categoryId: category.categoryId,
-      seatNumber: makeSeatLabel(prefix, index),
-    }));
+  const parsedRows=nonEmptyRows.map(row=>{
+    const mode=row.dataset.mode || 'new';
+    const categoryId=row.dataset.categoryId || '';
+    const categoryName=row.querySelector('.cfg-name').value.trim();
+    const totalSeats=Number(row.querySelector('.cfg-seats').value);
+    const basePrice=Number(row.querySelector('.cfg-price').value);
+    const originalName=row.dataset.originalName || '';
+    const originalSeats=Number(row.dataset.originalSeats || 0);
+    const originalAvailable=Number(row.dataset.originalAvailable || 0);
+    const originalPrice=row.dataset.originalPrice==='' ? null : Number(row.dataset.originalPrice);
+    return { row, mode, categoryId, categoryName, totalSeats, basePrice, originalName, originalSeats, originalAvailable, originalPrice };
   });
+  if(parsedRows.some(r=>!r.categoryName || !Number.isFinite(r.totalSeats) || r.totalSeats <= 0 || !Number.isFinite(r.basePrice) || r.basePrice < 0)){
+    toast('Each filled row needs a category name, positive seats, and base price','warning');
+    return;
+  }
+
+  const select=document.getElementById('cfg-concert');
+  let nextSeq=Number(select.dataset.nextSeq || '1');
+  const categoryPrefix=select.dataset.categoryPrefix || deriveCategoryPrefix(concertId, []);
+  const newRows=parsedRows.filter(r=>r.mode!=='existing').map(r=>{
+    const assignedId=`${categoryPrefix}${String(nextSeq).padStart(2,'0')}`;
+    nextSeq += 1;
+    return { ...r, categoryId: assignedId };
+  });
+  const existingRows=parsedRows.filter(r=>r.mode==='existing');
+  const existingSeatUpdates=existingRows.filter(r=>r.categoryName!==r.originalName || r.totalSeats!==r.originalSeats);
 
   const btn=document.getElementById('cfg-save-btn');
   btn.disabled=true;
-  btn.textContent='Saving…';
+  btn.textContent='Saving...';
   try{
-    await API.concerts.createSeats(concertId,{ categories: categories.map(c=>({
-      categoryId:c.categoryId,
-      categoryName:c.categoryName,
-      totalSeats:c.totalSeats,
-      availableSeats:c.availableSeats,
-      basePrice:c.basePrice,
-    }))});
-
-    await Promise.all(categories.map(category=>API.pricing.create(concertId,{
-      categoryId: category.categoryId,
-      basePrice: category.basePrice,
-      resaleCeiling: category.resaleCeiling,
-      currency: concert.currency || 'SGD',
-      effectiveFrom,
-    })));
-
-    const ticketCreate = await API.tickets.create({ tickets });
-    const liveTicketsRes = await API.tickets.list(concertId,'ALL');
-    const liveTickets = (liveTicketsRes.tickets || []).filter(t => categories.some(c => c.categoryId === t.categoryId));
-    const expectedByCategory = countBy(tickets, 'categoryId');
-    const liveByCategory = countBy(liveTickets, 'categoryId');
-    const missingCategories = categories.filter(c => (liveByCategory[c.categoryId] || 0) < (expectedByCategory[c.categoryId] || 0));
-
-    if ((ticketCreate.created || 0) < tickets.length || missingCategories.length) {
-      const details = missingCategories.length
-        ? ` Missing inventory for: ${missingCategories.map(c => c.categoryName).join(', ')}.`
-        : '';
-      throw new Error(`Ticket inventory verification failed.${details}`);
+    if(newRows.length){
+      await API.concerts.createSeats(concertId,{ categories: newRows.map(r=>({
+        categoryId:r.categoryId,
+        categoryName:r.categoryName,
+        totalSeats:r.totalSeats,
+        availableSeats:r.totalSeats,
+        basePrice:r.basePrice,
+      }))});
     }
 
-    document.getElementById('config-alert').innerHTML=`<div class="alert alert-success">Configured ${categories.length} categories and generated ${tickets.length} tickets for this concert.</div>`;
-    toast('Concert configuration saved','success');
+    if(existingSeatUpdates.length){
+      await Promise.all(existingSeatUpdates.map(r=>API.concerts.updateSeat(concertId,r.categoryId,{
+        categoryName:r.categoryName,
+        totalSeats:r.totalSeats,
+        availableSeats:Math.min(r.totalSeats, Math.max(0, r.originalAvailable || 0)),
+      })));
+    }
+
+    const existingPriceRows=existingRows.filter(r=>r.basePrice!==r.originalPrice);
+    if(existingPriceRows.length){
+      await Promise.all(existingPriceRows.map(async r=>{
+        const resaleCeiling=computeResaleCapFromPrice(r.basePrice);
+        try{
+          await API.pricing.update(concertId,r.categoryId,{
+            basePrice:r.basePrice,
+            resaleCeiling,
+            effectiveTo:null,
+          });
+        }catch(err){
+          if(err?.status!==404) throw err;
+          await API.pricing.create(concertId,{
+            categoryId:r.categoryId,
+            basePrice:r.basePrice,
+            resaleCeiling,
+            currency: concert.currency || 'SGD',
+            effectiveFrom,
+          });
+        }
+      }));
+    }
+
+    if(newRows.length){
+      await Promise.all(newRows.map(r=>API.pricing.create(concertId,{
+        categoryId:r.categoryId,
+        basePrice:r.basePrice,
+        resaleCeiling:computeResaleCapFromPrice(r.basePrice),
+        currency: concert.currency || 'SGD',
+        effectiveFrom,
+      })));
+
+      const tickets=newRows.flatMap(category=>{
+        const prefix=slugifyCategory(category.categoryName).slice(0,6);
+        return Array.from({length: category.totalSeats}, (_, index)=>({
+          concertId,
+          categoryId: category.categoryId,
+          seatNumber: makeSeatLabel(prefix, index),
+        }));
+      });
+      const ticketCreate = await API.tickets.create({ tickets });
+      const liveTicketsRes = await API.tickets.list(concertId,'ALL');
+      const liveTickets = (liveTicketsRes.tickets || []).filter(t => newRows.some(c => c.categoryId === t.categoryId));
+      const expectedByCategory = countBy(tickets, 'categoryId');
+      const liveByCategory = countBy(liveTickets, 'categoryId');
+      const missingCategories = newRows.filter(c => (liveByCategory[c.categoryId] || 0) < (expectedByCategory[c.categoryId] || 0));
+      if ((ticketCreate.created || 0) < tickets.length || missingCategories.length) {
+        const details = missingCategories.length
+          ? ` Missing inventory for: ${missingCategories.map(c => c.categoryName).join(', ')}.`
+          : '';
+        throw new Error(`Ticket inventory verification failed.${details}`);
+      }
+    }
+
+    rows.filter(isConfigRowFilled).forEach(row=>setConfigRowLocked(row, true));
+    document.getElementById('config-alert').innerHTML='<div class="alert alert-success">Configuration saved. Filled rows are now locked.</div>';
+    toast('Concert configuration saved and rows locked','success');
     loadDashboard();
     loadConcerts();
     loadCancelOptions();
-    loadConfigConcertOptions(concertId);
+    await loadConfigPreview();
   }catch(e){
     document.getElementById('config-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Configuration failed'}</div>`;
     toast(e.message||'Configuration failed','error');
   }finally{
     btn.disabled=false;
-    btn.textContent='Save Configuration →';
+    btn.textContent='Save Configuration ->';
   }
 }
 
@@ -1276,203 +1418,11 @@ async function loadConcertPays(){
   }
 }
 
-async function loadConfigPreview(){
-  const concertId=document.getElementById('cfg-concert').value;
-  const select=document.getElementById('cfg-concert');
-  const rows=document.getElementById('config-rows');
-  rows.innerHTML='';
-  document.getElementById('config-alert').innerHTML='';
-  if(!concertId){
-    select.dataset.existingCount='0';
-    document.getElementById('cfg-preview').textContent='Choose a concert to configure its categories.';
-    return;
-  }
-  let concert, seatRes, priceRes;
-  try{
-    [concert, seatRes, priceRes] = await Promise.all([
-      API.concerts.getStrict(concertId),
-      API.concerts.seatsStrict(concertId),
-      API.pricing.listStrict(concertId).catch(e=>{
-        if(e?.status===404) return { prices: [] };
-        throw e;
-      }),
-    ]);
-  }catch(e){
-    select.dataset.existingCount='0';
-    document.getElementById('cfg-preview').textContent='Could not load live concert configuration.';
-    document.getElementById('config-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Could not load live concert configuration from the backend.'}</div>`;
-    return;
-  }
-  const categories=seatRes.categories||[];
-  document.getElementById('cfg-event-date').value=toDateTimeLocalValue(concert?.eventDate);
-  const prices=priceRes.prices||[];
-  select.dataset.existingCount=String(categories.length);
-  document.getElementById('cfg-preview').textContent=categories.length
-    ? `${concert.name} already has ${categories.length} category(ies). Existing categories are locked, but pricing can be updated. Add new categories below.`
-    : `${concert.name} currently has no categories configured. Click + Add Category to start configuring it.`;
-  categories.forEach(category=>{
-    const price=prices.find(entry=>entry.categoryId===category.categoryId) || {};
-    addConfigRow({
-      ...category,
-      basePrice: price.basePrice ?? category.basePrice ?? '',
-      resaleCeiling: price.resaleCeiling ?? '',
-      mode:'existing',
-    });
-  });
-  addConfigRow();
-}
-
-async function configureConcert(){
-  const concertId=document.getElementById('cfg-concert').value;
-  if(!concertId){toast('Select a concert first','warning');return;}
-  const concert=await API.concerts.get(concertId);
-  const effectiveFrom=toMysqlDateTime(concert.eventDate);
-  if(!effectiveFrom){
-    document.getElementById('config-alert').innerHTML='<div class="alert alert-danger">This concert has an invalid event date for pricing. Use a year of 1000 or later, then try again.</div>';
-    toast('Concert date is invalid for pricing','error');
-    return;
-  }
-  const existingCount=Number(document.getElementById('cfg-concert').dataset.existingCount || '0');
-  const rows=[...document.querySelectorAll('#config-rows .config-row')];
-  if(!rows.length){
-    document.getElementById('config-alert').innerHTML='<div class="alert alert-success">No configuration changes to save.</div>';
-    return;
-  }
-  const existingRows=rows.filter(row=>row.dataset.mode==='existing');
-  const newRows=rows.filter(row=>row.dataset.mode!=='existing');
-  const filledRows=newRows.filter(row=>{
-    const name=row.querySelector('.cfg-name').value.trim();
-    const seats=row.querySelector('.cfg-seats').value.trim();
-    const price=row.querySelector('.cfg-price').value.trim();
-    const cap=row.querySelector('.cfg-cap').value.trim();
-    return name || seats || price || cap;
-  });
-  const existingItems=existingRows.map(row=>({
-    row,
-    categoryId: row.dataset.categoryId,
-    basePrice: Number(row.querySelector('.cfg-price').value),
-    resaleCeiling: row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
-    originalBasePrice: row.dataset.originalPrice === '' ? null : Number(row.dataset.originalPrice),
-    originalResaleCeiling: row.dataset.originalCap === '' ? null : Number(row.dataset.originalCap),
-    hasRule: row.dataset.originalPrice !== '' || row.dataset.originalCap !== '',
-  }));
-  const existingMissing=existingItems.filter(item=>!item.hasRule);
-  const existingUpdates=existingItems
-    .filter(item=>item.hasRule)
-    .filter(item=>item.basePrice !== item.originalBasePrice || item.resaleCeiling !== item.originalResaleCeiling);
-
-  const categories=filledRows.map((row, index)=>({
-    categoryId:`CAT-${concertId.slice(-6)}-${String(existingCount+index+1).padStart(2,'0')}`,
-    categoryName:row.querySelector('.cfg-name').value.trim(),
-    totalSeats:Number(row.querySelector('.cfg-seats').value),
-    availableSeats:Number(row.querySelector('.cfg-seats').value),
-    basePrice:Number(row.querySelector('.cfg-price').value),
-    resaleCeiling:row.querySelector('.cfg-cap').value === '' ? null : Number(row.querySelector('.cfg-cap').value),
-  }));
-
-  if(categories.some(c=>!c.categoryName || !Number.isFinite(c.totalSeats) || c.totalSeats <= 0 || !Number.isFinite(c.basePrice) || c.basePrice < 0)){
-    toast('Each category needs a name, positive seats, and base price','warning');
-    return;
-  }
-  if(categories.some(c=>c.resaleCeiling !== null && c.resaleCeiling < c.basePrice)){
-    toast('Resale cap must be greater than or equal to base price','warning');
-    return;
-  }
-  if(existingItems.some(c=>!Number.isFinite(c.basePrice) || c.basePrice < 0)){
-    toast('Existing categories need a valid base price','warning');
-    return;
-  }
-  if(existingItems.some(c=>c.resaleCeiling !== null && (!Number.isFinite(c.resaleCeiling) || c.resaleCeiling < c.basePrice))){
-    toast('Existing resale cap must be greater than or equal to base price','warning');
-    return;
-  }
-  if(!categories.length && !existingUpdates.length && !existingMissing.length){
-    document.getElementById('config-alert').innerHTML='<div class="alert alert-success">No configuration changes to save.</div>';
-    return;
-  }
-
-  const tickets=categories.flatMap(category=>{
-    const prefix=slugifyCategory(category.categoryName).slice(0,6);
-    return Array.from({length: category.totalSeats}, (_, index)=>({
-      concertId,
-      categoryId: category.categoryId,
-      seatNumber: makeSeatLabel(prefix, index),
-    }));
-  });
-
-  const btn=document.getElementById('cfg-save-btn');
-  btn.disabled=true;
-  btn.textContent='Saving...';
-  try{
-    if(existingUpdates.length){
-      await Promise.all(existingUpdates.map(item=>API.pricing.update(concertId,item.categoryId,{
-        basePrice: item.basePrice,
-        resaleCeiling: item.resaleCeiling,
-        effectiveTo: null,
-      })));
-    }
-    if(existingMissing.length){
-      await Promise.all(existingMissing.map(item=>API.pricing.create(concertId,{
-        categoryId: item.categoryId,
-        basePrice: item.basePrice,
-        resaleCeiling: item.resaleCeiling,
-        currency: concert.currency || 'SGD',
-        effectiveFrom,
-      })));
-    }
-
-    if(categories.length){
-      await API.concerts.createSeats(concertId,{ categories: categories.map(c=>({
-        categoryId:c.categoryId,
-        categoryName:c.categoryName,
-        totalSeats:c.totalSeats,
-        availableSeats:c.availableSeats,
-        basePrice:c.basePrice,
-      }))});
-
-      await Promise.all(categories.map(category=>API.pricing.create(concertId,{
-        categoryId: category.categoryId,
-        basePrice: category.basePrice,
-        resaleCeiling: category.resaleCeiling,
-        currency: concert.currency || 'SGD',
-        effectiveFrom,
-      })));
-
-      const ticketCreate = await API.tickets.create({ tickets });
-      const liveTicketsRes = await API.tickets.list(concertId,'ALL');
-      const liveTickets = (liveTicketsRes.tickets || []).filter(t => categories.some(c => c.categoryId === t.categoryId));
-      const expectedByCategory = countBy(tickets, 'categoryId');
-      const liveByCategory = countBy(liveTickets, 'categoryId');
-      const missingCategories = categories.filter(c => (liveByCategory[c.categoryId] || 0) < (expectedByCategory[c.categoryId] || 0));
-
-      if ((ticketCreate.created || 0) < tickets.length || missingCategories.length) {
-        const details = missingCategories.length
-          ? ` Missing inventory for: ${missingCategories.map(c => c.categoryName).join(', ')}.`
-          : '';
-        throw new Error(`Ticket inventory verification failed.${details}`);
-      }
-    }
-
-    const messages=[];
-    if(existingUpdates.length) messages.push(`updated ${existingUpdates.length} existing pricing rule(s)`);
-    if(existingMissing.length) messages.push(`created ${existingMissing.length} missing pricing rule(s)`);
-    if(categories.length) messages.push(`configured ${categories.length} new category(ies) and generated ${tickets.length} tickets`);
-    document.getElementById('config-alert').innerHTML=`<div class="alert alert-success">${messages.join('; ')}.</div>`;
-    toast('Concert configuration saved','success');
-    loadDashboard();
-    loadConcerts();
-    loadCancelOptions();
-    loadConfigConcertOptions(concertId);
-  }catch(e){
-    document.getElementById('config-alert').innerHTML=`<div class="alert alert-danger">${e.message||'Configuration failed'}</div>`;
-    toast(e.message||'Configuration failed','error');
-  }finally{
-    btn.disabled=false;
-    btn.textContent='Save Configuration ->';
-  }
-}
-
-document.getElementById('cfg-markup-pct')?.addEventListener('input', applyMarkupToNewRows);
+document.getElementById('cfg-markup-pct')?.addEventListener('input', ()=>{
+  const input=document.getElementById('cfg-markup-pct');
+  const value=Number(input?.value);
+  if(input && (!Number.isFinite(value) || value < 0)) input.value='0';
+});
 loadDashboard();
 </script>
 </body>
