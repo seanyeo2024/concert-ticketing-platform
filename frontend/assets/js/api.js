@@ -215,6 +215,18 @@ const API = (() => {
     },
     notification: {
       byUser: async id => { try { return await req(`${BASE.notification}/notification/user/${id}`); } catch { return { notifications: SEED.notifications.filter(n=>n.userId===id) }; } },
+      contact: async id => {
+        try {
+          return await req(`${BASE.notification}/contact/${id}`);
+        } catch {
+          try {
+            return JSON.parse(localStorage.getItem(`ctms_contact_${id}`) || 'null') || { userId:id, email:null, phoneNumber:null, smsOptIn:0 };
+          } catch {
+            return { userId:id, email:null, phoneNumber:null, smsOptIn:0 };
+          }
+        }
+      },
+      saveContact: (id, payload) => req(`${BASE.notification}/contact/${id}`, 'PUT', payload),
     },
     purchase: {
       complete: (cid,p) => req(`${BASE.purchase}/window/${cid}`,'POST',p,30000),
@@ -243,6 +255,58 @@ const API = (() => {
       cancel: async (cid,p) => { try { return await req(`${BASE.cancellation}/${cid}`,'POST',p); } catch { return { success:true, ticketsRefunded:37570, paymentsRefunded:37570 }; } },
     },
   };
+})();
+
+const ContactProfile = (() => {
+  function keyFor(userId){ return `ctms_contact_${userId}`; }
+
+  function readCached(userId){
+    try {
+      return JSON.parse(localStorage.getItem(keyFor(userId)) || 'null');
+    } catch {
+      return null;
+    }
+  }
+
+  function writeCached(userId, contact){
+    if(!userId || !contact) return;
+    try { localStorage.setItem(keyFor(userId), JSON.stringify(contact)); } catch {}
+
+    const user = Auth.getUser?.();
+    if(user?.userId===userId){
+      user.contactEmail = contact.email || '';
+      user.contactPhone = contact.phoneNumber || '';
+      try { localStorage.setItem('ctms_user', JSON.stringify(user)); } catch {}
+    }
+  }
+
+  async function fetch(user){
+    if(!user?.userId) return { email:'', phoneNumber:'' };
+    const remote = await API.notification.contact(user.userId);
+    const normalized = {
+      userId: user.userId,
+      email: (remote?.email || user?.contactEmail || user?.email || '').trim(),
+      phoneNumber: (remote?.phoneNumber || user?.contactPhone || user?.phone || '').trim(),
+      smsOptIn: Number(remote?.smsOptIn || 0),
+    };
+    writeCached(user.userId, normalized);
+    return normalized;
+  }
+
+  async function save(user, payload){
+    if(!user?.userId) throw new Error('Missing user context');
+    const saved = await API.notification.saveContact(user.userId, payload);
+    const normalized = {
+      userId: user.userId,
+      email: (saved?.email || '').trim(),
+      phoneNumber: (saved?.phoneNumber || '').trim(),
+      smsOptIn: Number(saved?.smsOptIn || 0),
+    };
+    writeCached(user.userId, normalized);
+    return normalized;
+  }
+
+  return { fetch, save, readCached };
 })();
 
 /* ── Auth ───────────────────────────────────────────────────── */

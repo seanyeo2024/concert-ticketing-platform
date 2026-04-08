@@ -9,6 +9,8 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests, os, sys
 from datetime import datetime
+import re
+from urllib.parse import quote
 
 app = Flask(__name__)
 CORS(app)
@@ -23,6 +25,9 @@ TICKET_URL  = os.environ.get("TICKET_INVENTORY_SERVICE_URL", "http://localhost:5
 PRICING_URL = os.environ.get("PRICING_SERVICE_URL",          "http://localhost:5001")
 PAYMENT_URL = os.environ.get("PAYMENT_SERVICE_URL",          "http://localhost:5004")
 QR_URL      = os.environ.get("QR_SERVICE_URL",               "http://localhost:5005")
+CONCERT_URL = os.environ.get("CONCERT_SERVICE_URL",          "https://personal-cqdsnkhp.outsystemscloud.com/ConcertAPI/rest/v1")
+FRONTEND_PAGES_BASE_URL = os.environ.get("FRONTEND_PAGES_BASE_URL", "http://localhost:8080/pages")
+EMAIL_PATTERN = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 
 def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
@@ -45,6 +50,20 @@ def issue_buyer_qr(ticket_id, buyer_id, concert_id, retries=3):
             last_error = str(exc)
     return {"error": last_error or "QR generation failed"}
 
+
+def fetch_concert_meta(concert_id):
+    try:
+        res = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=5)
+        if res.status_code == 200 and isinstance(res.json(), dict):
+            data = res.json()
+            return {
+                "concertName": data.get("name") or concert_id,
+                "concertDateTime": data.get("eventDate"),
+            }
+    except Exception:
+        pass
+    return {"concertName": concert_id, "concertDateTime": None}
+
 # ── S2a: Seller lists ticket ──────────────────────────────────────────────────
 # POST /resale/v1/list
 @app.route("/resale/v1/list", methods=["POST"])
@@ -52,6 +71,9 @@ def list_ticket():
     data = request.get_json()
     required = ["sellerId", "ticketId", "concertId", "resalePrice"]
     if not all(k in data for k in required): return err("MISSING_FIELDS", f"Required: {required}")
+    seller_email = (data.get("sellerEmail") or data.get("contactEmail") or data.get("toEmail") or data.get("email") or "").strip()
+    if seller_email and not EMAIL_PATTERN.fullmatch(seller_email):
+        return err("INVALID_EMAIL", "A valid sellerEmail/contactEmail/toEmail is required when provided")
 
     # Step 1 — verify ticket ownership and status
     t = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{data['concertId']}/{data['ticketId']}", timeout=5)
@@ -102,16 +124,26 @@ def list_ticket():
 
     # Step 4 — notify seller (non-critical)
     try:
+        concert_meta = fetch_concert_meta(data["concertId"])
         seller_phone = data.get("sellerPhoneNumber") or data.get("phoneNumber") or data.get("toNumber")
         event_payload = {
             "eventType": "ticket.resale.listed", "channel": "SMS", "userId": data["sellerId"],
             "timestamp": datetime.utcnow().isoformat(),
             "data": {"ticketId": data["ticketId"], "concertId": data["concertId"],
-                     "resalePrice": data["resalePrice"]}
+                     "concertName": concert_meta.get("concertName"),
+                     "concertDateTime": concert_meta.get("concertDateTime"),
+                     "seatNumber": ticket.get("seatNumber"),
+                     "resalePrice": data["resalePrice"],
+                     "currency": "SGD"}
         }
         if seller_phone:
             event_payload["phoneNumber"] = seller_phone
             event_payload["data"]["phoneNumber"] = seller_phone
+        if seller_email:
+            event_payload["toEmail"] = seller_email
+            event_payload["contactEmail"] = seller_email
+            event_payload["data"]["toEmail"] = seller_email
+            event_payload["data"]["contactEmail"] = seller_email
         mq_publish("ticket.resale.listed", event_payload)
     except Exception: pass
 
@@ -126,8 +158,14 @@ def purchase_resale():
     required = ["buyerId", "ticketId", "concertId", "stripeToken"]
     if not all(k in data for k in required): return err("MISSING_FIELDS", f"Required: {required}")
     buyer_phone = data.get("phoneNumber") or data.get("contactPhone") or data.get("toNumber")
+    buyer_email = (data.get("contactEmail") or data.get("toEmail") or data.get("email") or "").strip()
+    seller_email = (data.get("sellerEmail") or data.get("sellerContactEmail") or "").strip()
     if not buyer_phone:
         return err("MISSING_FIELDS", "phoneNumber is required for buyer SMS notifications")
+    if buyer_email and not EMAIL_PATTERN.fullmatch(buyer_email):
+        return err("INVALID_EMAIL", "A valid contactEmail/toEmail is required when provided")
+    if seller_email and not EMAIL_PATTERN.fullmatch(seller_email):
+        return err("INVALID_EMAIL", "A valid sellerEmail/sellerContactEmail is required when provided")
 
     # Step 1 — verify ticket is RESALE_LISTED
     t = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{data['concertId']}/{data['ticketId']}", timeout=5)
@@ -247,6 +285,16 @@ def purchase_resale():
 
     # Step 9 — notify both parties (non-critical)
     try:
+        concert_meta = fetch_concert_meta(data["concertId"])
+        sale_dt = payment_data.get("createdAt") or datetime.utcnow().isoformat()
+        next_page = quote(
+            f"my-tickets.html?refreshTicket={data['ticketId']}&refreshConcert={data['concertId']}",
+            safe="",
+        )
+        qr_link = (
+            f"{FRONTEND_PAGES_BASE_URL}/login.html?next={next_page}"
+            f"&requiredOwner={quote(str(data['buyerId']), safe='')}"
+        )
         seller_phone = data.get("sellerPhoneNumber") or data.get("phoneNumber") or data.get("toNumber")
         event_payload = {
             "eventType": "ticket.resale.sold",
@@ -254,14 +302,24 @@ def purchase_resale():
             "userId": seller_id,
             "timestamp": datetime.utcnow().isoformat(),
             "data": {"ticketId": data["ticketId"], "concertId": data["concertId"],
-                     "resalePrice": resale_price, "buyerId": data["buyerId"]}
+                     "concertName": concert_meta.get("concertName"),
+                     "concertDateTime": concert_meta.get("concertDateTime"),
+                     "seatNumber": ticket.get("seatNumber"),
+                     "resalePrice": resale_price, "currency": "SGD",
+                     "saleDateTime": sale_dt,
+                     "buyerId": data["buyerId"]}
         }
         if seller_phone:
             event_payload["phoneNumber"] = seller_phone
             event_payload["data"]["phoneNumber"] = seller_phone
+        if seller_email:
+            event_payload["toEmail"] = seller_email
+            event_payload["contactEmail"] = seller_email
+            event_payload["data"]["toEmail"] = seller_email
+            event_payload["data"]["contactEmail"] = seller_email
         mq_publish("ticket.resale.sold", event_payload)
 
-        mq_publish("ticket.purchased", {
+        buyer_event = {
             "eventType": "ticket.purchased",
             "channel": "SMS",
             "userId": data["buyerId"],
@@ -270,13 +328,25 @@ def purchase_resale():
             "data": {
                 "ticketId": data["ticketId"],
                 "concertId": data["concertId"],
+                "concertName": concert_meta.get("concertName"),
+                "concertDateTime": concert_meta.get("concertDateTime"),
                 "seatNumber": ticket.get("seatNumber"),
                 "amount": resale_price,
                 "currency": "SGD",
+                "purchaseDateTime": sale_dt,
+                "purchaseType": "RESALE",
                 "phoneNumber": buyer_phone,
                 "qrImageUrl": qr_data.get("qrImageUrl"),
+                "qrCodeLink": qr_link,
             },
-        })
+        }
+        if buyer_email:
+            buyer_event["toEmail"] = buyer_email
+            buyer_event["contactEmail"] = buyer_email
+            buyer_event["data"]["toEmail"] = buyer_email
+            buyer_event["data"]["contactEmail"] = buyer_email
+
+        mq_publish("ticket.purchased", buyer_event)
     except Exception: pass
 
     return jsonify({"success": True, "ticketId": data["ticketId"],

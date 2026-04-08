@@ -372,7 +372,27 @@ body {
 
 <script src="../assets/js/api.js"></script>
 <script>
-if (Auth.isLoggedIn()) window.location.href=Auth.homePage();
+const requestedNext=Util.getParam('next');
+const requiredOwner=Util.getParam('requiredOwner');
+
+function resolveNextPage(){
+  if(!requestedNext) return Auth.homePage();
+  const decoded=decodeURIComponent(requestedNext);
+  if(/^\w+:\/\//.test(decoded)) return Auth.homePage();
+  if(!decoded.endsWith('.html') && !decoded.includes('.html?')) return Auth.homePage();
+  return decoded;
+}
+
+if (Auth.isLoggedIn()) {
+  const current=Auth.getUser();
+  if(requiredOwner && current?.userId!==requiredOwner){
+    localStorage.removeItem('ctms_user');
+    localStorage.removeItem('ctms_token');
+  } else {
+    window.location.href=resolveNextPage();
+  }
+}
+
 const loginRight=document.querySelector('.login-right');
 if(loginRight && window.matchMedia('(min-width: 961px)').matches){
   loginRight.addEventListener('pointermove', e => {
@@ -395,8 +415,16 @@ function doLogin(){
   setTimeout(()=>{
     try{
       const u=Auth.login(email,pw);
+      if(requiredOwner && u.userId!==requiredOwner){
+        localStorage.removeItem('ctms_user');
+        localStorage.removeItem('ctms_token');
+        errEl.textContent='Please sign in with the account that owns this ticket link.';
+        errEl.classList.remove('hidden');
+        btn.disabled=false;btn.textContent='Enter the Show →';
+        return;
+      }
       toast(`Welcome back, ${u.name}!`,'success');
-      setTimeout(()=>window.location.href=Auth.homePage(),600);
+      setTimeout(()=>window.location.href=resolveNextPage(),600);
     }catch(e){
       errEl.textContent='Invalid email or password. Please try again.';
       errEl.classList.remove('hidden');

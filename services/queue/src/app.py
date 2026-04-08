@@ -37,6 +37,20 @@ def err(code, message, status=400):
                               "service": "queue", "timestamp": datetime.utcnow().isoformat()}}), status
 
 
+def fetch_concert_meta(concert_id):
+    try:
+        res = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=5)
+        if res.status_code == 200 and isinstance(res.json(), dict):
+            data = res.json()
+            return {
+                "concertName": data.get("name") or concert_id,
+                "concertDateTime": data.get("eventDate"),
+            }
+    except Exception:
+        pass
+    return {"concertName": concert_id, "concertDateTime": None}
+
+
 def is_retryable_db_error(exc):
     return getattr(exc, "errno", None) in {1205, 1213}
 
@@ -68,6 +82,7 @@ def ensure_schema():
 
 def publish_window_expired(row):
     try:
+        concert_meta = fetch_concert_meta(row["concertId"])
         mq_publish("queue.window.expired", {
             "eventType": "queue.window.expired",
             "channel": "SMS",
@@ -75,6 +90,8 @@ def publish_window_expired(row):
             "timestamp": datetime.utcnow().isoformat(),
             "data": {
                 "concertId": row["concertId"],
+                "concertName": concert_meta.get("concertName"),
+                "concertDateTime": concert_meta.get("concertDateTime"),
                 "queueId": row["queueId"],
             },
         })
@@ -84,6 +101,7 @@ def publish_window_expired(row):
 
 def publish_window_granted(user_id, concert_id, expires_at):
     try:
+        concert_meta = fetch_concert_meta(concert_id)
         mq_publish("queue.window.granted", {
             "eventType": "queue.window.granted",
             "channel": "SMS",
@@ -91,6 +109,8 @@ def publish_window_granted(user_id, concert_id, expires_at):
             "timestamp": datetime.utcnow().isoformat(),
             "data": {
                 "concertId": concert_id,
+                "concertName": concert_meta.get("concertName"),
+                "concertDateTime": concert_meta.get("concertDateTime"),
                 "windowExpiresAt": expires_at.isoformat(),
             },
         })

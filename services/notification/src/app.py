@@ -12,6 +12,9 @@ from datetime import datetime
 import pika
 import re
 import time
+import smtplib
+from urllib.parse import parse_qs, quote, urlparse
+from email.message import EmailMessage
 from importlib import import_module
 
 app = Flask(__name__)
@@ -32,7 +35,9 @@ def err(code, message, status=400):
 
 
 E164_PATTERN = re.compile(r'^\+[1-9]\d{7,14}$')
-SMS_MAX_LENGTH = 320
+EMAIL_PATTERN = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+SMS_MAX_LENGTH = 1200
+FRONTEND_PAGES_BASE_URL = os.environ.get("FRONTEND_PAGES_BASE_URL", "http://localhost:8080/pages")
 
 
 def is_e164_phone_number(value):
@@ -51,13 +56,28 @@ def get_user_contact(user_id):
     cur = db.cursor(dictionary=True)
     try:
         cur.execute(
-            "SELECT userId, phoneE164, smsOptIn FROM user_contact WHERE userId=%s",
+            "SELECT userId, email, phoneE164, smsOptIn FROM user_contact WHERE userId=%s",
             (user_id,),
         )
         return cur.fetchone()
     finally:
         cur.close()
         db.close()
+
+
+def fetch_concert_meta(concert_id):
+    concert_name = concert_id or "N/A"
+    concert_dt = None
+    concert_url = os.environ.get("CONCERT_SERVICE_URL", "http://localhost:5000")
+    try:
+        res = import_module("requests").get(f"{concert_url}/concerts/{concert_id}", timeout=5)
+        if res.status_code == 200 and isinstance(res.json(), dict):
+            data = res.json()
+            concert_name = data.get("name") or concert_name
+            concert_dt = data.get("eventDate")
+    except Exception:
+        pass
+    return {"concertName": concert_name, "concertDateTime": concert_dt}
 
 
 def resolve_sms_recipient(payload, data, user_id):
@@ -85,6 +105,100 @@ def resolve_sms_recipient(payload, data, user_id):
     if not normalized:
         raise ValueError(f"User {user_id} does not have a valid E.164 phone number")
     return normalized
+
+
+def is_valid_email(value):
+    return isinstance(value, str) and bool(EMAIL_PATTERN.fullmatch(value.strip()))
+
+
+def resolve_email_recipient(payload, data, user_id):
+    for candidate in (
+        payload.get("toEmail"),
+        payload.get("contactEmail"),
+        payload.get("email"),
+        data.get("toEmail"),
+        data.get("contactEmail"),
+        data.get("email"),
+    ):
+        if is_valid_email(candidate):
+            return candidate.strip()
+
+    contact = get_user_contact(user_id)
+    if contact and is_valid_email(contact.get("email")):
+        return contact.get("email").strip()
+
+    raise ValueError(f"No valid email found for user {user_id}")
+
+
+def persist_contact_hints(payload, data, user_id):
+    if not user_id or user_id == "UNKNOWN":
+        return
+
+    hinted_email = None
+    for candidate in (
+        payload.get("toEmail"),
+        payload.get("contactEmail"),
+        payload.get("email"),
+        data.get("toEmail"),
+        data.get("contactEmail"),
+        data.get("email"),
+    ):
+        if is_valid_email(candidate):
+            hinted_email = candidate.strip()
+            break
+
+    hinted_phone = None
+    for candidate in (
+        payload.get("phoneNumber"),
+        payload.get("contactPhone"),
+        payload.get("toNumber"),
+        data.get("phoneNumber"),
+        data.get("contactPhone"),
+        data.get("toNumber"),
+    ):
+        normalized = normalize_phone(candidate)
+        if normalized:
+            hinted_phone = normalized
+            break
+
+    if not hinted_email and not hinted_phone:
+        return
+
+    db = get_db()
+    cur = db.cursor(dictionary=True)
+    try:
+        cur.execute(
+            "SELECT userId, email, phoneE164, smsOptIn FROM user_contact WHERE userId=%s",
+            (user_id,),
+        )
+        existing = cur.fetchone()
+        if existing:
+            email_to_save = hinted_email or existing.get("email")
+            phone_to_save = hinted_phone or existing.get("phoneE164")
+            sms_opt_in = 1 if phone_to_save else int(existing.get("smsOptIn") or 0)
+            cur.execute(
+                """
+                UPDATE user_contact
+                SET email=%s, phoneE164=%s, smsOptIn=%s
+                WHERE userId=%s
+                """,
+                (email_to_save, phone_to_save, sms_opt_in, user_id),
+            )
+        elif hinted_phone:
+            sms_opt_in = 1 if hinted_phone else 0
+            cur.execute(
+                """
+                INSERT INTO user_contact (userId, email, phoneE164, smsOptIn)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (user_id, hinted_email, hinted_phone, sms_opt_in),
+            )
+        db.commit()
+    except Exception as e:
+        print(f"[NOTIFICATION] Could not persist contact hints for {user_id}: {e}")
+    finally:
+        cur.close()
+        db.close()
 
 
 def ensure_schema():
@@ -126,11 +240,72 @@ def ensure_schema():
     cur.close()
     db.close()
 
-def send_email(to_user, subject, body):
-    """Stub — replace with SendGrid / SMTP call."""
-    # TODO: sendgrid.SendGridAPIClient(os.environ["SENDGRID_API_KEY"]).send(...)
-    print(f"[EMAIL STUB] To={to_user} Subject={subject}")
-    return f"msg_{uuid.uuid4().hex[:8]}", True
+def send_email(to_email, subject, body):
+    """Send an email via configured provider (Gmail SMTP or SendGrid), else demo stub."""
+    provider = (os.environ.get("EMAIL_PROVIDER") or "sendgrid").strip().lower()
+    allow_stub = (os.environ.get("EMAIL_ALLOW_STUB") or "false").strip().lower() in ("1", "true", "yes")
+    api_key = (os.environ.get("SENDGRID_API_KEY") or "").strip()
+    from_email = (os.environ.get("EMAIL_FROM") or "demo@example.com").strip()
+    subject = (subject or "Solstitix Notification").strip()
+
+    body = (body or "").strip()
+    if len(body) > 8000:
+        body = body[:8000]
+
+    if provider in ("gmail", "gmail_smtp", "smtp"):
+        smtp_host = (os.environ.get("SMTP_HOST") or "smtp.gmail.com").strip()
+        smtp_port = int((os.environ.get("SMTP_PORT") or "587").strip())
+        smtp_use_tls = (os.environ.get("SMTP_USE_TLS") or "true").strip().lower() in ("1", "true", "yes")
+        smtp_username = (os.environ.get("SMTP_USERNAME") or "").strip()
+        smtp_password = (os.environ.get("SMTP_PASSWORD") or "").strip()
+        smtp_from = (os.environ.get("SMTP_FROM") or from_email or smtp_username).strip()
+
+        if not (smtp_host and smtp_username and smtp_password and is_valid_email(to_email)):
+            print("[NOTIFICATION] SMTP email not configured or invalid recipient")
+            return "smtp_not_configured", False
+
+        try:
+            msg = EmailMessage()
+            msg["From"] = smtp_from
+            msg["To"] = to_email
+            msg["Subject"] = subject
+            msg.set_content(body)
+
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
+                server.ehlo()
+                if smtp_use_tls:
+                    server.starttls()
+                    server.ehlo()
+                server.login(smtp_username, smtp_password)
+                server.send_message(msg)
+            return f"smtp_{uuid.uuid4().hex[:8]}", True
+        except Exception as e:
+            print(f"[NOTIFICATION] SMTP email failed: {e}")
+            return "smtp_send_failed", False
+
+    if provider == "sendgrid" and api_key and api_key.lower() not in ("dummy", "changeme"):
+        try:
+            sg_mod = import_module("sendgrid")
+            mail_mod = import_module("sendgrid.helpers.mail")
+            msg = mail_mod.Mail(
+                from_email=from_email,
+                to_emails=to_email,
+                subject=subject,
+                plain_text_content=body,
+            )
+            resp = sg_mod.SendGridAPIClient(api_key).send(msg)
+            if 200 <= int(getattr(resp, "status_code", 0)) < 300:
+                return f"sg_{uuid.uuid4().hex[:8]}", True
+            raise RuntimeError(f"SendGrid returned status {getattr(resp, 'status_code', 'unknown')}")
+        except Exception as e:
+            print(f"[NOTIFICATION] SendGrid email failed: {e}")
+
+    if allow_stub:
+        print(f"[EMAIL STUB] To={to_email} Subject={subject}")
+        return f"msg_{uuid.uuid4().hex[:8]}", True
+
+    print("[NOTIFICATION] Email send failed and stub mode disabled")
+    return "email_send_failed", False
 
 def send_sms(to_number, body):
     """Send an SMS via Twilio."""
@@ -163,43 +338,320 @@ def send_sms(to_number, body):
                 raise
             time.sleep(0.6 * (attempt + 1))
 
+
+def send_whatsapp(to_number, body):
+    """Send a WhatsApp message via Twilio sandbox/number."""
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
+    auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
+    from_number = normalize_phone(os.environ.get("TWILIO_WHATSAPP_FROM_NUMBER", "+14155238886"))
+
+    if not account_sid or not auth_token or not from_number:
+        raise RuntimeError("Twilio WhatsApp environment variables are not configured")
+
+    to_number = normalize_phone(to_number)
+    if not to_number:
+        raise ValueError("WhatsApp recipient must be in E.164 format, e.g. +6591234567")
+
+    body = (body or "").strip()
+    if len(body) > SMS_MAX_LENGTH:
+        body = body[:SMS_MAX_LENGTH]
+
+    client = import_module("twilio.rest").Client(account_sid, auth_token)
+    message = client.messages.create(
+        body=body,
+        from_=f"whatsapp:{from_number}",
+        to=f"whatsapp:{to_number}",
+    )
+    return message.sid, True
+
 TEMPLATES = {
-    "ticket.purchased":     ("Your ticket is confirmed!", "You have successfully purchased ticket {ticketId} for {concertName}. Seat: {seatNumber}."),
     "ticket.resale.listed": ("Your ticket is listed for resale", "Ticket {ticketId} for {concertName} has been listed at {resalePrice} {currency}."),
-    "ticket.resale.sold":   ("Your ticket has been sold!", "Ticket {ticketId} has been sold. Payout will be processed shortly."),
     "concert.cancelled":    ("Concert Cancelled — Refund Issued", "We regret to inform you that {concertName} has been cancelled. A full refund of {amount} {currency} will be processed."),
     "queue.window.granted": ("It's your turn!", "Your purchase window for {concertName} is now open. You have 10 minutes to complete your purchase."),
     "queue.window.expired": ("Purchase window expired", "Your purchase window has expired. Please rejoin the queue to try again."),
 }
 
-def handle_event(event_type, payload):
-    data = payload.get("data", payload)
-    user_id = payload.get("userId", data.get("userId", "UNKNOWN"))
-    channel = str(payload.get("channel", "EMAIL")).upper()
+
+def _value(data, key, fallback="N/A"):
+    raw = data.get(key)
+    if raw is None:
+        return fallback
+    text = str(raw).strip()
+    return text if text else fallback
+
+
+def _money(data, primary_key="amount", fallback_key="resalePrice"):
+    amount = data.get(primary_key)
+    if amount in (None, ""):
+        amount = data.get(fallback_key)
+    currency = _value(data, "currency", "SGD")
+    if amount in (None, ""):
+        return f"{currency} N/A"
+    try:
+        return f"{currency} {float(amount):.2f}"
+    except Exception:
+        return f"{currency} {amount}"
+
+
+def _qr_link(data):
+    owner_id = _value(data, "userId", _value(data, "buyerId", _value(data, "ownerId", "")))
+
+    def _build_login_ticket_link(ticket_id, concert_id, required_owner=""):
+        next_page = quote(f"my-tickets.html?refreshTicket={ticket_id}&refreshConcert={concert_id}", safe="")
+        link = f"{FRONTEND_PAGES_BASE_URL}/login.html?next={next_page}"
+        if required_owner:
+            link += f"&requiredOwner={quote(str(required_owner), safe='')}"
+        return link
+
+    explicit = data.get("qrCodeLink")
+    if isinstance(explicit, str) and explicit.strip():
+        raw_link = explicit.strip()
+        if "/login.html?" in raw_link:
+            return raw_link
+        parsed = urlparse(raw_link)
+        params = parse_qs(parsed.query)
+        ticket_id = (params.get("refreshTicket", [None])[0] or _value(data, "ticketId", "")).strip()
+        concert_id = (params.get("refreshConcert", [None])[0] or _value(data, "concertId", "")).strip()
+        if ticket_id and concert_id:
+            return _build_login_ticket_link(ticket_id, concert_id, owner_id)
+    ticket_id = _value(data, "ticketId", "")
+    concert_id = _value(data, "concertId", "")
+    if ticket_id and concert_id:
+        return _build_login_ticket_link(ticket_id, concert_id, owner_id)
+    return f"{FRONTEND_PAGES_BASE_URL}/login.html"
+
+
+def compose_message(event_type, data):
+    if event_type == "ticket.purchased":
+        purchase_type = str(data.get("purchaseType", "PRIMARY")).upper()
+        subject = "Your ticket is confirmed!"
+        if purchase_type == "RESALE":
+            body = (
+                "🎟️ 🎉 Success! You've secured your resale ticket\n\n"
+                "Solstitix is delighted to bring you one step closer to your concert experience ✨\n\n"
+                f"Concert: {_value(data, 'concertName')}\n"
+                f"Ticket ID: {_value(data, 'ticketId')}\n"
+                f"Seat: {_value(data, 'seatNumber')}\n"
+                f"Date & Time: {_value(data, 'concertDateTime', _value(data, 'eventDate'))}\n\n"
+                f"💰 Price Paid: {_money(data)}\n"
+                f"🕒 Purchased At: {_value(data, 'purchaseDateTime', _value(data, 'timestamp'))}\n\n"
+                f"📲 Click here to view your ticket: {_qr_link(data)}\n\n"
+                "This is going to be an amazing experience — enjoy every moment 🎶"
+            )
+            return subject, body
+
+        body = (
+            "🎟️ 🎉 You're in! Your ticket is confirmed\n\n"
+            "Solstitix is delighted to bring you one step closer to your concert experience ✨\n\n"
+            f"Concert: {_value(data, 'concertName')}\n"
+            f"Ticket ID: {_value(data, 'ticketId')}\n"
+            f"Seat: {_value(data, 'seatNumber')}\n"
+            f"Date & Time: {_value(data, 'concertDateTime', _value(data, 'eventDate'))}\n\n"
+            f"💰 Price Paid: {_money(data)}\n"
+            f"🕒 Purchased At: {_value(data, 'purchaseDateTime', _value(data, 'timestamp'))}\n\n"
+            f"📲 Click here to view your ticket: {_qr_link(data)}\n\n"
+            "Get ready for an unforgettable night — we'll see you there 💫"
+        )
+        return subject, body
+
+    if event_type == "ticket.resale.sold":
+        subject = "Your ticket has been sold!"
+        body = (
+            "💸 ✅ Your ticket has been successfully sold\n\n"
+            "Solstitix is pleased to have supported a smooth and secure resale.\n\n"
+            f"Concert: {_value(data, 'concertName')}\n"
+            f"Ticket ID: {_value(data, 'ticketId')}\n"
+            f"Seat: {_value(data, 'seatNumber')}\n"
+            f"Date & Time: {_value(data, 'concertDateTime', _value(data, 'eventDate'))}\n\n"
+            f"💰 Sold For: {_money(data, primary_key='resalePrice', fallback_key='amount')}\n"
+            f"🕒 Sold At: {_value(data, 'saleDateTime', _value(data, 'timestamp'))}\n\n"
+            "💳 Your refund will be processed to your original payment method within 3–5 working days.\n\n"
+            "Thank you for using Solstitix."
+        )
+        return subject, body
+
     tmpl = TEMPLATES.get(event_type, ("Notification", str(data)))
     subject = tmpl[0]
-    try: body = tmpl[1].format(**data)
-    except KeyError: body = tmpl[1]
-    if channel == "SMS":
-        try:
-            recipient = resolve_sms_recipient(payload, data, user_id)
-            ext_id, ok = send_sms(recipient, body)
-            subject = None
-        except Exception as e:
-            print(f"[NOTIFICATION] SMS failed for {event_type}: {e}")
-            ext_id, ok = None, False
-    else:
-        ext_id, ok = send_email(user_id, subject, body)
-    status = "SENT" if ok else "FAILED"
+    try:
+        body = tmpl[1].format(**data)
+    except KeyError:
+        body = tmpl[1]
+    return subject, body
+
+
+def compose_sms_message(event_type, data):
+    footer = "Check your gmail inbox for more details."
+    purchase_type = str(data.get("purchaseType", "PRIMARY")).upper()
+    concert_name = _value(data, "concertName")
+    ticket_id = _value(data, "ticketId")
+    seat_number = _value(data, "seatNumber")
+    concert_time = _value(data, "concertDateTime", _value(data, "eventDate"))
+    purchase_dt = _value(data, "purchaseDateTime", _value(data, "timestamp"))
+
+    if event_type == "ticket.purchased":
+        label = "Resale purchase confirmed" if purchase_type == "RESALE" else "Ticket purchase confirmed"
+        price_label = "Price paid" if purchase_type == "RESALE" else "Transaction price"
+        price_value = _money(data)
+        return (
+            f"{label}\n"
+            f"Concert: {concert_name}\n"
+            f"Ticket ID: {ticket_id}\n"
+            f"Seat: {seat_number}\n"
+            f"Date & Time: {concert_time}\n"
+            f"{price_label}: {price_value}\n"
+            f"Purchased At: {purchase_dt}\n"
+            f"{footer}"
+        )
+
+    if event_type == "ticket.resale.sold":
+        return (
+            "Resale sale confirmed\n"
+            f"Concert: {concert_name}\n"
+            f"Ticket ID: {ticket_id}\n"
+            f"Seat: {seat_number}\n"
+            f"Date & Time: {concert_time}\n"
+            f"Sold For: {_money(data, primary_key='resalePrice', fallback_key='amount')}\n"
+            f"Sold At: {_value(data, 'saleDateTime', _value(data, 'timestamp'))}\n"
+            f"{footer}"
+        )
+
+    if event_type == "ticket.resale.listed":
+        return (
+            "Ticket listed for resale\n"
+            f"Concert: {concert_name}\n"
+            f"Ticket ID: {ticket_id}\n"
+            f"Seat: {seat_number}\n"
+            f"Listing Price: {_money(data, primary_key='resalePrice', fallback_key='amount')}\n"
+            f"{footer}"
+        )
+
+    if event_type == "concert.cancelled":
+        return (
+            "Concert cancelled\n"
+            f"Concert: {concert_name}\n"
+            f"Refund: {_money(data)}\n"
+            f"{footer}"
+        )
+
+    if event_type == "queue.window.granted":
+        return (
+            "Your purchase window is open\n"
+            f"Concert: {concert_name}\n"
+            f"{footer}"
+        )
+
+    if event_type == "queue.window.expired":
+        return (
+            "Purchase window expired\n"
+            f"Concert: {concert_name}\n"
+            f"{footer}"
+        )
+
+    return (
+        f"Notification\n"
+        f"Concert: {concert_name}\n"
+        f"Ticket ID: {ticket_id}\n"
+        f"{footer}"
+    )
+
+
+def log_notification(user_id, event_type, channel, subject, body, status, ref_id, external_msg_id, ok):
     notif_id = f"NOTIF-{uuid.uuid4().hex[:8].upper()}"
-    db = get_db(); cur = db.cursor()
-    cur.execute("""INSERT INTO notification_log
-        (notificationId,userId,eventType,channel,subject,body,status,refId,externalMsgId,retryCount,sentAt)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-        (notif_id, user_id, event_type, channel, subject, body, status,
-         data.get("ticketId", data.get("concertId")), ext_id,
-         0 if ok else 1, datetime.utcnow() if ok else None))
-    db.commit(); cur.close(); db.close()
+    db = get_db()
+    cur = db.cursor()
+    try:
+        cur.execute("""INSERT INTO notification_log
+            (notificationId,userId,eventType,channel,subject,body,status,refId,externalMsgId,retryCount,sentAt)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (notif_id, user_id, event_type, channel, subject, body, status,
+             ref_id, external_msg_id, 0 if ok else 1, datetime.utcnow() if ok else None))
+        db.commit()
+    finally:
+        cur.close()
+        db.close()
+
+
+def deliver_email(event_type, payload, data, user_id, subject, body):
+    try:
+        recipient_email = resolve_email_recipient(payload, data, user_id)
+    except Exception as e:
+        print(f"[NOTIFICATION] Email recipient unavailable for {event_type}: {e}")
+        return None
+
+    ext_id, ok = send_email(recipient_email, subject, body)
+    status = "SENT_EMAIL_FORCED" if ok else "FAILED"
+    log_notification(
+        user_id,
+        event_type,
+        "EMAIL",
+        subject,
+        body,
+        status,
+        data.get("ticketId", data.get("concertId")),
+        ext_id,
+        ok,
+    )
+    return {"channel": "EMAIL", "recipient": recipient_email, "ok": ok, "status": status, "externalMsgId": ext_id}
+
+
+def deliver_sms(event_type, payload, data, user_id, subject, body):
+    prefer_whatsapp = os.environ.get("USE_WHATSAPP_SANDBOX_FOR_SMS", "false").strip().lower() in ("1", "true", "yes")
+    try:
+        recipient_phone = resolve_sms_recipient(payload, data, user_id)
+    except Exception as e:
+        print(f"[NOTIFICATION] SMS recipient unavailable for {event_type}: {e}")
+        return None
+
+    sms_body = compose_sms_message(event_type, data)
+
+    try:
+        if prefer_whatsapp:
+            ext_id, ok = send_whatsapp(recipient_phone, sms_body)
+            channel = "WHATSAPP"
+            status = "SENT_WHATSAPP" if ok else "FAILED"
+        else:
+            ext_id, ok = send_sms(recipient_phone, sms_body)
+            channel = "SMS"
+            status = "SENT" if ok else "FAILED"
+    except Exception as e:
+        print(f"[NOTIFICATION] SMS send failed for {event_type}: {e}")
+        ext_id, ok = None, False
+        channel = "WHATSAPP" if prefer_whatsapp else "SMS"
+        status = "FAILED"
+
+    log_notification(
+        user_id,
+        event_type,
+        channel,
+        None,
+        sms_body,
+        status,
+        data.get("ticketId", data.get("concertId")),
+        ext_id,
+        ok,
+    )
+    return {"channel": channel, "recipient": recipient_phone, "ok": ok, "status": status, "externalMsgId": ext_id}
+
+def handle_event(event_type, payload):
+    data = payload.get("data", payload)
+    if isinstance(data, dict) and "timestamp" not in data and payload.get("timestamp"):
+        data["timestamp"] = payload.get("timestamp")
+    if isinstance(data, dict) and "userId" not in data and payload.get("userId"):
+        data["userId"] = payload.get("userId")
+    if isinstance(data, dict) and payload.get("eventType") in ("queue.window.granted", "queue.window.expired"):
+        concert_id = data.get("concertId") or payload.get("concertId")
+        if concert_id and (not data.get("concertName") or str(data.get("concertName")).strip() in ("", "N/A")):
+            meta = fetch_concert_meta(concert_id)
+            data["concertName"] = meta.get("concertName")
+        if concert_id and not data.get("concertDateTime"):
+            meta = fetch_concert_meta(concert_id)
+            data["concertDateTime"] = meta.get("concertDateTime")
+    user_id = payload.get("userId", data.get("userId", "UNKNOWN"))
+    persist_contact_hints(payload, data, user_id)
+    subject, body = compose_message(event_type, data)
+
+    deliver_email(event_type, payload, data, user_id, subject, body)
+    deliver_sms(event_type, payload, data, user_id, subject, body)
 
 
 ensure_schema()
@@ -243,6 +695,54 @@ def get_by_user(user_id):
     cur.execute("SELECT * FROM notification_log WHERE userId=%s ORDER BY createdAt DESC", (user_id,))
     rows = cur.fetchall(); cur.close(); db.close()
     return jsonify({"userId": user_id, "notifications": rows})
+
+
+@app.route("/notification/v1/contact/<user_id>", methods=["GET"])
+def get_contact(user_id):
+    contact = get_user_contact(user_id)
+    if not contact:
+        return jsonify({"userId": user_id, "email": None, "phoneNumber": None, "smsOptIn": 0})
+    return jsonify({
+        "userId": user_id,
+        "email": contact.get("email"),
+        "phoneNumber": contact.get("phoneE164"),
+        "smsOptIn": int(contact.get("smsOptIn") or 0),
+    })
+
+
+@app.route("/notification/v1/contact/<user_id>", methods=["PUT"])
+def upsert_contact(user_id):
+    payload = request.get_json(silent=True) or {}
+    email = (payload.get("email") or payload.get("contactEmail") or "").strip()
+    phone = normalize_phone(
+        payload.get("phoneNumber") or payload.get("contactPhone") or payload.get("toNumber")
+    )
+    sms_opt_in_raw = payload.get("smsOptIn", True)
+    sms_opt_in = 1 if str(sms_opt_in_raw).lower() in ("1", "true", "yes", "on") else 0
+
+    if not is_valid_email(email):
+        return err("INVALID_EMAIL", "A valid email is required")
+    if not phone:
+        return err("INVALID_PHONE", "A valid E.164 phoneNumber is required (e.g. +6591234567)")
+
+    db = get_db(); cur = db.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO user_contact (userId, email, phoneE164, smsOptIn)
+            VALUES (%s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+              email=VALUES(email),
+              phoneE164=VALUES(phoneE164),
+              smsOptIn=VALUES(smsOptIn)
+            """,
+            (user_id, email, phone, sms_opt_in),
+        )
+        db.commit()
+    finally:
+        cur.close(); db.close()
+
+    return jsonify({"userId": user_id, "email": email, "phoneNumber": phone, "smsOptIn": sms_opt_in})
 
 @app.route("/health")
 def health(): return jsonify({"status": "ok", "service": "notification"})

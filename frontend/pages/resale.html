@@ -262,6 +262,10 @@ input[type=range] { width: 100%; accent-color: var(--black); }
       <label class="form-label" style="color:#666">Phone Number For Ticket SMS</label>
       <input class="form-input" id="buy-phone" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1);color:var(--cream)" placeholder="+6596604136" autocomplete="tel">
     </div>
+    <div class="form-group">
+      <label class="form-label" style="color:#666">Email For Ticket Notification</label>
+      <input class="form-input" id="buy-email" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1);color:var(--cream)" placeholder="you@example.com" autocomplete="email">
+    </div>
     <button class="btn btn-yellow w-full btn-lg" id="buy-btn" onclick="confirmBuy()" style="border-radius:var(--radius)">Confirm Purchase →</button>
     <div style="font-size:0.65rem;text-align:center;color:#555;margin-top:10px;letter-spacing:0.04em">🔒 Secured by Stripe · QR delivered instantly</div>
   </div>
@@ -307,6 +311,7 @@ let allListings=[],selectedListing=null,pendingListing=null;
 let isLoadingListings = true;
 let resaleRefreshTimer=null;
 let resaleSyncUnsub=null;
+let contactPrefill=null;
 const RESALE_REFRESH_MS=3000;
 const NAMES={'CONC-000001':'Taylor Swift','CONC-000002':'Coldplay','CONC-000003':'Bruno Mars','CONC-000005':'Ed Sheeran'};
 const EMOJIS={'CONC-000001':'🌟','CONC-000002':'🎸','CONC-000003':'🎷','CONC-000005':'🎵'};
@@ -576,8 +581,19 @@ function openBuy(listing){
   openModal('resale-disclaimer-modal');
 }
 
-function proceedToBuyModal(){
+async function ensureContactPrefill(){
+  if(contactPrefill) return contactPrefill;
+  try{
+    contactPrefill=await ContactProfile.fetch(user);
+  }catch{
+    contactPrefill={ email:user?.email||'', phoneNumber:user?.phone||'' };
+  }
+  return contactPrefill;
+}
+
+async function proceedToBuyModal(){
   if(!pendingListing)return;
+  const profileContact=await ensureContactPrefill();
   selectedListing=pendingListing;
   pendingListing=null;
   const concertMeta=concertById[selectedListing.concertId]||{};
@@ -588,7 +604,9 @@ function proceedToBuyModal(){
   document.getElementById('b-event-time').textContent=Util.formatConcertDateTime(concertMeta.eventDate);
   document.getElementById('b-price').textContent=`SGD ${selectedListing.resalePrice}`;
   const phoneInput=document.getElementById('buy-phone');
-  if(phoneInput) phoneInput.value='';
+  const emailInput=document.getElementById('buy-email');
+  if(phoneInput) phoneInput.value=profileContact?.phoneNumber||'';
+  if(emailInput) emailInput.value=profileContact?.email||user?.email||'';
   document.getElementById('buy-alert').innerHTML='';
   openModal('buy-modal');
 }
@@ -604,17 +622,34 @@ function toE164Phone(value=''){
   return null;
 }
 
+function isValidEmail(value=''){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value||'').trim());
+}
+
 async function confirmBuy(){
   if(!selectedListing)return;
   const rawPhone=document.getElementById('buy-phone')?.value||'';
+  const rawEmail=(document.getElementById('buy-email')?.value||'').trim();
   const phoneNumber=toE164Phone(rawPhone);
   if(!phoneNumber){
     document.getElementById('buy-alert').innerHTML='<div class="alert alert-danger">Enter a valid phone number in E.164 format (for SG, use +65XXXXXXXX or XXXXXXXX).</div>';
     return;
   }
+  if(!isValidEmail(rawEmail)){
+    document.getElementById('buy-alert').innerHTML='<div class="alert alert-danger">Enter a valid email address for resale buyer notifications.</div>';
+    return;
+  }
   const btn=document.getElementById('buy-btn'); btn.disabled=true; btn.textContent='Processing…';
   try{
-    const result=await API.resaleTicket.purchase({buyerId:user.userId,ticketId:selectedListing.ticketId,concertId:selectedListing.concertId,stripeToken:'tok_visa',phoneNumber});
+    const result=await API.resaleTicket.purchase({
+      buyerId:user.userId,
+      ticketId:selectedListing.ticketId,
+      concertId:selectedListing.concertId,
+      stripeToken:'tok_visa',
+      phoneNumber,
+      contactEmail:rawEmail,
+      toEmail:rawEmail,
+    });
     LiveSync.emit('resale-purchased', {
       ticketId: selectedListing.ticketId,
       concertId: selectedListing.concertId,
@@ -637,6 +672,7 @@ async function confirmBuy(){
       ? "The resale service replaced the seller's QR and issued a fresh QR for your ownership record."
       : 'The ticket was transferred. Refresh My Tickets if the QR preview does not appear immediately.';
     qrNote.textContent += ` SMS was sent to ${phoneNumber}.`;
+    qrNote.textContent += ` Email was sent to ${rawEmail}.`;
     allListings=allListings.filter(t=>t.ticketId!==selectedListing.ticketId);
     applyFilters();
   }catch(e){
