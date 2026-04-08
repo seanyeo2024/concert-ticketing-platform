@@ -297,8 +297,7 @@ body {
       <div class="section-label mb-24">Queue Monitor</div>
       <div class="form-group" style="max-width:320px"><label class="form-label">Select Concert</label>
         <select class="form-select" id="q-concert" onchange="loadQueueDepth()">
-          <option value="CONC-000001">Taylor Swift</option>
-          <option value="CONC-000002">Coldplay</option>
+          <option value="">Select…</option>
         </select>
       </div>
       <div class="card" id="q-depth"><div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Select a concert</div></div>
@@ -330,7 +329,29 @@ function isSameDay(a,b){
   return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
 }
 
+let queueMonitorInterval=null;
+
+function stopQueueMonitorAutoRefresh(){
+  if(queueMonitorInterval){
+    clearInterval(queueMonitorInterval);
+    queueMonitorInterval=null;
+  }
+}
+
+function startQueueMonitorAutoRefresh(){
+  stopQueueMonitorAutoRefresh();
+  queueMonitorInterval=setInterval(()=>{
+    const panel=document.getElementById('panel-queue');
+    if(!panel?.classList.contains('active')){
+      stopQueueMonitorAutoRefresh();
+      return;
+    }
+    loadQueueDepth();
+  },5000);
+}
+
 function showPanel(n,el){
+  stopQueueMonitorAutoRefresh();
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.sidebar-link').forEach(l=>l.classList.remove('active'));
   document.getElementById(`panel-${n}`).classList.add('active'); el.classList.add('active');
@@ -338,7 +359,10 @@ function showPanel(n,el){
   if(n==='concerts') loadConcerts();
   if(n==='configure') loadConfigConcertOptions();
   if(n==='cancel') loadCancelOptions();
-  if(n==='queue') loadQueueDepth();
+  if(n==='queue'){
+    loadQueueConcertOptions();
+    startQueueMonitorAutoRefresh();
+  }
 }
 
 async function mapWithConcurrency(items, worker, limit=4){
@@ -897,12 +921,100 @@ async function createConcert(){
 
 async function loadQueueDepth(){
   const id=document.getElementById('q-concert').value;
-  if(!id)return;
-  const d=await API.queue.depth(id);
-  const bk=d.breakdown||[];
-  document.getElementById('q-depth').innerHTML=bk.length
-    ?bk.map(b=>`<div class="health-row"><span style="font-size:0.88rem;font-weight:500">${b.status}</span><strong style="font-family:var(--font-display);font-size:1.5rem;font-weight:900">${b.count}</strong></div>`).join('')
-    :`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Queue empty</div>`;
+  const panel=document.getElementById('q-depth');
+  if(!id){
+    panel.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Select a concert</div>`;
+    return;
+  }
+
+  panel.innerHTML='<div class="skel" style="height:220px;border-radius:var(--radius-lg)"></div>';
+
+  try{
+    const d=await API.queue.depth(id);
+    const bk=d.breakdown||[];
+    const queueDepth=Number(d.queueDepth||0);
+    const waitingCount=Number(d.waitingCount||0);
+    const windowGrantedCount=Number(d.windowGrantedCount||0);
+    const completedCount=Number((bk.find(row=>row.status==='COMPLETED')||{}).count||0);
+    const expiredCount=Number((bk.find(row=>row.status==='EXPIRED')||{}).count||0);
+
+    if(!queueDepth){
+      panel.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Queue empty</div>`;
+      return;
+    }
+
+    const breakdownRows=bk.length
+      ? bk.map(b=>`<div class="health-row"><span style="font-size:0.88rem;font-weight:500">${b.status}</span><strong style="font-family:var(--font-display);font-size:1.5rem;font-weight:900">${Number(b.count||0).toLocaleString()}</strong></div>`).join('')
+      : '<div class="text-sm text-muted">No queue status data available.</div>';
+
+    panel.innerHTML=`
+      <div class="kpi-row" style="margin-bottom:0">
+        <div class="kpi">
+          <div class="kpi-val">${queueDepth.toLocaleString()}</div>
+          <div class="kpi-key">Total In Queue</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-val">${waitingCount.toLocaleString()}</div>
+          <div class="kpi-key">Waiting</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-val">${windowGrantedCount.toLocaleString()}</div>
+          <div class="kpi-key">Active Windows</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-val" style="font-size:2.1rem">${completedCount.toLocaleString()} / ${expiredCount.toLocaleString()}</div>
+          <div class="kpi-key">Completed / Expired</div>
+        </div>
+      </div>
+      <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:16px">
+        ${breakdownRows}
+      </div>`;
+  }catch(e){
+    panel.innerHTML=`<div class="alert alert-danger">Could not load queue monitor. ${e.message||'Please try again.'}</div>`;
+  }
+}
+
+async function loadQueueConcertOptions(selectedId=''){
+  const sel=document.getElementById('q-concert');
+  const panel=document.getElementById('q-depth');
+  const previous=selectedId || sel.value;
+
+  sel.innerHTML='<option value="">Loading concerts…</option>';
+  panel.innerHTML='<div class="skel" style="height:220px;border-radius:var(--radius-lg)"></div>';
+
+  try{
+    const d=API.concerts.listStrict ? await API.concerts.listStrict() : await API.concerts.list();
+    const concerts=(d.concerts||d||[])
+      .filter(c=>c && c.concertId)
+      .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+
+    sel.innerHTML='<option value="">Select…</option>';
+    concerts.forEach(c=>{
+      const option=document.createElement('option');
+      option.value=c.concertId;
+      option.textContent=`${c.name} (${c.concertId})`;
+      sel.appendChild(option);
+    });
+
+    if(!concerts.length){
+      panel.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No concerts available</div>`;
+      return;
+    }
+
+    const preferred=concerts.find(c=>c.concertId===previous)
+      || concerts.find(c=>!['CANCELLED','SOLD_OUT'].includes(String(c.status||'').toUpperCase()))
+      || concerts[0];
+
+    sel.value=preferred?.concertId||'';
+    if(sel.value){
+      await loadQueueDepth();
+    }else{
+      panel.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">Select a concert</div>`;
+    }
+  }catch(e){
+    sel.innerHTML='<option value="">Select…</option>';
+    panel.innerHTML=`<div class="alert alert-danger">Could not load concerts for Queue Monitor. ${e.message||'Please try again.'}</div>`;
+  }
 }
 
 async function loadConcertPays(){
