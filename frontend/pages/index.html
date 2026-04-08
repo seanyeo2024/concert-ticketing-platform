@@ -473,8 +473,7 @@ if (Auth.isAdmin()) window.location.href='admin.html';
 const CC_TOPS = ['cc-top-blue','cc-top-teal','cc-top-yellow','cc-top-pink','cc-top-black'];
 let allConcerts=[], activeFilter='ALL';
 let isLoadingConcerts = true;
-let refreshTimer = null;
-const REFRESH_MS = 12000;
+let midnightRefreshTimeout = null;
 const PAGE_SIZE = 6;
 let currentPage = 1;
 renderNav('concerts');
@@ -522,13 +521,9 @@ async function refreshAvailabilityCounts(concerts){
 }
 
 function getUpcomingFeaturedCandidates(){
-  const now = new Date();
   return allConcerts
     .filter(c => String(c.status || '').toUpperCase() === 'ACTIVE')
-    .filter(c => {
-      const parsed = Util.parseDateParts(c.eventDate);
-      return parsed?.date && parsed.date.getTime() > now.getTime();
-    })
+    .filter(c => !concertHasEnded(c))
     .filter(c => Number(c.availableSeats || 0) > 0)
     .sort((a, b) => {
       const aTime = Util.parseDateParts(a.eventDate)?.date?.getTime?.() || Number.MAX_SAFE_INTEGER;
@@ -544,12 +539,12 @@ function getUpcomingFeaturedCandidates(){
 function concertHasEnded(concert){
   const parsed = Util.parseDateParts(concert?.eventDate);
   if(!parsed?.date) return false;
-  if(!parsed.hasTime){
-    const end = new Date(parsed.date);
-    end.setHours(23,59,59,999);
-    return end.getTime() < Date.now();
-  }
-  return parsed.date.getTime() < Date.now();
+  const eventDayStart = new Date(parsed.date);
+  eventDayStart.setHours(0,0,0,0);
+  const todayStart = new Date();
+  todayStart.setHours(0,0,0,0);
+  // Daily cutoff rule: once a date starts at 12:00 AM, that day's concerts are hidden.
+  return eventDayStart.getTime() <= todayStart.getTime();
 }
 
 async function refreshFeaturedConcert(){
@@ -624,20 +619,38 @@ function renderFeaturedConcert(concert){
 
 function startAutoRefresh(){
   stopAutoRefresh();
-  refreshTimer = setInterval(() => {
-    if(document.hidden) return;
-    refreshConcerts();
-  }, REFRESH_MS);
+  scheduleMidnightRefresh();
 }
 
 function stopAutoRefresh(){
-  if(refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = null;
+  if(midnightRefreshTimeout) clearTimeout(midnightRefreshTimeout);
+  midnightRefreshTimeout = null;
+}
+
+function msUntilNextMidnight(){
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(24,0,0,0);
+  return Math.max(1000, next.getTime() - now.getTime());
+}
+
+function scheduleMidnightRefresh(){
+  if(midnightRefreshTimeout) clearTimeout(midnightRefreshTimeout);
+  midnightRefreshTimeout = setTimeout(async () => {
+    if(!document.hidden){
+      applyFilters();
+      renderLineup();
+      await refreshFeaturedConcert();
+    }
+    scheduleMidnightRefresh();
+  }, msUntilNextMidnight());
 }
 
 document.addEventListener('visibilitychange', () => {
   if(document.hidden) return;
-  refreshConcerts();
+  applyFilters();
+  renderLineup();
+  refreshFeaturedConcert();
 });
 
 function setFilter(el, f) {
