@@ -28,6 +28,23 @@ def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "concert_cancellation", "timestamp": datetime.utcnow().isoformat()}}), status
 
+
+def choose_refundable_payments(payments):
+    latest_by_ticket = {}
+    for payment in payments:
+        if str(payment.get("status", "")).upper() != "SUCCESS":
+            continue
+        if str(payment.get("type", "")).upper() not in {"PURCHASE", "RESALE_PURCHASE"}:
+            continue
+        ticket_id = payment.get("ticketId")
+        if not ticket_id:
+            continue
+        created_at = payment.get("createdAt") or ""
+        existing = latest_by_ticket.get(ticket_id)
+        if not existing or created_at > (existing.get("createdAt") or ""):
+            latest_by_ticket[ticket_id] = payment
+    return list(latest_by_ticket.values())
+
 # POST /cancellation/v1/<concertId>
 @app.route("/cancellation/v1/<concert_id>", methods=["POST"])
 def cancel_concert(concert_id):
@@ -63,12 +80,13 @@ def cancel_concert(concert_id):
     except Exception as e:
         print(f"[S3] QR bulk invalidate failed (non-critical): {e}")
 
-    # Step 5 — get all payments for this concert and refund each
+    # Step 5 — refund only the latest effective purchase per ticket
     refund_count = 0; refund_failures = 0
     try:
         pays = requests.get(f"{PAYMENT_URL}/payment/v1/payment/concert/{concert_id}", timeout=10)
         if pays.status_code == 200:
-            for payment in pays.json().get("payments", []):
+            refundable_payments = choose_refundable_payments(pays.json().get("payments", []))
+            for payment in refundable_payments:
                 try:
                     r = requests.post(f"{PAYMENT_URL}/payment/v1/payment/refund",
                                       json={"userId": payment["userId"], "ticketId": payment["ticketId"],

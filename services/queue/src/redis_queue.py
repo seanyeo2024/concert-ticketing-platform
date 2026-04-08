@@ -23,6 +23,7 @@ except ImportError:
 
 WINDOW_SECONDS = int(os.environ.get("PURCHASE_WINDOW_SECONDS", 600))
 MAX_ACTIVE_WINDOWS = int(os.environ.get("MAX_ACTIVE_WINDOWS", 5))
+HEARTBEAT_TIMEOUT_SECONDS = int(os.environ.get("QUEUE_HEARTBEAT_TIMEOUT_SECONDS", 20))
 CONCERT_URL = os.environ.get("CONCERT_SERVICE_URL", "http://localhost:5000")
 REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
@@ -178,6 +179,15 @@ def token_response(row):
     }
 
 
+def is_heartbeat_stale(row):
+    if row.get("status") != "WINDOW_GRANTED":
+        return False
+    updated_at_epoch = iso_to_epoch(row.get("updatedAt"))
+    if updated_at_epoch <= 0:
+        return False
+    return now_epoch() - updated_at_epoch > HEARTBEAT_TIMEOUT_SECONDS
+
+
 def publish_window_expired(row):
     try:
         mq_publish(
@@ -247,7 +257,19 @@ def reconcile_queue_state_locked(concert_id):
 
 def expire_granted_windows_locked(concert_id):
     reconcile_queue_state_locked(concert_id)
-    expired_users = redis_client.zrangebyscore(granted_key(concert_id), 0, now_epoch())
+    granted_users = redis_client.zrange(granted_key(concert_id), 0, -1)
+    if not granted_users:
+        return
+
+    expired_users = []
+    for user_id in granted_users:
+        row = get_entry(concert_id, user_id)
+        if not row or row["status"] != "WINDOW_GRANTED":
+            expired_users.append(user_id)
+            continue
+        expires_at_epoch = iso_to_epoch(row.get("sessionExpiresAt") or row.get("windowExpiresAt"))
+        if expires_at_epoch <= now_epoch() or is_heartbeat_stale(row):
+            expired_users.append(user_id)
     if not expired_users:
         return
 
@@ -258,6 +280,8 @@ def expire_granted_windows_locked(concert_id):
         if not row or row["status"] != "WINDOW_GRANTED":
             continue
         row["status"] = "EXPIRED"
+        row["sessionToken"] = None
+        row["sessionExpiresAt"] = None
         row["updatedAt"] = updated_at
         save_entry(row)
         publish_window_expired(row)
@@ -474,6 +498,47 @@ def validate_session():
             redis_client.zrem(granted_key(concert_id), user_id)
             publish_window_expired(row)
             return jsonify({"valid": False, "reason": "SESSION_EXPIRED"}), 410
+        if is_heartbeat_stale(row):
+            row["status"] = "EXPIRED"
+            row["sessionToken"] = None
+            row["sessionExpiresAt"] = None
+            row["updatedAt"] = now_iso()
+            save_entry(row)
+            redis_client.zrem(granted_key(concert_id), user_id)
+            publish_window_expired(row)
+            return jsonify({"valid": False, "reason": "SESSION_ABANDONED"}), 410
+        return jsonify(token_response(row))
+
+
+@app.route("/queue/v1/session/heartbeat", methods=["POST"])
+def heartbeat_session():
+    data = request.get_json() or {}
+    concert_id = data.get("concertId")
+    user_id = data.get("userId")
+    session_token = data.get("sessionToken")
+    if not all([concert_id, user_id, session_token]):
+        return err("MISSING_FIELDS", "concertId, userId, and sessionToken are required")
+
+    with queue_lock(concert_id):
+        reconcile_queue_state_locked(concert_id)
+        expire_granted_windows_locked(concert_id)
+        row = get_entry(concert_id, user_id)
+        if not row or row["status"] != "WINDOW_GRANTED":
+            return err("NO_ACTIVE_WINDOW", "No active purchase window for this user", 403)
+        if row.get("sessionToken") != session_token:
+            return err("INVALID_SESSION_TOKEN", "Queue session token is invalid", 403)
+        expires_at_epoch = iso_to_epoch(row.get("sessionExpiresAt") or row.get("windowExpiresAt"))
+        if expires_at_epoch <= now_epoch():
+            row["status"] = "EXPIRED"
+            row["sessionToken"] = None
+            row["sessionExpiresAt"] = None
+            row["updatedAt"] = now_iso()
+            save_entry(row)
+            redis_client.zrem(granted_key(concert_id), user_id)
+            publish_window_expired(row)
+            return err("SESSION_EXPIRED", "Purchase window has expired", 410)
+        row["updatedAt"] = now_iso()
+        save_entry(row)
         return jsonify(token_response(row))
 
 

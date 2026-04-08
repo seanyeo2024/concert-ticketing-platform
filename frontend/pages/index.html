@@ -118,6 +118,13 @@
   line-height: 0.95; font-weight: 900; letter-spacing: -0.02em;
   margin-bottom: 20px; font-style: italic;
 }
+.hero-featured-subtitle {
+  font-size: 0.95rem;
+  color: #aaa;
+  margin: -8px 0 18px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
 .hero-featured-meta { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 28px; }
 .hero-featured-meta span {
   font-size: 0.8rem; color: #aaa;
@@ -387,15 +394,14 @@
   <div class="hero-right">
     <div class="hero-featured-card" id="hero-featured">
       <div class="hero-featured-label">Featured Tonight</div>
-      <div class="hero-featured-name">Taylor<br>Swift</div>
-      <div class="hero-featured-meta">
-        <span>📅 Sep 14, 2025</span>
-        <span>📍 National Stadium</span>
-        <span>18,430 seats left</span>
+      <div class="hero-featured-name" id="hero-featured-name">Loading…</div>
+      <div class="hero-featured-subtitle" id="hero-featured-subtitle"></div>
+      <div class="hero-featured-meta" id="hero-featured-meta">
+        <span>Loading featured concert…</span>
       </div>
       <div class="hero-featured-footer">
-        <div class="hero-price">From <strong>SGD 98</strong></div>
-        <a href="concert-detail.html?id=CONC-000001" class="btn btn-yellow">Buy Now ↗</a>
+        <div class="hero-price" id="hero-featured-price">From <strong>—</strong></div>
+        <a href="#concerts" class="btn btn-yellow" id="hero-featured-link">Buy Now ↗</a>
       </div>
     </div>
   </div>
@@ -490,8 +496,10 @@ async function refreshConcerts(){
     allConcerts = next;
     document.getElementById('hero-concert-count').textContent = String(allConcerts.length).padStart(2,'0');
     await refreshAvailabilityCounts(allConcerts);
+    await refreshFeaturedConcert();
   } catch {
     if(isLoadingConcerts) allConcerts = [];
+    renderFeaturedConcert(null);
   } finally {
     isLoadingConcerts = false;
     applyFilters();
@@ -511,6 +519,96 @@ async function refreshAvailabilityCounts(concerts){
       concerts[idx].availableSeats = available;
     }
   });
+}
+
+function getUpcomingFeaturedCandidates(){
+  const now = new Date();
+  return allConcerts
+    .filter(c => String(c.status || '').toUpperCase() === 'ACTIVE')
+    .filter(c => {
+      const parsed = Util.parseDateParts(c.eventDate);
+      return parsed?.date && parsed.date.getTime() > now.getTime();
+    })
+    .filter(c => Number(c.availableSeats || 0) > 0)
+    .sort((a, b) => {
+      const aTime = Util.parseDateParts(a.eventDate)?.date?.getTime?.() || Number.MAX_SAFE_INTEGER;
+      const bTime = Util.parseDateParts(b.eventDate)?.date?.getTime?.() || Number.MAX_SAFE_INTEGER;
+      if(aTime !== bTime) return aTime - bTime;
+      const aSeats = Number(a.availableSeats || 0);
+      const bSeats = Number(b.availableSeats || 0);
+      if(aSeats !== bSeats) return aSeats - bSeats;
+      return String(a.artistName || a.name || '').localeCompare(String(b.artistName || b.name || ''));
+    });
+}
+
+async function refreshFeaturedConcert(){
+  const featured = getUpcomingFeaturedCandidates()[0] || null;
+  if(!featured){
+    renderFeaturedConcert(null);
+    return;
+  }
+
+  try{
+    const [seatRes, ticketRes] = await Promise.all([
+      API.concerts.seats(featured.concertId),
+      API.tickets.list(featured.concertId,'AVAILABLE'),
+    ]);
+    const categories = seatRes?.categories || [];
+    const availableTickets = ticketRes?.tickets || [];
+    const availableByCategory = availableTickets.reduce((acc, ticket) => {
+      const categoryId = ticket?.categoryId;
+      if(!categoryId) return acc;
+      acc[categoryId] = (acc[categoryId] || 0) + 1;
+      return acc;
+    }, {});
+    const prices = categories
+      .filter(category => Number(availableByCategory[category.categoryId] || 0) > 0)
+      .map(category => Number(category.basePrice))
+      .filter(price => Number.isFinite(price) && price >= 0);
+    featured.featuredFromPrice = prices.length ? Math.min(...prices) : null;
+  }catch{
+    featured.featuredFromPrice = null;
+  }
+
+  renderFeaturedConcert(featured);
+}
+
+function renderFeaturedConcert(concert){
+  const nameEl = document.getElementById('hero-featured-name');
+  const subtitleEl = document.getElementById('hero-featured-subtitle');
+  const metaEl = document.getElementById('hero-featured-meta');
+  const priceEl = document.getElementById('hero-featured-price');
+  const linkEl = document.getElementById('hero-featured-link');
+
+  if(!concert){
+    nameEl.innerHTML = 'No Featured<br>Concert';
+    subtitleEl.textContent = '';
+    metaEl.innerHTML = '<span>📅 Check back soon</span><span>📍 More events coming</span>';
+    priceEl.innerHTML = 'From <strong>—</strong>';
+    linkEl.href = '#concerts';
+    linkEl.textContent = 'Browse Lineup ↗';
+    return;
+  }
+
+  const displayName = (concert.name || concert.artistName || concert.concertId || 'Featured Concert')
+    .split(/\s+/)
+    .slice(0, 2)
+    .join('<br>');
+  const seatsLeft = Number(concert.availableSeats || 0).toLocaleString();
+  const fromPrice = Number.isFinite(Number(concert.featuredFromPrice))
+    ? `From <strong>${Util.formatPrice(concert.featuredFromPrice, concert.currency || 'SGD')}</strong>`
+    : 'From <strong>TBA</strong>';
+
+  nameEl.innerHTML = displayName;
+  subtitleEl.textContent = concert.artistName || '';
+  metaEl.innerHTML = [
+    `<span>📅 ${Util.formatDateShort(concert.eventDate)}</span>`,
+    `<span>📍 ${concert.venue || 'Venue TBA'}</span>`,
+    `<span>${seatsLeft} seats left</span>`
+  ].join('');
+  priceEl.innerHTML = fromPrice;
+  linkEl.href = `concert-detail.html?id=${concert.concertId}`;
+  linkEl.textContent = 'Buy Now ↗';
 }
 
 function startAutoRefresh(){
