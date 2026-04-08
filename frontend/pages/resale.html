@@ -191,22 +191,19 @@ input[type=range] { width: 100%; accent-color: var(--black); }
       <div class="filter-col">
         <div class="filter-title">Filter</div>
         <div class="filter-section">
+          <h4>Search</h4>
+          <input class="form-input" id="f-search" placeholder="Search by artist, concert, or category" oninput="applyFilters()">
+        </div>
+        <div class="filter-section">
           <h4>Concert</h4>
           <select class="form-select" id="f-concert" onchange="applyFilters()">
             <option value="">All Concerts</option>
-            <option value="CONC-000001">Taylor Swift</option>
-            <option value="CONC-000002">Coldplay</option>
-            <option value="CONC-000003">Bruno Mars</option>
-            <option value="CONC-000005">Ed Sheeran</option>
           </select>
         </div>
         <div class="filter-section">
           <h4>Category</h4>
-          <div class="filter-check">
-            <label><input type="checkbox" value="01" onchange="applyFilters()"> Cat 1 — Floor</label>
-            <label><input type="checkbox" value="02" onchange="applyFilters()"> Cat 2 — Lower</label>
-            <label><input type="checkbox" value="03" onchange="applyFilters()"> Cat 3 — Upper</label>
-            <label><input type="checkbox" value="04" onchange="applyFilters()"> Cat 4 — Gallery</label>
+          <div class="filter-check" id="f-categories">
+            <div class="text-sm text-muted">Loading categories…</div>
           </div>
         </div>
         <div class="filter-section">
@@ -221,11 +218,14 @@ input[type=range] { width: 100%; accent-color: var(--black); }
       <div class="listings-col">
         <div class="sort-row">
           <div class="sort-count"><span id="listing-count">—</span> listings</div>
-          <select id="f-sort" class="form-select" onchange="applyFilters()" style="width:auto;border-radius:100px;padding:8px 16px">
-            <option value="price-asc">Price: Low → High</option>
-            <option value="price-desc">Price: High → Low</option>
-            <option value="markup-asc">Markup: Lowest First</option>
-          </select>
+          <div class="flex-c gap-12">
+            <button class="btn btn-sm btn-outline" onclick="refreshResaleListings()" style="border-radius:100px">↻ Refresh</button>
+            <select id="f-sort" class="form-select" onchange="applyFilters()" style="width:auto;border-radius:100px;padding:8px 16px">
+              <option value="price-asc">Price: Low → High</option>
+              <option value="price-desc">Price: High → Low</option>
+              <option value="markup-asc">Markup: Lowest First</option>
+            </select>
+          </div>
         </div>
         <div id="listings-wrap">
           <div class="skel" style="height:88px;margin-bottom:10px;border-radius:var(--radius-lg)"></div>
@@ -306,25 +306,142 @@ let resaleSyncUnsub=null;
 const RESALE_REFRESH_MS=3000;
 const NAMES={'CONC-000001':'Taylor Swift','CONC-000002':'Coldplay','CONC-000003':'Bruno Mars','CONC-000005':'Ed Sheeran'};
 const EMOJIS={'CONC-000001':'🌟','CONC-000002':'🎸','CONC-000003':'🎷','CONC-000005':'🎵'};
-const BASE={'CAT-C001-01':388,'CAT-C001-02':248,'CAT-C001-03':158,'CAT-C001-04':98,'CAT-C002-01':298,'CAT-C002-02':188,'CAT-C002-03':118,'CAT-C002-04':68};
 let concertById={};
+let categoryMetaById={};
+
+function getConcertLabel(concert){
+  if(!concert) return '';
+  const artist=String(concert.artistName||'').trim();
+  const name=String(concert.name||concert.concertId||'').trim();
+  if(artist && name && artist.toLowerCase()!==name.toLowerCase()){
+    return `${artist} - ${name}`;
+  }
+  return artist || name;
+}
+
+function getCategoryMeta(categoryId){
+  return categoryMetaById[categoryId] || {};
+}
+
+function escapeAttr(value=''){
+  return String(value)
+    .replace(/&/g,'&amp;')
+    .replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
+function getCategoryLabel(categoryId){
+  const meta=getCategoryMeta(categoryId);
+  return meta.categoryName || categoryId || 'General';
+}
+
+function getBasePrice(categoryId){
+  const meta=getCategoryMeta(categoryId);
+  const base=Number(meta.basePrice);
+  return Number.isFinite(base) && base >= 0 ? base : 100;
+}
+
+function renderConcertOptions(){
+  const select=document.getElementById('f-concert');
+  const current=select.value;
+  const listingConcertIds=[...new Set(allListings.map(t=>t.concertId).filter(Boolean))];
+  const concerts=listingConcertIds
+    .map(id=>concertById[id] || { concertId:id, name:NAMES[id] || id })
+    .sort((a,b)=>getConcertLabel(a).localeCompare(getConcertLabel(b)));
+
+  select.innerHTML='<option value="">All Concerts</option>';
+  concerts.forEach(concert=>{
+    const option=document.createElement('option');
+    option.value=concert.concertId;
+    option.textContent=getConcertLabel(concert) || concert.concertId;
+    select.appendChild(option);
+  });
+
+  select.value=concerts.some(concert=>concert.concertId===current) ? current : '';
+}
+
+function renderCategoryFilters(){
+  const wrap=document.getElementById('f-categories');
+  const selected=new Set([...wrap.querySelectorAll('input:checked')].map(input=>input.value));
+  const categoryIds=[...new Set(allListings.map(t=>t.categoryId).filter(Boolean))]
+    .sort((a,b)=>getCategoryLabel(a).localeCompare(getCategoryLabel(b)));
+
+  if(!categoryIds.length){
+    wrap.innerHTML='<div class="text-sm text-muted">No categories available</div>';
+    return;
+  }
+
+  wrap.innerHTML=categoryIds.map(categoryId=>{
+    const label=getCategoryLabel(categoryId);
+    const checked=selected.has(categoryId) ? 'checked' : '';
+    return `<label><input type="checkbox" value="${escapeAttr(categoryId)}" onchange="applyFilters()" ${checked}> ${label}</label>`;
+  }).join('');
+}
+
+async function hydrateCategoryMeta(concertRows){
+  const concertIds=[...new Set(allListings.map(t=>t.concertId).filter(Boolean))];
+  const categoryMap={};
+  await Promise.allSettled(concertIds.map(async concertId=>{
+    const [seatsRes, pricesRes] = await Promise.allSettled([
+      API.concerts.seats(concertId),
+      API.pricing.list(concertId),
+    ]);
+    const seatCategories=(seatsRes.value?.categories||[]);
+    const prices=(pricesRes.value?.prices||[]);
+    const priceByCategory=Object.fromEntries(prices.map(price=>[price.categoryId, price]));
+
+    seatCategories.forEach(category=>{
+      categoryMap[category.categoryId]={
+        categoryId: category.categoryId,
+        categoryName: category.categoryName || category.categoryId,
+        basePrice: category.basePrice ?? priceByCategory[category.categoryId]?.basePrice ?? null,
+      };
+    });
+
+    prices.forEach(price=>{
+      if(!categoryMap[price.categoryId]){
+        categoryMap[price.categoryId]={
+          categoryId: price.categoryId,
+          categoryName: price.categoryId,
+          basePrice: price.basePrice ?? null,
+        };
+      }else if(categoryMap[price.categoryId].basePrice == null && price.basePrice != null){
+        categoryMap[price.categoryId].basePrice=price.basePrice;
+      }
+    });
+  }));
+
+  allListings.forEach(listing=>{
+    if(!listing?.categoryId) return;
+    if(categoryMap[listing.categoryId]) return;
+    categoryMap[listing.categoryId]={
+      categoryId: listing.categoryId,
+      categoryName: listing.categoryId,
+      basePrice: null,
+    };
+  });
+
+  categoryMetaById=categoryMap;
+}
 
 function setupResaleLiveSync(){
-  if(resaleSyncUnsub) resaleSyncUnsub();
-  resaleSyncUnsub=LiveSync.on(()=>{
-    if(document.visibilityState==='visible') load();
-  });
-  window.addEventListener('focus', ()=>load());
-  document.addEventListener('visibilitychange', ()=>{
-    if(document.visibilityState==='visible') load();
-  });
+  if(resaleSyncUnsub){
+    resaleSyncUnsub();
+    resaleSyncUnsub=null;
+  }
 }
 
 function startResaleAutoRefresh(){
-  clearInterval(resaleRefreshTimer);
-  resaleRefreshTimer=setInterval(()=>{
-    if(document.visibilityState==='visible') load();
-  }, RESALE_REFRESH_MS);
+  if(resaleRefreshTimer){
+    clearInterval(resaleRefreshTimer);
+    resaleRefreshTimer=null;
+  }
+}
+
+async function refreshResaleListings(){
+  await load();
+  toast('Resale listings refreshed','success',1800);
 }
 
 async function load(){
@@ -340,8 +457,14 @@ async function load(){
     const res=await Promise.allSettled(concerts.map(id=>API.resaleTicket.listings(id)));
     const live=res.flatMap(r=>r.value?.listings||[]);
     allListings=live;
+    await hydrateCategoryMeta(concertRows);
+    renderConcertOptions();
+    renderCategoryFilters();
   }catch{
     allListings=[];
+    categoryMetaById={};
+    renderConcertOptions();
+    renderCategoryFilters();
     toast('Resale services are unavailable. Please ensure backend containers are running.','warning',4500);
   }
   isLoadingListings = false;
@@ -350,9 +473,10 @@ async function load(){
 
 function updatePriceLabel(v){document.getElementById('price-label').textContent=`SGD ${v}`;}
 function clearFilters(){
+  document.getElementById('f-search').value='';
   document.getElementById('f-concert').value='';
   document.getElementById('f-price').value=600; updatePriceLabel(600);
-  document.querySelectorAll('.filter-check input').forEach(c=>c.checked=false);
+  document.querySelectorAll('#f-categories input').forEach(c=>c.checked=false);
   applyFilters();
 }
 
@@ -362,19 +486,33 @@ function applyFilters(){
     renderListings([]);
     return;
   }
+  const query=document.getElementById('f-search').value.trim().toLowerCase();
   const concert=document.getElementById('f-concert').value;
   const max=parseFloat(document.getElementById('f-price').value);
-  const cats=[...document.querySelectorAll('.filter-check input:checked')].map(c=>c.value);
+  const cats=[...document.querySelectorAll('#f-categories input:checked')].map(c=>c.value);
   const sort=document.getElementById('f-sort').value;
   let list=allListings.filter(t=>{
+    const concertMeta=concertById[t.concertId]||{};
+    const categoryLabel=getCategoryLabel(t.categoryId).toLowerCase();
+    const concertLabel=getConcertLabel(concertMeta).toLowerCase();
+    const artistLabel=String(concertMeta.artistName||'').toLowerCase();
     if(concert&&t.concertId!==concert)return false;
     if(t.resalePrice>max)return false;
-    if(cats.length){const last=t.categoryId?.split('-').pop();if(!cats.includes(last))return false;}
+    if(cats.length && !cats.includes(t.categoryId))return false;
+    if(query){
+      const haystack=[
+        concertLabel,
+        artistLabel,
+        categoryLabel,
+        String(t.seatNumber||'').toLowerCase(),
+      ].join(' ');
+      if(!haystack.includes(query)) return false;
+    }
     return true;
   });
   if(sort==='price-asc')list.sort((a,b)=>a.resalePrice-b.resalePrice);
   else if(sort==='price-desc')list.sort((a,b)=>b.resalePrice-a.resalePrice);
-  else list.sort((a,b)=>(a.resalePrice/(BASE[a.categoryId]||100))-(b.resalePrice/(BASE[b.categoryId]||100)));
+  else list.sort((a,b)=>(a.resalePrice/getBasePrice(a.categoryId))-(b.resalePrice/getBasePrice(b.categoryId)));
   document.getElementById('listing-count').textContent=list.length;
   renderListings(list);
 }
@@ -395,14 +533,15 @@ function renderListings(list){
     return;
   }
   wrap.innerHTML=list.map(t=>{
-    const base=BASE[t.categoryId]||100;
+    const base=getBasePrice(t.categoryId);
     const markup=((t.resalePrice-base)/base*100).toFixed(0);
     const mkCls=parseFloat(markup)>0?'markup-up':'markup-ok';
     const mkLabel=parseFloat(markup)>0?`+${markup}% above face`:'At face value';
     const isMine = user && t.ownerId===user.userId;
     const concertMeta=concertById[t.concertId]||{};
-    const concertName=concertMeta.name||NAMES[t.concertId]||t.concertId;
+    const concertName=getConcertLabel(concertMeta)||NAMES[t.concertId]||t.concertId;
     const concertDateTime=Util.formatConcertDateTime(concertMeta.eventDate);
+    const categoryLabel=getCategoryLabel(t.categoryId);
     const actionHtml = isMine
       ? `<button class="btn btn-sm btn-outline" disabled style="border-radius:100px;opacity:0.55;cursor:not-allowed">Your Listing</button>`
       : `<button class="btn btn-sm btn-black" onclick='openBuy(${JSON.stringify(t).replace(/'/g,"&#39;")})' style="border-radius:100px">Buy Now</button>`;
@@ -413,7 +552,7 @@ function renderListings(list){
         <div class="listing-meta">
           <span>📅 ${concertDateTime}</span>
           <span>🪑 ${t.seatNumber}</span>
-          <span>${t.categoryId?.split('-').slice(2).join('-')||'GEN'}</span>
+          <span>${categoryLabel}</span>
           <span class="${mkCls}">${mkLabel}</span>
           ${isMine ? '<span class="markup-ok">Your listing</span>' : ''}
         </div>
@@ -439,7 +578,7 @@ function proceedToBuyModal(){
   pendingListing=null;
   const concertMeta=concertById[selectedListing.concertId]||{};
   closeModal('resale-disclaimer-modal');
-  document.getElementById('buy-sub').textContent=`${concertMeta.name||NAMES[selectedListing.concertId]||selectedListing.concertId}`;
+  document.getElementById('buy-sub').textContent=`${getConcertLabel(concertMeta)||NAMES[selectedListing.concertId]||selectedListing.concertId}`;
   document.getElementById('b-ticket').textContent=selectedListing.ticketId;
   document.getElementById('b-seat').textContent=selectedListing.seatNumber;
   document.getElementById('b-event-time').textContent=Util.formatConcertDateTime(concertMeta.eventDate);
