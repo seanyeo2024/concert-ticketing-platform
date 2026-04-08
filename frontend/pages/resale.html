@@ -208,7 +208,7 @@ input[type=range] { width: 100%; accent-color: var(--black); }
         </div>
         <div class="filter-section">
           <h4>Max Price (SGD)</h4>
-          <input type="range" id="f-price" min="0" max="600" value="600" oninput="updatePriceLabel(this.value);applyFilters()">
+          <input type="range" id="f-price" min="0" max="600" value="600" oninput="markPriceTouched();updatePriceLabel(this.value);applyFilters()">
           <div class="flex-sb mt-8 text-sm text-muted"><span>SGD 0</span><span id="price-label">SGD 600</span></div>
         </div>
         <button class="btn btn-sm btn-outline w-full mt-16" onclick="clearFilters()" style="border-radius:100px">Clear All</button>
@@ -262,6 +262,10 @@ input[type=range] { width: 100%; accent-color: var(--black); }
       <label class="form-label" style="color:#666">Phone Number For Ticket SMS</label>
       <input class="form-input" id="buy-phone" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1);color:var(--cream)" placeholder="+6596604136" autocomplete="tel">
     </div>
+    <div class="form-group">
+      <label class="form-label" style="color:#666">Email For Ticket Notification</label>
+      <input class="form-input" id="buy-email" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1);color:var(--cream)" placeholder="you@example.com" autocomplete="email">
+    </div>
     <button class="btn btn-yellow w-full btn-lg" id="buy-btn" onclick="confirmBuy()" style="border-radius:var(--radius)">Confirm Purchase →</button>
     <div style="font-size:0.65rem;text-align:center;color:#555;margin-top:10px;letter-spacing:0.04em">🔒 Secured by Stripe · QR delivered instantly</div>
   </div>
@@ -307,11 +311,37 @@ let allListings=[],selectedListing=null,pendingListing=null;
 let isLoadingListings = true;
 let resaleRefreshTimer=null;
 let resaleSyncUnsub=null;
+let contactPrefill=null;
 const RESALE_REFRESH_MS=3000;
 const NAMES={'CONC-000001':'Taylor Swift','CONC-000002':'Coldplay','CONC-000003':'Bruno Mars','CONC-000005':'Ed Sheeran'};
 const EMOJIS={'CONC-000001':'🌟','CONC-000002':'🎸','CONC-000003':'🎷','CONC-000005':'🎵'};
 let concertById={};
 let categoryMetaById={};
+let priceFilterTouched=false;
+
+function markPriceTouched(){
+  priceFilterTouched=true;
+}
+
+function getDynamicMaxPrice(){
+  const prices=allListings
+    .map(listing=>Number(listing?.resalePrice))
+    .filter(value=>Number.isFinite(value) && value >= 0);
+  if(!prices.length) return 600;
+  return Math.max(600, Math.ceil(Math.max(...prices) / 10) * 10);
+}
+
+function syncPriceFilterBounds({ resetValue=false }={}){
+  const slider=document.getElementById('f-price');
+  const maxPrice=getDynamicMaxPrice();
+  slider.max=String(maxPrice);
+  if(resetValue || !priceFilterTouched){
+    slider.value=String(maxPrice);
+  }else if(Number(slider.value) > maxPrice){
+    slider.value=String(maxPrice);
+  }
+  updatePriceLabel(slider.value);
+}
 
 function getConcertLabel(concert){
   if(!concert) return '';
@@ -464,11 +494,13 @@ async function load(){
     await hydrateCategoryMeta(concertRows);
     renderConcertOptions();
     renderCategoryFilters();
+    syncPriceFilterBounds();
   }catch{
     allListings=[];
     categoryMetaById={};
     renderConcertOptions();
     renderCategoryFilters();
+    syncPriceFilterBounds();
     toast('Resale services are unavailable. Please ensure backend containers are running.','warning',4500);
   }
   isLoadingListings = false;
@@ -479,7 +511,8 @@ function updatePriceLabel(v){document.getElementById('price-label').textContent=
 function clearFilters(){
   document.getElementById('f-search').value='';
   document.getElementById('f-concert').value='';
-  document.getElementById('f-price').value=600; updatePriceLabel(600);
+  priceFilterTouched=false;
+  syncPriceFilterBounds({ resetValue:true });
   document.querySelectorAll('#f-categories input').forEach(c=>c.checked=false);
   applyFilters();
 }
@@ -496,12 +529,13 @@ function applyFilters(){
   const cats=[...document.querySelectorAll('#f-categories input:checked')].map(c=>c.value);
   const sort=document.getElementById('f-sort').value;
   let list=allListings.filter(t=>{
+    const resalePrice=Number(t.resalePrice);
     const concertMeta=concertById[t.concertId]||{};
     const categoryLabel=getCategoryLabel(t.categoryId).toLowerCase();
     const concertLabel=getConcertLabel(concertMeta).toLowerCase();
     const artistLabel=String(concertMeta.artistName||'').toLowerCase();
     if(concert&&t.concertId!==concert)return false;
-    if(t.resalePrice>max)return false;
+    if(Number.isFinite(resalePrice) && resalePrice>max)return false;
     if(cats.length && !cats.includes(t.categoryId))return false;
     if(query){
       const haystack=[
@@ -514,9 +548,9 @@ function applyFilters(){
     }
     return true;
   });
-  if(sort==='price-asc')list.sort((a,b)=>a.resalePrice-b.resalePrice);
-  else if(sort==='price-desc')list.sort((a,b)=>b.resalePrice-a.resalePrice);
-  else list.sort((a,b)=>(a.resalePrice/getBasePrice(a.categoryId))-(b.resalePrice/getBasePrice(b.categoryId)));
+  if(sort==='price-asc')list.sort((a,b)=>Number(a.resalePrice)-Number(b.resalePrice));
+  else if(sort==='price-desc')list.sort((a,b)=>Number(b.resalePrice)-Number(a.resalePrice));
+  else list.sort((a,b)=>(Number(a.resalePrice)/getBasePrice(a.categoryId))-(Number(b.resalePrice)/getBasePrice(b.categoryId)));
   document.getElementById('listing-count').textContent=list.length;
   renderListings(list);
 }
@@ -576,8 +610,29 @@ function openBuy(listing){
   openModal('resale-disclaimer-modal');
 }
 
-function proceedToBuyModal(){
+async function ensureContactPrefill(){
+  if(contactPrefill) return contactPrefill;
+  const cachedContact=ContactProfile.readCached(user?.userId)||{};
+  try{
+    const remoteContact=await ContactProfile.fetch(user);
+    contactPrefill={
+      email:(remoteContact?.email||cachedContact?.email||user?.contactEmail||user?.email||'').trim(),
+      phoneNumber:(remoteContact?.phoneNumber||cachedContact?.phoneNumber||user?.contactPhone||user?.phone||'').trim(),
+      smsOptIn:Number(remoteContact?.smsOptIn||cachedContact?.smsOptIn||0),
+    };
+  }catch{
+    contactPrefill={
+      email:(cachedContact?.email||user?.contactEmail||user?.email||'').trim(),
+      phoneNumber:(cachedContact?.phoneNumber||user?.contactPhone||user?.phone||'').trim(),
+      smsOptIn:Number(cachedContact?.smsOptIn||0),
+    };
+  }
+  return contactPrefill;
+}
+
+async function proceedToBuyModal(){
   if(!pendingListing)return;
+  const profileContact=await ensureContactPrefill();
   selectedListing=pendingListing;
   pendingListing=null;
   const concertMeta=concertById[selectedListing.concertId]||{};
@@ -588,7 +643,9 @@ function proceedToBuyModal(){
   document.getElementById('b-event-time').textContent=Util.formatConcertDateTime(concertMeta.eventDate);
   document.getElementById('b-price').textContent=`SGD ${selectedListing.resalePrice}`;
   const phoneInput=document.getElementById('buy-phone');
-  if(phoneInput) phoneInput.value='';
+  const emailInput=document.getElementById('buy-email');
+  if(phoneInput) phoneInput.value=profileContact?.phoneNumber||'';
+  if(emailInput) emailInput.value=profileContact?.email||user?.email||'';
   document.getElementById('buy-alert').innerHTML='';
   openModal('buy-modal');
 }
@@ -604,17 +661,34 @@ function toE164Phone(value=''){
   return null;
 }
 
+function isValidEmail(value=''){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value||'').trim());
+}
+
 async function confirmBuy(){
   if(!selectedListing)return;
   const rawPhone=document.getElementById('buy-phone')?.value||'';
+  const rawEmail=(document.getElementById('buy-email')?.value||'').trim();
   const phoneNumber=toE164Phone(rawPhone);
   if(!phoneNumber){
     document.getElementById('buy-alert').innerHTML='<div class="alert alert-danger">Enter a valid phone number in E.164 format (for SG, use +65XXXXXXXX or XXXXXXXX).</div>';
     return;
   }
+  if(!isValidEmail(rawEmail)){
+    document.getElementById('buy-alert').innerHTML='<div class="alert alert-danger">Enter a valid email address for resale buyer notifications.</div>';
+    return;
+  }
   const btn=document.getElementById('buy-btn'); btn.disabled=true; btn.textContent='Processing…';
   try{
-    const result=await API.resaleTicket.purchase({buyerId:user.userId,ticketId:selectedListing.ticketId,concertId:selectedListing.concertId,stripeToken:'tok_visa',phoneNumber});
+    const result=await API.resaleTicket.purchase({
+      buyerId:user.userId,
+      ticketId:selectedListing.ticketId,
+      concertId:selectedListing.concertId,
+      stripeToken:'tok_visa',
+      phoneNumber,
+      contactEmail:rawEmail,
+      toEmail:rawEmail,
+    });
     LiveSync.emit('resale-purchased', {
       ticketId: selectedListing.ticketId,
       concertId: selectedListing.concertId,
@@ -637,6 +711,7 @@ async function confirmBuy(){
       ? "The resale service replaced the seller's QR and issued a fresh QR for your ownership record."
       : 'The ticket was transferred. Refresh My Tickets if the QR preview does not appear immediately.';
     qrNote.textContent += ` SMS was sent to ${phoneNumber}.`;
+    qrNote.textContent += ` Email was sent to ${rawEmail}.`;
     allListings=allListings.filter(t=>t.ticketId!==selectedListing.ticketId);
     applyFilters();
   }catch(e){
