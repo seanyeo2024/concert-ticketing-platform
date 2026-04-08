@@ -1,5 +1,5 @@
 /* ============================================================
-   api.js — Solstitix Shared JS Layer
+   api.js — Soltistix Shared JS Layer
    Demo-first: all calls fall back to seed data if service down
    ============================================================ */
 
@@ -209,8 +209,9 @@ const API = (() => {
       byConcert:async id => { try { return await req(`${BASE.payment}/payment/concert/${id}`); } catch { return { payments: SEED.payments.filter(p=>p.concertId===id) }; } },
     },
     qr: {
-      generate:     async p  => { try { return await req(`${BASE.qr}/qr`,'POST',p); } catch { return { qrId:`QR-DEMO`, qrData:`Solstitix|${p.ticketId}|${p.userId}|${p.concertId}|demo1234`, isValid:true }; } },
-      get:          async id => { try { return await req(`${BASE.qr}/qr/${id}`); } catch { return { qrData:`Solstitix|${id}|DEMO|CONC|demo1234`, isValid:true }; } },
+      generate:     async p  => { try { return await req(`${BASE.qr}/qr`,'POST',p); } catch { return { qrId:`QR-DEMO`, qrData:`Soltistix|${p.ticketId}|${p.userId}|${p.concertId}|demo1234`, isValid:true }; } },
+      get:          async id => { try { return await req(`${BASE.qr}/qr/${id}`); } catch { return { qrData:`Soltistix|${id}|DEMO|CONC|demo1234`, isValid:true }; } },
+      scan:         p        => req(`${BASE.qr}/scan`,'POST',p),
       invalidate:   (id,p)   => req(`${BASE.qr}/qr/${id}/invalidate`,'PUT',p).catch(()=>{}),
       invalidateAll:cid      => req(`${BASE.qr}/qr/concert/${cid}/invalidate-all`,'PUT',{}).catch(()=>{}),
     },
@@ -290,7 +291,7 @@ function renderNav(active='') {
   const homeHref = Auth.homePage();
   const navItems = user?.role==='admin'
     ? [
-        { href:'admin.html', label:'ADMIN', key:'admin' },
+        { href:'admin.html#scan-qr', label:'SCAN QR CODE', key:'admin' },
       ]
     : [
         { href:'index.html',      label:'LINEUP',     key:'concerts' },
@@ -299,12 +300,12 @@ function renderNav(active='') {
         { href:'admin.html',      label:'ADMIN',      key:'admin',    adminOnly:true },
       ].filter(l=>(!l.auth||user)&&(!l.adminOnly||user?.role==='admin'));
   const links = navItems
-   .map(l=>`<a href="${l.href}" class="nav-link ${active===l.key?'active':''}">${l.label}</a>`)
+   .map(l=>`<a href="${l.href}" class="nav-link ${active===l.key?'active':''} ${user?.role==='admin'&&l.key==='admin'?'nav-link-scan':''}">${l.label}</a>`)
    .join('');
   const mobileLinks = [
     ...navItems,
     ...(user ? [{ href:'profile.html', label:'PROFILE', key:'profile' }] : []),
-  ].map(l=>`<a href="${l.href}" class="nav-mobile-link ${active===l.key?'active':''}">${l.label}</a>`)
+  ].map(l=>`<a href="${l.href}" class="nav-mobile-link ${active===l.key?'active':''} ${user?.role==='admin'&&l.key==='admin'?'nav-mobile-link-scan':''}">${l.label}</a>`)
    .join('');
   const userArea = user
     ? `<div class="nav-user-meta">
@@ -323,7 +324,7 @@ function renderNav(active='') {
   const el = document.getElementById('navbar');
   if (el) {
     el.classList.remove('menu-open');
-    el.innerHTML = `<div class="container"><a href="${homeHref}" class="nav-brand"><img src="../assets/logo.svg" alt="Solstitix logo" class="nav-brand-logo"> <span>Solstitix</span></a><nav class="nav-links">${links}</nav><div class="nav-actions">${userArea}</div><button class="nav-menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false"><span></span></button><div class="nav-mobile-menu"><nav class="nav-mobile-links">${mobileLinks}</nav>${mobileAccountArea}</div></div>`;
+    el.innerHTML = `<div class="container"><a href="${homeHref}" class="nav-brand"><img src="../assets/logo.svg" alt="Soltistix logo" class="nav-brand-logo"> <span>Soltistix</span></a><nav class="nav-links">${links}</nav><div class="nav-actions">${userArea}</div><button class="nav-menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false"><span></span></button><div class="nav-mobile-menu"><nav class="nav-mobile-links">${mobileLinks}</nav>${mobileAccountArea}</div></div>`;
     const toggle = el.querySelector('.nav-menu-toggle');
     const closeMenu = () => {
       el.classList.remove('menu-open');

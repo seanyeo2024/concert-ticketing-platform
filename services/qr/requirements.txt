@@ -4,3 +4,4 @@ mysql-connector-python==8.4.0
 python-dotenv==1.0.1
 qrcode==7.4.2
 pypng==0.20220715.0
+requests==2.32.3
