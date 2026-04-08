@@ -619,12 +619,14 @@ def compose_sms_message(event_type, data):
 
     if event_type == "concert.cancelled":
         refund_amount = str(_value(data, 'price', _value(data, 'amount'))).lstrip('$').strip()
+        concert_short = str(concert_name)[:40]
+        ticket_short = str(ticket_id)[:24]
+        seat_short = str(seat_number)[:18]
         return (
-            f"⚠️ Solstitix: {concert_name} cancelled. "
-            f"Ticket {ticket_id} ({seat_number}). "
-            f"Refund ${refund_amount} in 3-5 working days. "
-            f"Reason: {_value(data, 'cancellationReason', _value(data, 'reason'))}. "
-            f"{footer}"
+            f"Solstitix update: {concert_short} cancelled. "
+            f"Ticket {ticket_short}, Seat {seat_short}. "
+            f"Refund SGD {refund_amount} in 3-5 working days. "
+            f"Check gmail for details."
         )
 
     if event_type == "queue.window.granted":
