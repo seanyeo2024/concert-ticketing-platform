@@ -307,13 +307,39 @@ body {
     <!-- Payments -->
     <div class="panel" id="panel-payments">
       <div class="section-label mb-24">Payment Records</div>
-      <div class="form-group" style="max-width:320px"><label class="form-label">Select Concert</label>
-        <select class="form-select" id="p-concert" onchange="loadConcertPays()">
-          <option value="">Select…</option>
-          <option value="CONC-000001">Taylor Swift</option>
-          <option value="CONC-000002">Coldplay</option>
-          <option value="CONC-000004">BTS (Cancelled)</option>
-        </select>
+      <div class="card mb-16" style="padding:18px 20px;background:rgba(255,214,10,0.08);border:2px solid rgba(255,214,10,0.22)">
+        <div style="font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:#8a6d00;font-weight:800">Primary Sales Scope</div>
+        <div style="margin-top:6px;font-size:0.92rem;color:#333;line-height:1.6">
+          This tab shows platform primary ticket sales only. Buyer-to-buyer resale charges and resale payouts are excluded.
+        </div>
+      </div>
+      <div class="flex-c gap-24" id="payment-filter-row" style="margin-bottom:24px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" id="p-concert-wrap" style="margin:0;min-width:260px;max-width:520px;flex:1 1 420px"><label class="form-label">Select Concert</label>
+          <select class="form-select" id="p-concert" onchange="loadConcertPays()">
+            <option value="">All concerts</option>
+          </select>
+        </div>
+        <div class="form-group" id="p-range-wrap" style="margin:0;min-width:220px;max-width:420px;flex:1 1 320px"><label class="form-label">Date Range</label>
+          <select class="form-select" id="p-range" onchange="handlePaymentRangeChange()">
+            <option value="week">This week</option>
+            <option value="month">This month</option>
+            <option value="year">This year</option>
+            <option value="custom">Custom range</option>
+          </select>
+        </div>
+        <div class="form-group hidden" id="p-custom-from-wrap" style="margin:0;min-width:200px;max-width:260px;flex:1 1 220px">
+          <label class="form-label">From</label>
+          <input class="form-input" type="date" id="p-from" onchange="loadConcertPays()">
+        </div>
+        <div class="form-group hidden" id="p-custom-to-wrap" style="margin:0;min-width:200px;max-width:260px;flex:1 1 220px">
+          <label class="form-label">To</label>
+          <input class="form-input" type="date" id="p-to" onchange="loadConcertPays()">
+        </div>
+      </div>
+      <div class="kpi-row" id="payment-kpis">
+        <div class="kpi"><div class="kpi-val" id="p-kpi-week-sales">—</div><div class="kpi-key" id="p-kpi-week-sales-key">Tickets Sold This Week</div><div class="kpi-sub" id="p-kpi-week-sales-sub">All concerts</div></div>
+        <div class="kpi"><div class="kpi-val" id="p-kpi-week-gmv">—</div><div class="kpi-key" id="p-kpi-week-gmv-key">SGD This Week</div><div class="kpi-sub" id="p-kpi-week-gmv-sub">Primary charges only</div></div>
+        <div class="kpi"><div class="kpi-val" id="p-kpi-aov">—</div><div class="kpi-key">Avg Order Value</div><div class="kpi-sub" id="p-kpi-aov-sub">Successful primary sales</div></div>
       </div>
       <div id="pays-list"></div>
     </div>
@@ -363,6 +389,7 @@ function showPanel(n,el){
     loadQueueConcertOptions();
     startQueueMonitorAutoRefresh();
   }
+  if(n==='payments') loadPaymentConcertOptions();
 }
 
 async function mapWithConcurrency(items, worker, limit=4){
@@ -1017,14 +1044,236 @@ async function loadQueueConcertOptions(selectedId=''){
   }
 }
 
+function paymentDateValue(payment){
+  const parsed=Util.parseDateParts(payment?.createdAt||payment?.created_at||payment?.timestamp||null);
+  return parsed?.date || null;
+}
+
+function startOfWeek(date){
+  const d=new Date(date);
+  const day=d.getDay();
+  const diff=(day+6)%7;
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate()-diff);
+  return d;
+}
+
+function startOfMonth(date){
+  const d=new Date(date);
+  d.setHours(0,0,0,0);
+  d.setDate(1);
+  return d;
+}
+
+function startOfYear(date){
+  const d=new Date(date);
+  d.setHours(0,0,0,0);
+  d.setMonth(0,1);
+  return d;
+}
+
+function endOfDay(date){
+  const d=new Date(date);
+  d.setHours(23,59,59,999);
+  return d;
+}
+
+function getPaymentRangeValue(){
+  return document.getElementById('p-range')?.value || 'week';
+}
+
+function getPaymentRangeLabel(range){
+  if(range==='month') return 'This Month';
+  if(range==='year') return 'This Year';
+  if(range==='custom') return 'Custom Range';
+  return 'This Week';
+}
+
+function getPaymentDateBounds(range, now=new Date()){
+  if(range==='month') return { start:startOfMonth(now), end:now, valid:true };
+  if(range==='year') return { start:startOfYear(now), end:now, valid:true };
+  if(range==='custom'){
+    const fromValue=document.getElementById('p-from')?.value || '';
+    const toValue=document.getElementById('p-to')?.value || '';
+    if(!fromValue || !toValue) return { valid:false, message:'Pick both From and To dates.' };
+    const start=new Date(`${fromValue}T00:00:00`);
+    const end=endOfDay(new Date(`${toValue}T00:00:00`));
+    if(Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return { valid:false, message:'Enter a valid custom date range.' };
+    if(start > end) return { valid:false, message:'From date must be on or before To date.' };
+    return { start, end, valid:true };
+  }
+  return { start:startOfWeek(now), end:now, valid:true };
+}
+
+function paymentFallsWithinRange(date, bounds){
+  if(!date || !bounds?.valid || !bounds.start || !bounds.end) return false;
+  return date >= bounds.start && date <= bounds.end;
+}
+
+function handlePaymentRangeChange(){
+  const isCustom=getPaymentRangeValue()==='custom';
+  const filterRow=document.getElementById('payment-filter-row');
+  const concertWrap=document.getElementById('p-concert-wrap');
+  const rangeWrap=document.getElementById('p-range-wrap');
+  const fromWrap=document.getElementById('p-custom-from-wrap');
+  const toWrap=document.getElementById('p-custom-to-wrap');
+  if(filterRow) filterRow.style.gap=isCustom ? '16px' : '24px';
+  if(concertWrap) concertWrap.style.flex=isCustom ? '1 1 280px' : '1 1 420px';
+  if(concertWrap) concertWrap.style.maxWidth=isCustom ? '420px' : '520px';
+  if(rangeWrap) rangeWrap.style.flex=isCustom ? '1 1 240px' : '1 1 320px';
+  if(rangeWrap) rangeWrap.style.maxWidth=isCustom ? '320px' : '420px';
+  if(fromWrap) fromWrap.style.flex=isCustom ? '1 1 180px' : '1 1 220px';
+  if(fromWrap) fromWrap.style.maxWidth=isCustom ? '220px' : '260px';
+  if(toWrap) toWrap.style.flex=isCustom ? '1 1 180px' : '1 1 220px';
+  if(toWrap) toWrap.style.maxWidth=isCustom ? '220px' : '260px';
+  document.getElementById('p-custom-from-wrap')?.classList.toggle('hidden', !isCustom);
+  document.getElementById('p-custom-to-wrap')?.classList.toggle('hidden', !isCustom);
+  loadConcertPays();
+}
+
+function getPrimaryPlatformPayments(payments=[]){
+  return payments.filter(p=>
+    String(p?.type||'').toUpperCase()==='PURCHASE'
+    && String(p?.status||'').toUpperCase()==='SUCCESS'
+  );
+}
+
+function setPaymentKpis({
+  weekSales='—',
+  weekSalesSub='All concerts',
+  weekRevenue='—',
+  weekRevenueSub='Primary charges only',
+  weekSalesKey='Tickets Sold This Week',
+  weekRevenueKey='SGD This Week',
+  avgOrder='—',
+  avgOrderSub='Successful primary sales',
+}={}){
+  document.getElementById('p-kpi-week-sales-key').textContent=weekSalesKey;
+  document.getElementById('p-kpi-week-gmv-key').textContent=weekRevenueKey;
+  document.getElementById('p-kpi-week-sales').textContent=weekSales;
+  document.getElementById('p-kpi-week-sales-sub').textContent=weekSalesSub;
+  document.getElementById('p-kpi-week-gmv').textContent=weekRevenue;
+  document.getElementById('p-kpi-week-gmv-sub').textContent=weekRevenueSub;
+  document.getElementById('p-kpi-aov').textContent=avgOrder;
+  document.getElementById('p-kpi-aov-sub').textContent=avgOrderSub;
+}
+
+async function fetchPrimaryPaymentsByScope(concertId=''){
+  if(concertId){
+    const result=await API.payment.byConcert(concertId);
+    return getPrimaryPlatformPayments(result.payments||[]);
+  }
+
+  const concertResult=API.concerts.listStrict ? await API.concerts.listStrict() : await API.concerts.list();
+  const concerts=(concertResult.concerts||concertResult||[]).filter(c=>c && c.concertId);
+  const paymentResults=await mapWithConcurrency(concerts, c=>API.payment.byConcert(c.concertId), 4);
+  return paymentResults.flatMap(result=>getPrimaryPlatformPayments(result?.payments||[]));
+}
+
+async function loadPaymentConcertOptions(){
+  const sel=document.getElementById('p-concert');
+  const panel=document.getElementById('pays-list');
+  const previous=sel.value;
+
+  sel.innerHTML='<option value="">Loading concerts…</option>';
+  const isCustom=getPaymentRangeValue()==='custom';
+  document.getElementById('p-custom-from-wrap')?.classList.toggle('hidden', !isCustom);
+  document.getElementById('p-custom-to-wrap')?.classList.toggle('hidden', !isCustom);
+  setPaymentKpis();
+  panel.innerHTML='<div class="skel" style="height:200px;border-radius:var(--radius-lg)"></div>';
+
+  try{
+    const d=API.concerts.listStrict ? await API.concerts.listStrict() : await API.concerts.list();
+    const concerts=(d.concerts||d||[])
+      .filter(c=>c && c.concertId)
+      .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+
+    sel.innerHTML='<option value="">All concerts</option>';
+    concerts.forEach(c=>{
+      const option=document.createElement('option');
+      option.value=c.concertId;
+      option.textContent=`${c.name} (${c.concertId})`;
+      sel.appendChild(option);
+    });
+
+    if(!concerts.length){
+      panel.innerHTML=`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No concerts available</div>`;
+      return;
+    }
+
+    sel.value=concerts.some(c=>c.concertId===previous) ? previous : '';
+    await loadConcertPays();
+  }catch(e){
+    sel.innerHTML='<option value="">All concerts</option>';
+    panel.innerHTML=`<div class="alert alert-danger">Could not load concerts for Payments. ${e.message||'Please try again.'}</div>`;
+  }
+}
+
 async function loadConcertPays(){
-  const id=document.getElementById('p-concert').value; if(!id)return;
+  const id=document.getElementById('p-concert').value;
   document.getElementById('pays-list').innerHTML='<div class="skel" style="height:200px;border-radius:var(--radius-lg)"></div>';
-  const d=await API.payment.byConcert(id);
-  const pays=d.payments||[];
-  document.getElementById('pays-list').innerHTML=pays.length
-    ?`<div class="table-wrap"><table><thead><tr><th>Payment ID</th><th>User</th><th>Type</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${pays.map(p=>`<tr><td class="text-sm">${p.paymentId}</td><td class="text-sm">${p.userId}</td><td>${Util.tag(p.type)}</td><td>SGD ${p.amount}</td><td>${Util.tag(p.status)}</td><td class="text-xs text-muted">${Util.formatDateShort(p.createdAt)}</td></tr>`).join('')}</tbody></table></div>`
-    :`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">No payments</div>`;
+
+  try{
+    const scopeLabel=id ? 'Selected concert' : 'All concerts';
+    const range=getPaymentRangeValue();
+    const rangeLabel=getPaymentRangeLabel(range);
+    const bounds=getPaymentDateBounds(range);
+    if(!bounds.valid){
+      setPaymentKpis({
+        weekSalesKey:`Tickets Sold ${rangeLabel}`,
+        weekRevenueKey:`SGD ${rangeLabel}`,
+        weekSales:'—',
+        weekSalesSub:bounds.message || 'Could not apply date range',
+        weekRevenue:'—',
+        weekRevenueSub:bounds.message || 'Could not apply date range',
+        avgOrder:'—',
+        avgOrderSub:bounds.message || 'Could not apply date range',
+      });
+      document.getElementById('pays-list').innerHTML=`<div class="alert alert-warning">${bounds.message||'Could not apply date range.'}</div>`;
+      return;
+    }
+    const pays=(await fetchPrimaryPaymentsByScope(id))
+      .sort((a,b)=>(paymentDateValue(b)?.getTime()||0)-(paymentDateValue(a)?.getTime()||0));
+    const filteredPays=pays.filter(p=>paymentFallsWithinRange(paymentDateValue(p), bounds));
+    let weekSales=0;
+    let weekRevenue=0;
+    let totalRevenue=0;
+
+    filteredPays.forEach(p=>{
+      const amount=Number(p.amount||0);
+      totalRevenue += amount;
+      weekSales += 1;
+      weekRevenue += amount;
+    });
+
+    const avgOrder=filteredPays.length ? totalRevenue / filteredPays.length : 0;
+    setPaymentKpis({
+      weekSalesKey:`Tickets Sold ${rangeLabel}`,
+      weekRevenueKey:`SGD ${rangeLabel}`,
+      weekSales:String(weekSales),
+      weekSalesSub:weekSales ? `${scopeLabel} · primary tickets sold in ${rangeLabel.toLowerCase()}` : `${scopeLabel} · no primary tickets sold in ${rangeLabel.toLowerCase()}`,
+      weekRevenue:weekRevenue ? `$${Math.round(weekRevenue)}` : '$0',
+      weekRevenueSub:weekRevenue ? `${scopeLabel} · sum of primary sales in ${rangeLabel.toLowerCase()}` : `${scopeLabel} · no primary sales in ${rangeLabel.toLowerCase()}`,
+      avgOrder:filteredPays.length ? `$${Math.round(avgOrder)}` : '$0',
+      avgOrderSub:filteredPays.length ? `${scopeLabel} · ${filteredPays.length} primary sale(s) in ${rangeLabel.toLowerCase()}` : `${scopeLabel} · no successful primary sales in ${rangeLabel.toLowerCase()}`,
+    });
+
+    document.getElementById('pays-list').innerHTML=filteredPays.length
+      ?`<div class="table-wrap"><table><thead><tr>${id?'':'<th>Concert</th>'}<th>Payment ID</th><th>User</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${filteredPays.map(p=>`<tr>${id?'':`<td class="text-sm">${p.concertId}</td>`}<td class="text-sm">${p.paymentId}</td><td class="text-sm">${p.userId}</td><td>SGD ${Number(p.amount||0).toFixed(2)}</td><td>${Util.tag(p.status)}</td><td class="text-xs text-muted">${Util.formatDate(p.createdAt)}</td></tr>`).join('')}</tbody></table></div>`
+      :`<div style="text-align:center;padding:40px;font-family:var(--font-display);font-size:1.5rem;font-weight:900;color:#aaa">${id?`No primary platform sales found for this concert in ${rangeLabel.toLowerCase()}`:`No primary platform sales found across all concerts in ${rangeLabel.toLowerCase()}`}</div>`;
+  }catch(e){
+    setPaymentKpis({
+      weekSalesKey:`Tickets Sold ${getPaymentRangeLabel(getPaymentRangeValue())}`,
+      weekRevenueKey:`SGD ${getPaymentRangeLabel(getPaymentRangeValue())}`,
+      weekSales:'—',
+      weekSalesSub:'Could not load payments',
+      weekRevenue:'—',
+      weekRevenueSub:'Could not load payments',
+      avgOrder:'—',
+      avgOrderSub:'Could not load payments',
+    });
+    document.getElementById('pays-list').innerHTML=`<div class="alert alert-danger">Could not load payment history. ${e.message||'Please try again.'}</div>`;
+  }
 }
 
 async function loadConfigPreview(){
