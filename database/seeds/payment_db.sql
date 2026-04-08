@@ -36,10 +36,5 @@ CREATE TABLE payment_record (
   KEY idx_payment_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Sample seed data
-INSERT INTO payment_record
-  (paymentId, userId, ticketId, concertId, type, amount, currency, status, stripePaymentIntentId, createdAt)
-VALUES
-  ('PAY-40001', 'USR-0042', 'TKT-10003', 'CONC-000001', 'PURCHASE', 388.00, 'SGD', 'SUCCESS', 'pi_DEMO_00001', '2025-05-20 14:30:00'),
-  ('PAY-40002', 'USR-0042', 'TKT-10007', 'CONC-000001', 'PURCHASE', 248.00, 'SGD', 'SUCCESS', 'pi_DEMO_00002', '2025-04-15 16:45:00'),
-  ('PAY-40004', 'USR-0042', 'TKT-40001', 'CONC-000004', 'REFUND', 398.00, 'SGD', 'SUCCESS', NULL, '2025-05-30 14:30:00');
+-- No sample payments are seeded by default.
+-- Payment records are expected to be created by purchase, resale, and refund flows.

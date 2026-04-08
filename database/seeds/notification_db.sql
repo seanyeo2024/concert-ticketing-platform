@@ -34,9 +34,5 @@ CREATE TABLE notification_log (
   KEY idx_notification_status_retry (status, retryCount)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Sample seed data
-INSERT INTO notification_log
-  (notificationId, userId, eventType, channel, subject, body, status, sentAt, createdAt)
-VALUES
-  ('NOTIF-001', 'USR-0042', 'ticket.purchased', 'EMAIL', 'Your ticket is confirmed!', 'Your Taylor Swift ticket (TKT-10003) is ready for pickup.', 'SENT', '2025-05-20 14:30:00', '2025-05-20 14:30:00'),
-  ('NOTIF-003', 'USR-0042', 'concert.cancelled', 'EMAIL', 'Concert Cancelled — Refund Issued', 'BTS concert (CONC-000004) has been cancelled. Your refund has been processed.', 'SENT', '2025-05-30 14:31:00', '2025-05-30 14:30:00');
+-- No sample notifications are seeded by default.
+-- Notification logs are expected to be created by runtime event handlers.
