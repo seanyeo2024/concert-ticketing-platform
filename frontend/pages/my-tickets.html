@@ -161,6 +161,57 @@
   padding: 80px; text-align: center; background: var(--white);
 }
 .empty-state h2 { font-family: var(--font-display); font-size: 2.5rem; font-weight: 900; }
+
+@media(max-width:1100px){
+  .hero-row {
+    align-items: flex-start;
+  }
+  .tab-bar {
+    width: 100%;
+  }
+}
+
+@media(max-width:860px){
+  .tab-bar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .tab {
+    width: 100%;
+    text-align: center;
+    padding: 10px 12px;
+  }
+  .tkt-card {
+    grid-template-columns: 1fr;
+  }
+  .tkt-stub {
+    border-right: none;
+    border-bottom: 2px dashed rgba(17,17,17,0.1);
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+  }
+  .tkt-stub::before,
+  .tkt-stub::after {
+    display: none;
+  }
+  .tkt-actions {
+    border-left: none;
+    border-top: 2px dashed rgba(17,17,17,0.1);
+    align-items: flex-start;
+    min-width: 0;
+  }
+}
+
+@media(max-width:640px){
+  .tab-bar {
+    grid-template-columns: 1fr;
+  }
+  .empty-state {
+    padding: 42px 20px;
+  }
+}
 </style>
 </head>
 <body>
@@ -209,17 +260,20 @@
 
 <!-- QR modal -->
 <div class="modal-overlay" id="qr-modal">
-  <div class="modal" style="background:var(--black);color:var(--cream)">
+  <div class="modal" style="text-align:center">
     <button class="modal-close" onclick="closeModal('qr-modal')">✕</button>
-    <div class="modal-title" style="color:var(--yellow)">Your QR Ticket</div>
-    <div class="modal-sub" id="qr-sub"></div>
-    <div style="background:rgba(255,255,255,0.04);border:2px solid rgba(255,255,255,0.08);border-radius:var(--radius-lg);padding:32px;text-align:center;margin:24px 0">
-      <div id="qr-area" style="display:flex;flex-direction:column;align-items:center;gap:12px">
-        <div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:#666">Loading QR code…</div>
-      </div>
+    <div style="font-size:3.2rem;margin-bottom:8px">🎉</div>
+    <div class="modal-title">Your Ticket QR</div>
+    <div class="modal-sub" id="qr-sub" style="margin-bottom:14px"></div>
+    <div id="qr-area" style="background:rgba(17,17,17,0.03);border:1.5px solid rgba(17,17,17,0.08);border-radius:var(--radius-lg);padding:18px;margin:0 auto 20px;max-width:260px;display:flex;flex-direction:column;align-items:center;gap:10px">
+      <div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:#666">Loading QR code...</div>
     </div>
-    <div id="qr-data" style="font-size:0.62rem;font-family:var(--font-body);background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius);padding:12px;word-break:break-all;color:#555"></div>
-    <div style="font-size:0.65rem;text-align:center;color:#555;margin-top:12px;letter-spacing:0.06em">Show at venue entrance for scanning</div>
+    <div style="background:var(--white);border:2px solid rgba(17,17,17,0.08);border-radius:var(--radius-lg);padding:16px;text-align:left;margin-bottom:18px">
+      <div class="order-row" style="padding-top:0"><span style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em">QR Data</span></div>
+      <div id="qr-data" style="font-size:0.68rem;font-family:var(--font-body);background:rgba(17,17,17,0.03);border:1px solid rgba(17,17,17,0.08);border-radius:var(--radius);padding:12px;word-break:break-all;color:#555"></div>
+    </div>
+    <div style="font-size:0.78rem;color:#777;margin-bottom:10px">Use this at the venue entrance for scanning.</div>
+    <button class="btn btn-black w-full" onclick="closeModal('qr-modal')" style="border-radius:var(--radius)">Close</button>
   </div>
 </div>
 
@@ -245,9 +299,91 @@
 const user=Auth.require(); renderNav('tickets');
 let allTickets=[], refundedHistory=[], activeTab='upcoming', resaleTarget=null;
 let isLoadingTickets = true;
+let autoRefreshTimer=null;
+let liveSyncUnsub=null;
+let refreshQueued=false;
+const LIVE_REFRESH_MS=8000;
 const STATUS_TABS={ upcoming:['CONFIRMED','PENDING'], past:['USED'], reselling:['RESALE_LISTED','RESALE_PENDING'], refunded:['REFUNDED'], all:null };
 let concertIndex={};
 let resaleOwnedTicketIds=new Set();
+let purchaseTimeByTicketId={};
+
+function queueRefresh(){
+  if(refreshQueued) return;
+  refreshQueued=true;
+  setTimeout(async ()=>{
+    refreshQueued=false;
+    await load({ silent:true });
+  }, 400);
+}
+
+function setupLiveSync(){
+  if(liveSyncUnsub) liveSyncUnsub();
+  liveSyncUnsub=LiveSync.on(()=>queueRefresh());
+  window.addEventListener('focus', queueRefresh);
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState==='visible') queueRefresh();
+  });
+}
+
+function startAutoRefresh(){
+  clearInterval(autoRefreshTimer);
+  autoRefreshTimer=setInterval(()=>{
+    if(document.visibilityState!=='visible') return;
+    if(document.querySelector('.modal-overlay.open')) return;
+    load({ silent:true });
+  }, LIVE_REFRESH_MS);
+}
+
+function formatPurchaseDateTime(ticket){
+  const dt=
+    purchaseTimeByTicketId[ticket.ticketId] ||
+    ticket.purchasedAt ||
+    ticket.purchaseTime ||
+    ticket.createdAt ||
+    ticket.payoutAt;
+  if(!dt) return 'Time unavailable';
+  const parsed=new Date(dt);
+  if(Number.isNaN(parsed.getTime())) return 'Time unavailable';
+  return parsed.toLocaleString('en-SG', {
+    day:'2-digit',
+    month:'short',
+    year:'numeric',
+    hour:'2-digit',
+    minute:'2-digit',
+    second:'2-digit',
+    hour12:true,
+    timeZone:'Asia/Singapore'
+  });
+}
+
+function getConcertDateTime(ticket){
+  const eventDate=concertIndex[ticket.concertId]?.eventDate;
+  if(!eventDate) return null;
+  return Util.parseDateParts(eventDate)?.date || null;
+}
+
+function concertHasExplicitTime(ticket){
+  const raw=concertIndex[ticket.concertId]?.eventDate;
+  return !!(Util.parseDateParts(raw)?.hasTime);
+}
+
+function isPastConcert(ticket){
+  const dt=getConcertDateTime(ticket);
+  if(!dt) return false;
+  // If no explicit time was stored by admin, treat concert as past only after end of that date.
+  if(!concertHasExplicitTime(ticket)){
+    const end=new Date(dt);
+    end.setHours(23,59,59,999);
+    return end.getTime() < Date.now();
+  }
+  // Strict second-level cutoff: once concert datetime is before now, it is past.
+  return dt.getTime() < Date.now();
+}
+
+function formatConcertDateTime(ticket){
+  return Util.formatConcertDateTime(concertIndex[ticket.concertId]?.eventDate);
+}
 
 async function syncTransferredTicket() {
   const refreshTicketId = Util.getParam('refreshTicket');
@@ -270,13 +406,17 @@ async function syncTransferredTicket() {
   }
 }
 
-async function load(){
-  isLoadingTickets = true;
-  allTickets=SEED.tickets.filter(t=>t.ownerId===user.userId);
-  refundedHistory=[];
-  resaleOwnedTicketIds=new Set();
-  concertIndex=Object.fromEntries((SEED.concerts||[]).map(c=>[c.concertId,c]));
-  render();
+async function load({ silent=false }={}){
+  const shouldShowLoading=!silent || (isLoadingTickets && !allTickets.length);
+  if(shouldShowLoading){
+    isLoadingTickets = true;
+    allTickets=SEED.tickets.filter(t=>t.ownerId===user.userId);
+    refundedHistory=[];
+    resaleOwnedTicketIds=new Set();
+    purchaseTimeByTicketId={};
+    concertIndex=Object.fromEntries((SEED.concerts||[]).map(c=>[c.concertId,c]));
+    render();
+  }
   try{
     const concertsRes=await API.concerts.list();
     const concerts=concertsRes.concerts||concertsRes||[];
@@ -290,6 +430,15 @@ async function load(){
 
     // Build seller-side refund history for completed resale payouts.
     const payRes=await API.payment.byUser(user.userId);
+    const purchasePayments=(payRes.payments||[])
+      .filter(p=>['PURCHASE','RESALE_PURCHASE'].includes(String(p.type||'').toUpperCase()) && String(p.status||'').toUpperCase()==='SUCCESS')
+      .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+    purchaseTimeByTicketId={};
+    purchasePayments.forEach(p=>{
+      if(!p?.ticketId || purchaseTimeByTicketId[p.ticketId]) return;
+      if(p.createdAt) purchaseTimeByTicketId[p.ticketId]=p.createdAt;
+    });
+
     resaleOwnedTicketIds=new Set(
       (payRes.payments||[])
         .filter(p=>p.type==='RESALE_PURCHASE'&&p.status==='SUCCESS')
@@ -321,7 +470,7 @@ async function load(){
     render();
   }catch{
     isLoadingTickets = false;
-    render();
+    if(!silent) render();
   }
 }
 
@@ -331,17 +480,41 @@ function switchTab(tab,el){
 }
 
 function policyToneForTicket(ticket,isResaleOwned){
-  if(ticket.status==='REFUNDED') return ticket.isResalePayout ? 'tone-closed' : 'tone-cancelled';
-  if(ticket.status==='USED') return 'tone-closed';
+  const lifecycle=ticketLifecycle(ticket);
+  if(lifecycle==='past') return 'tone-closed';
+  if(lifecycle==='refunded') return ticket.isResalePayout ? 'tone-closed' : 'tone-cancelled';
   if(ticket.status==='PENDING'||ticket.status==='RESALE_PENDING') return 'tone-pending';
   if(ticket.status==='RESALE_LISTED') return 'tone-market';
   if(isResaleOwned) return 'tone-resale-locked';
   return 'tone-primary';
 }
 
+function ticketLifecycle(ticket){
+  if(ticket.status==='REFUNDED') return 'refunded';
+  if(ticket.status==='USED') return 'past';
+  if(['RESALE_LISTED','RESALE_PENDING'].includes(ticket.status)){
+    return isPastConcert(ticket) ? 'past' : 'reselling';
+  }
+  if(['CONFIRMED','PENDING'].includes(ticket.status)){
+    return isPastConcert(ticket) ? 'past' : 'upcoming';
+  }
+  return isPastConcert(ticket) ? 'past' : 'upcoming';
+}
+
 function render(){
-  const statuses=STATUS_TABS[activeTab];
-  const baseList=statuses ? allTickets.filter(t=>statuses.includes(t.status)) : [...allTickets];
+  let baseList=[...allTickets];
+  if(activeTab==='upcoming'){
+    baseList=allTickets.filter(t=>ticketLifecycle(t)==='upcoming');
+  }else if(activeTab==='past'){
+    baseList=allTickets.filter(t=>ticketLifecycle(t)==='past');
+  }else if(activeTab==='reselling'){
+    baseList=allTickets.filter(t=>ticketLifecycle(t)==='reselling');
+  }else if(activeTab==='refunded'){
+    baseList=allTickets.filter(t=>ticketLifecycle(t)==='refunded');
+  }else{
+    const statuses=STATUS_TABS[activeTab];
+    baseList=statuses ? allTickets.filter(t=>statuses.includes(t.status)) : [...allTickets];
+  }
   const list = (activeTab==='refunded' || activeTab==='all')
     ? [...baseList, ...refundedHistory].sort((a,b)=>new Date(b.payoutAt||b.updatedAt||0)-new Date(a.payoutAt||a.updatedAt||0))
     : baseList;
@@ -362,7 +535,10 @@ function render(){
   wrap.innerHTML=list.map(t=>{
     const isResaleOwned=resaleOwnedTicketIds.has(t.ticketId);
     const toneClass=policyToneForTicket(t,isResaleOwned);
-    const showResaleLockNotice = activeTab==='upcoming' && isResaleOwned;
+    const lifecycle=ticketLifecycle(t);
+    const showResaleLockNotice = lifecycle==='upcoming' && isResaleOwned;
+    const isPastItem = lifecycle==='past';
+    const statusTag = lifecycle==='past' ? `<span class="tag tag-used">PAST</span>` : Util.tag(t.status);
     return `
     <div class="tkt-card ${toneClass}">
       <div class="tkt-stub">
@@ -372,26 +548,28 @@ function render(){
       <div class="tkt-body">
         <div class="tkt-title">${concertIndex[t.concertId]?.name||t.concertId}</div>
         <div class="tkt-meta">
+          <span style="display:inline-flex;align-items:center;gap:6px;background:rgba(17,17,17,0.06);padding:4px 10px;border-radius:100px;color:#444;font-weight:600">📅 ${formatConcertDateTime(t)}</span>
           <span>🪑 ${t.seatNumber}</span>
           <span>🆔 ${t.ticketId}</span>
+          <span>🕒 ${formatPurchaseDateTime(t)}</span>
           ${showResaleLockNotice?`<span style="color:var(--pink);font-weight:700">Resale ticket · Cannot be resold</span>`:''}
           ${t.status==='REFUNDED'&&!t.isResalePayout?`<span style="color:var(--orange);font-weight:700">Cancelled by organizer (inactive)</span>`:''}
           ${t.resalePrice?`<span style="color:var(--pink);font-weight:700">Listed @ SGD ${t.resalePrice}</span>`:''}
           ${t.isResalePayout?`<span style="color:var(--teal);font-weight:700">Resale payout received</span>`:''}
         </div>
-        ${Util.tag(t.status)}${t.status==='REFUNDED'&&!t.isResalePayout?` <span class="tag tag-cancelled">CANCELLED</span>`:''}${showResaleLockNotice?` <span class="tag tag-resale">RESALE TICKET</span>`:''}
+        ${statusTag}${t.status==='REFUNDED'&&!t.isResalePayout?` <span class="tag tag-cancelled">CANCELLED</span>`:''}${showResaleLockNotice?` <span class="tag tag-resale">RESALE TICKET</span>`:''}
       </div>
       <div class="tkt-actions">
         <div class="tkt-price">SGD ${t.purchasePrice||'—'}</div>
-        ${t.status==='CONFIRMED'?`
+        ${lifecycle==='upcoming' && t.status==='CONFIRMED' ?`
           <button class="btn btn-sm btn-black" onclick="viewQR('${t.ticketId}','${t.concertId}','${t.seatNumber}')" style="border-radius:100px">QR Code</button>
           ${isResaleOwned
             ? `<button class="btn btn-sm btn-outline" disabled title="Policy: resale-purchased tickets cannot be listed for resale again." style="border-radius:100px;opacity:0.55;cursor:not-allowed">Resale Locked</button>`
             : `<button class="btn btn-sm btn-outline" onclick="openResale('${t.ticketId}','${t.concertId}','${t.categoryId}',${t.purchasePrice||0})" style="border-radius:100px">Sell</button>`}`:''}
-        ${t.status==='RESALE_LISTED'?`
+        ${lifecycle==='reselling' && t.status==='RESALE_LISTED' ?`
           <button class="btn btn-sm btn-black" onclick="viewQR('${t.ticketId}','${t.concertId}','${t.seatNumber}')" style="border-radius:100px">QR Code</button>
           <button class="btn btn-sm" style="border-color:var(--pink);color:var(--pink);border-radius:100px" onclick="cancelListing('${t.ticketId}')">Cancel</button>`:''}
-        ${t.status==='USED'?`<button class="btn btn-sm btn-outline" onclick="viewQR('${t.ticketId}','${t.concertId}','${t.seatNumber}')" style="border-radius:100px">View QR</button>`:''}
+        ${isPastItem || lifecycle==='refunded' ? `<div style="font-size:0.74rem;color:#888;font-weight:600">No actions available</div>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -406,8 +584,8 @@ async function viewQR(tid,cid,seat){
     const qr=await API.qr.get(tid);
     document.getElementById('qr-data').textContent=qr.qrData;
     document.getElementById('qr-area').innerHTML=`
-      <img src="${qr.qrImageUrl}" style="width:180px;height:180px;border-radius:12px;border:2px solid rgba(255,255,255,0.1)" alt="QR Code"/>
-      <div style="font-size:0.65rem;color:#555;letter-spacing:0.06em;text-transform:uppercase">${qr.isValid?'✓ Valid':'✕ Invalid'}</div>`;
+      <img src="${qr.qrImageUrl}" style="width:180px;height:180px;border-radius:12px;border:2px solid rgba(17,17,17,0.08);background:#fff" alt="QR Code"/>
+      <div style="font-size:0.65rem;color:${qr.isValid?'var(--teal)':'var(--pink)'};letter-spacing:0.06em;text-transform:uppercase;font-weight:700">${qr.isValid?'VALID QR READY':'INVALID QR'}</div>`;
   }catch{
     document.getElementById('qr-area').innerHTML=`<div style="color:var(--pink);font-family:var(--font-display);font-size:1.5rem;font-weight:900">QR Not Found</div>`;
   }
@@ -437,6 +615,7 @@ async function submitResale(){
     await API.resaleTicket.list({sellerId:user.userId,ticketId:resaleTarget.tid,concertId:resaleTarget.cid,resalePrice:price});
     const t=allTickets.find(x=>x.ticketId===resaleTarget.tid);
     if(t){t.status='RESALE_LISTED';t.resalePrice=price;}
+    LiveSync.emit('resale-listed',{ticketId:resaleTarget.tid,concertId:resaleTarget.cid,sellerId:user.userId});
     toast('Ticket listed for resale!','success');
     closeModal('resale-modal'); render();
   }catch(e){
@@ -450,6 +629,7 @@ async function cancelListing(tid){
   try{
     await API.resaleTicket.unlist({sellerId:user.userId,ticketId:tid,concertId:t?.concertId});
     if(t){t.status='CONFIRMED';t.resalePrice=null;}
+    LiveSync.emit('resale-unlisted',{ticketId:tid,concertId:t?.concertId,sellerId:user.userId});
     toast('Listing cancelled','success');
     render();
   }catch(e){
@@ -458,6 +638,8 @@ async function cancelListing(tid){
 }
 
 load();
+setupLiveSync();
+startAutoRefresh();
 </script>
 </body>
 </html>

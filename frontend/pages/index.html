@@ -584,7 +584,7 @@ function applyFilters() {
       <div class="concert-card-body">
         <div class="concert-title">${c.name}</div>
         <div class="concert-meta-row">
-          <span>📅 ${Util.formatDateShort(c.eventDate)}</span>
+          <span>📅 ${Util.formatConcertDateTime(c.eventDate)}</span>
           <span>📍 ${c.venue}</span>
         </div>
         <div class="flex-sb">
@@ -611,7 +611,7 @@ function renderLineup() {
     <div class="lineup-entry" onclick="location.href='concert-detail.html?id=${c.concertId}'">
       <div class="lineup-artist">${c.artistName || c.name}</div>
       <div class="lineup-detail">
-        <div class="lineup-date">${Util.formatDateShort(c.eventDate)}</div>
+        <div class="lineup-date">${Util.formatConcertDateTime(c.eventDate)}</div>
         <div style="font-size:0.75rem;color:#888;margin-top:2px">${c.venue}</div>
       </div>
       <span class="lineup-arrow">→</span>

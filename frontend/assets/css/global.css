@@ -63,6 +63,20 @@ body {
 .cursor.grow { width: 52px; height: 52px; background: var(--pink); }
 a, button, [onclick] { cursor: none; }
 
+body.no-custom-cursor {
+  cursor: auto;
+}
+
+body.no-custom-cursor .cursor {
+  display: none;
+}
+
+body.no-custom-cursor a,
+body.no-custom-cursor button,
+body.no-custom-cursor [onclick] {
+  cursor: pointer;
+}
+
 /* ── Typography ────────────────────────────────────────────── */
 h1, h2, h3, .display {
   font-family: var(--font-display);

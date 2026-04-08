@@ -152,6 +152,33 @@
 <div id="toast-container"></div>
 
 <div class="profile-hero">
+
+@media(max-width:860px){
+  .tabs-bar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    overflow: visible;
+  }
+  .tab-btn {
+    border-right: 1.5px solid rgba(255,255,255,0.06);
+    border-bottom: 1.5px solid rgba(255,255,255,0.06);
+  }
+  .tab-btn:nth-child(2n) {
+    border-right: none;
+  }
+}
+
+@media(max-width:560px){
+  .tabs-bar {
+    grid-template-columns: 1fr;
+  }
+  .tab-btn {
+    border-right: none;
+  }
+  .panel {
+    padding: 34px 0 52px;
+  }
+}
   <div class="ph-blob-1"></div>
   <div class="ph-blob-2"></div>
   <div class="container">

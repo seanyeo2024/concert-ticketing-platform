@@ -178,6 +178,51 @@
   .banner-meta-grid { grid-template-columns:1fr 1fr; }
   .order-box { position: static; }
 }
+
+@media(max-width:1200px){
+  .banner-main {
+    padding: 0 28px 44px 0;
+  }
+  .banner-sidebar {
+    padding: 0 0 44px 28px;
+  }
+}
+
+@media(max-width:760px){
+  .concert-banner {
+    padding: calc(var(--nav-h) + 36px) 0 0;
+  }
+  .banner-main {
+    padding: 0 0 28px;
+  }
+  .banner-sidebar {
+    padding: 0 0 30px;
+  }
+  .banner-meta-grid {
+    grid-template-columns: 1fr;
+  }
+  .banner-meta-item {
+    margin-right: 0;
+    padding-right: 0;
+    border-right: none;
+  }
+  .main-content {
+    padding: 36px 0 56px;
+  }
+  .cat-row {
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 16px;
+  }
+  .cat-row-price,
+  .cat-row-ceiling {
+    text-align: left;
+  }
+  .order-line-val {
+    max-width: 55%;
+  }
+}
 </style>
 </head>
 <body>
@@ -358,10 +403,10 @@ function renderBanner(){
   document.getElementById('b-avail-bar').style.width=`${pct}%`;
   document.getElementById('b-avail-sub').textContent=`${pct}% of ${concert.totalSeats?.toLocaleString()} seats sold`;
   document.getElementById('b-meta').innerHTML=`
-    <div class="banner-meta-item"><div class="banner-meta-label">Date</div><div class="banner-meta-value">${Util.formatDate(concert.eventDate)}</div></div>
+    <div class="banner-meta-item"><div class="banner-meta-label">Date</div><div class="banner-meta-value">${Util.formatConcertDateTime(concert.eventDate)}</div></div>
     <div class="banner-meta-item"><div class="banner-meta-label">Venue</div><div class="banner-meta-value">${concert.venue}</div></div>
     <div class="banner-meta-item"><div class="banner-meta-label">Currency</div><div class="banner-meta-value">${concert.currency||'SGD'}</div></div>`;
-  document.getElementById('b-desc').textContent=`${concert.artistName} · ${concert.venue?.split(',')[0]} · ${new Date(concert.eventDate).getFullYear()}`;
+  document.getElementById('b-desc').textContent=`${concert.artistName} · ${concert.venue?.split(',')[0]} · ${Util.dateYear(concert.eventDate)}`;
   if(concert.status==='SOLD_OUT'||concert.status==='CANCELLED'){
     document.getElementById('resale-cta').classList.remove('hidden');
     document.getElementById('resale-link').href=`resale.html?id=${concertId}`;

@@ -5,12 +5,31 @@
 
 /* ── Custom cursor ─────────────────────────────────────────── */
 (function initCursor() {
+  const disableCursor =
+    window.matchMedia('(pointer: coarse)').matches ||
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (disableCursor) {
+    document.body.classList.add('no-custom-cursor');
+    return;
+  }
+
   const el = document.createElement('div');
   el.className = 'cursor';
   document.body.appendChild(el);
+  let mouseX = 0;
+  let mouseY = 0;
+  let rafId = null;
+
+  const paint = () => {
+    el.style.left = mouseX + 'px';
+    el.style.top = mouseY + 'px';
+    rafId = null;
+  };
+
   document.addEventListener('mousemove', e => {
-    el.style.left = e.clientX + 'px';
-    el.style.top  = e.clientY + 'px';
+    mouseX = e.clientX;
+    mouseY = e.clientY;
+    if (!rafId) rafId = requestAnimationFrame(paint);
   });
   document.addEventListener('mouseover', e => {
     if (e.target.closest('a,button,[onclick],.concert-card,.seat-av'))
@@ -33,6 +52,7 @@ const SEED = {
 /* ── API client ─────────────────────────────────────────────── */
 const API = (() => {
   const GATEWAY = window.CTMS_GATEWAY_URL || 'http://localhost:8000';
+  const CONCERT_SCHEDULE_KEY = 'ctms_concert_schedule_overrides';
   const BASE = {
     concert:      GATEWAY,
     pricing:      `${GATEWAY}/pricing/v1`,
@@ -46,6 +66,63 @@ const API = (() => {
     resaleTicket: `${GATEWAY}/resale-ticket/v1`,
     cancellation: `${GATEWAY}/cancellation/v1`,
   };
+
+  function hasExplicitTime(eventDate) {
+    if (!eventDate) return false;
+    if (typeof eventDate === 'number' || eventDate instanceof Date) return true;
+    if (typeof eventDate !== 'string') return false;
+    return /(\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?)/i.test(eventDate);
+  }
+
+  function normalizeLocalDateTimeInput(value) {
+    if (typeof value !== 'string') return value;
+    const raw = value.trim();
+    if (!raw) return raw;
+    const m = raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2}))?$/);
+    if (m) return `${m[1]}T${m[2]}:${m[3] || '00'}`;
+    return raw;
+  }
+
+  function readScheduleOverrides() {
+    try {
+      return JSON.parse(localStorage.getItem(CONCERT_SCHEDULE_KEY) || '{}') || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writeScheduleOverrides(map) {
+    try {
+      localStorage.setItem(CONCERT_SCHEDULE_KEY, JSON.stringify(map || {}));
+    } catch {}
+  }
+
+  function rememberConcertSchedule(concertId, eventDate) {
+    if (!concertId || !eventDate || !hasExplicitTime(eventDate)) return;
+    const map = readScheduleOverrides();
+    map[concertId] = normalizeLocalDateTimeInput(String(eventDate));
+    writeScheduleOverrides(map);
+  }
+
+  function hydrateConcertSchedule(concert) {
+    if (!concert || !concert.concertId) return concert;
+    if (hasExplicitTime(concert.eventDate)) {
+      rememberConcertSchedule(concert.concertId, concert.eventDate);
+      return concert;
+    }
+    const map = readScheduleOverrides();
+    const override = map[concert.concertId];
+    if (override && hasExplicitTime(override)) {
+      return { ...concert, eventDate: override };
+    }
+    return concert;
+  }
+
+  function hydrateConcertListPayload(data) {
+    const rows = Array.isArray(data) ? data : (data?.concerts || []);
+    const hydrated = rows.map(hydrateConcertSchedule);
+    return Array.isArray(data) ? hydrated : { ...(data || {}), concerts: hydrated };
+  }
 
   async function req(url, method='GET', body=null, timeoutMs=10000) {
     const opts = { method, headers:{'Content-Type':'application/json'} };
@@ -64,15 +141,40 @@ const API = (() => {
 
   return {
     concerts: {
-      list: async () => { try { const d = await req(`${BASE.concert}/concerts`); return Array.isArray(d) ? { concerts: d } : d; } catch { return { concerts: SEED.concerts }; } },
-      listStrict: async () => { const d = await req(`${BASE.concert}/concerts`); return Array.isArray(d) ? { concerts: d } : d; },
-      get:  async id  => { try { return await req(`${BASE.concert}/concerts/${id}`); } catch { return SEED.concerts.find(c=>c.concertId===id) || null; } },
-      getStrict: async id => req(`${BASE.concert}/concerts/${id}`),
+      list: async () => {
+        try {
+          const d = await req(`${BASE.concert}/concerts`);
+          return hydrateConcertListPayload(Array.isArray(d) ? { concerts: d } : d);
+        } catch {
+          return { concerts: (SEED.concerts || []).map(hydrateConcertSchedule) };
+        }
+      },
+      listStrict: async () => {
+        const d = await req(`${BASE.concert}/concerts`);
+        return hydrateConcertListPayload(Array.isArray(d) ? { concerts: d } : d);
+      },
+      get:  async id  => {
+        try {
+          const c = await req(`${BASE.concert}/concerts/${id}`);
+          return hydrateConcertSchedule(c);
+        } catch {
+          return hydrateConcertSchedule(SEED.concerts.find(c=>c.concertId===id) || null);
+        }
+      },
+      getStrict: async id => hydrateConcertSchedule(await req(`${BASE.concert}/concerts/${id}`)),
       seats:async id  => { try { return await req(`${BASE.concert}/concerts/${id}/seats`); } catch { return { categories: SEED.categories[id]||[] }; } },
       seatsStrict: async id => req(`${BASE.concert}/concerts/${id}/seats`),
       createSeats: (id,p) => req(`${BASE.concert}/concerts/${id}/seats`, 'POST', p),
-      update: (id,p)  => req(`${BASE.concert}/concerts/${id}`, 'PUT', p),
-      create: p       => req(`${BASE.concert}/concerts`, 'POST', p),
+      update: async (id,p)  => {
+        const updated = await req(`${BASE.concert}/concerts/${id}`, 'PUT', p);
+        rememberConcertSchedule(id, p?.eventDate);
+        return hydrateConcertSchedule(updated);
+      },
+      create: async p => {
+        const created = await req(`${BASE.concert}/concerts`, 'POST', p);
+        rememberConcertSchedule(created?.concertId || p?.concertId, p?.eventDate);
+        return hydrateConcertSchedule(created);
+      },
     },
     pricing: {
       list:    async (cid)      => { try { return await req(`${BASE.pricing}/concerts/${cid}/prices`); } catch { return { prices: SEED.prices[cid]||[] }; } },
@@ -245,13 +347,89 @@ function renderNav(active='') {
 
 /* ── Utilities ──────────────────────────────────────────────── */
 const Util = {
+  parseDateParts(dt) {
+    if (!dt) return null;
+    if (dt instanceof Date) {
+      return Number.isNaN(dt.getTime()) ? null : { date: dt, hasTime: true };
+    }
+    if (typeof dt === 'number') {
+      const parsed = new Date(dt);
+      return Number.isNaN(parsed.getTime()) ? null : { date: parsed, hasTime: true };
+    }
+    if (typeof dt !== 'string') return null;
+
+    const raw = dt.trim();
+    if (!raw) return null;
+
+    // Treat date-only strings as local midnight (avoid UTC auto-shift to 8am in SG).
+    const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnly) {
+      const d = new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]), 0, 0, 0, 0);
+      return Number.isNaN(d.getTime()) ? null : { date: d, hasTime: false };
+    }
+
+    // Parse local datetime without timezone component.
+    const localDateTime = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (localDateTime) {
+      const d = new Date(
+        Number(localDateTime[1]),
+        Number(localDateTime[2]) - 1,
+        Number(localDateTime[3]),
+        Number(localDateTime[4]),
+        Number(localDateTime[5]),
+        Number(localDateTime[6] || '0'),
+        0
+      );
+      return Number.isNaN(d.getTime()) ? null : { date: d, hasTime: true };
+    }
+
+    // Handle display-ish strings like "22 Nov 2025, 08:00 am".
+    const friendly = raw.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})(?:,\s*|\s+)(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)$/i);
+    if (friendly) {
+      const monthMap = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
+      const day = Number(friendly[1]);
+      const month = monthMap[friendly[2].slice(0,3).toLowerCase()];
+      const year = Number(friendly[3]);
+      let hour = Number(friendly[4]);
+      const minute = Number(friendly[5]);
+      const second = Number(friendly[6] || '0');
+      const ampm = friendly[7].toLowerCase();
+      if (month === undefined) return null;
+      if (ampm === 'pm' && hour < 12) hour += 12;
+      if (ampm === 'am' && hour === 12) hour = 0;
+      const d = new Date(year, month, day, hour, minute, second, 0);
+      return Number.isNaN(d.getTime()) ? null : { date: d, hasTime: true };
+    }
+
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return null;
+    const hasTime = /(\d{1,2}:\d{2})/.test(raw);
+    return { date: parsed, hasTime };
+  },
   formatDate(dt) {
-    if (!dt) return '—';
-    return new Date(dt).toLocaleDateString('en-SG', { weekday:'short', day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    const parsed = this.parseDateParts(dt);
+    if (!parsed) return '—';
+    if (!parsed.hasTime) {
+      return parsed.date.toLocaleDateString('en-SG', { weekday:'short', day:'numeric', month:'short', year:'numeric' });
+    }
+    return parsed.date.toLocaleString('en-SG', { weekday:'short', day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true, timeZone:'Asia/Singapore' });
   },
   formatDateShort(dt) {
-    if (!dt) return '—';
-    return new Date(dt).toLocaleDateString('en-SG', { day:'numeric', month:'short', year:'numeric' });
+    const parsed = this.parseDateParts(dt);
+    if (!parsed) return '—';
+    return parsed.date.toLocaleDateString('en-SG', { day:'numeric', month:'short', year:'numeric' });
+  },
+  formatConcertDateTime(dt) {
+    const parsed = this.parseDateParts(dt);
+    if (!parsed) return '—';
+    if (!parsed.hasTime) {
+      return `${parsed.date.toLocaleDateString('en-SG', { day:'numeric', month:'short', year:'numeric' })} · Time not set`;
+    }
+    return parsed.date.toLocaleString('en-SG', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true, timeZone:'Asia/Singapore' });
+  },
+  dateYear(dt) {
+    const parsed = this.parseDateParts(dt);
+    return parsed ? String(parsed.date.getFullYear()) : '—';
   },
   formatPrice(a, cur='SGD') { return `${cur} ${Number(a).toFixed(2)}`; },
   tag(status) {
@@ -269,6 +447,51 @@ const Util = {
     return 'linear-gradient(135deg,#0a0a0a,#333)';
   },
 };
+
+/* ── Live sync ─────────────────────────────────────────────── */
+const LiveSync = (() => {
+  const KEY = 'ctms_live_sync_event';
+  const CHANNEL = 'ctms-live-sync';
+  const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(CHANNEL) : null;
+
+  function emit(type, payload = {}) {
+    const evt = {
+      type,
+      payload,
+      at: Date.now(),
+      source: Math.random().toString(36).slice(2),
+    };
+    try {
+      localStorage.setItem(KEY, JSON.stringify(evt));
+    } catch {}
+    try {
+      bc?.postMessage(evt);
+    } catch {}
+    return evt;
+  }
+
+  function on(handler) {
+    const handleStorage = e => {
+      if (e.key !== KEY || !e.newValue) return;
+      try {
+        const evt = JSON.parse(e.newValue);
+        handler(evt);
+      } catch {}
+    };
+    const handleBroadcast = e => {
+      if (!e?.data) return;
+      handler(e.data);
+    };
+    window.addEventListener('storage', handleStorage);
+    bc?.addEventListener('message', handleBroadcast);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      bc?.removeEventListener('message', handleBroadcast);
+    };
+  }
+
+  return { emit, on };
+})();
 
 /* ── Modal helpers ──────────────────────────────────────────── */
 function openModal(id)  { document.getElementById(id)?.classList.add('open'); }

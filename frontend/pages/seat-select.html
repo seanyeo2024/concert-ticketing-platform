@@ -59,6 +59,16 @@
 .cat-btn.active { background: var(--black); color: var(--cream); border-color: var(--black); }
 .cat-btn:hover:not(.active) { border-color: var(--black); color: var(--black); }
 
+@media(max-width:1200px){
+  .steps {
+    padding: 0 20px;
+  }
+  .step {
+    padding: 14px 12px;
+    font-size: 0.78rem;
+  }
+}
+
 /* Order panel */
 .order-panel {
   background: var(--white); border: 2px solid rgba(17,17,17,0.1);
@@ -140,6 +150,37 @@
 }
 
 @media(max-width:900px) {
+  .steps {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 0;
+  }
+  .step {
+    border-right: 1.5px solid rgba(17,17,17,0.08);
+    border-bottom: 1.5px solid rgba(17,17,17,0.08);
+    min-height: 64px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .step:nth-child(2n) { border-right: none; }
+  .step:nth-last-child(-n+2) { border-bottom: none; }
+
+  .cat-toggle {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .cat-btn {
+    min-width: 0;
+    width: 100%;
+    white-space: normal;
+    line-height: 1.25;
+    text-align: center;
+    padding: 9px 10px;
+    font-size: 0.8rem;
+  }
+
   .checkout-grid { grid-template-columns: 1fr; }
   .order-panel { position: static; }
   .seat-row {
@@ -149,6 +190,17 @@
     width: 30px;
     height: 30px;
     font-size: 0.68rem;
+  }
+}
+
+@media(max-width:560px){
+  .stage-label {
+    margin: 0 0 20px;
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+  }
+  .cat-toggle {
+    grid-template-columns: 1fr;
   }
 }
 </style>
@@ -216,6 +268,14 @@
             <div id="payment-alert" class="alert alert-danger hidden" style="margin-bottom:16px"></div>
             <div class="demo-note">Stripe test mode — use 4242 4242 4242 4242 for success or 4000 0000 0000 9995 to simulate a decline.</div>
             <div class="form-group">
+              <label class="form-label">Contact Email (for ticket details)</label>
+              <input class="form-input" id="contact-email" type="email" placeholder="you@example.com" autocomplete="email">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Contact Phone (for ticket updates)</label>
+              <input class="form-input" id="contact-phone" placeholder="+65 8123 4567" autocomplete="tel">
+            </div>
+            <div class="form-group">
               <label class="form-label">Card Number</label>
               <input class="form-input" id="card-num" placeholder="4242 4242 4242 4242" maxlength="19" autocomplete="cc-number" oninput="this.value=this.value.replace(/\D/g,'').replace(/(.{4})/g,'$1 ').trim()">
             </div>
@@ -237,12 +297,19 @@
   <div class="modal" style="text-align:center">
     <div style="font-size:4rem;margin-bottom:8px">🎉</div>
     <div style="font-family:var(--font-display);font-size:2.5rem;font-weight:900;letter-spacing:-0.02em;margin-bottom:8px">Ticket Confirmed!</div>
-    <p style="color:#777;margin-bottom:28px;font-size:0.9rem">Check your email for confirmation and your QR code.</p>
+    <p style="color:#777;margin-bottom:20px;font-size:0.9rem">Your ticket is confirmed and a fresh valid QR has been issued.</p>
+    <div id="success-qr-wrap" style="display:none;background:rgba(17,17,17,0.03);border:1.5px solid rgba(17,17,17,0.08);border-radius:var(--radius-lg);padding:18px;margin:0 auto 20px;max-width:260px">
+      <img id="success-qr" alt="Ticket QR" style="width:180px;height:180px;border-radius:12px;border:2px solid rgba(17,17,17,0.08);background:#fff" />
+      <div id="success-qr-state" style="margin-top:10px;font-size:0.68rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--teal)"></div>
+    </div>
     <div style="background:var(--white);border:2px solid rgba(17,17,17,0.08);border-radius:var(--radius-lg);padding:20px;text-align:left;margin-bottom:24px">
       <div class="order-row"><span style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em">Ticket ID</span><span id="c-ticket" style="color:var(--teal);font-weight:700"></span></div>
       <div class="order-row"><span style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em">Seat</span><span id="c-seat" style="font-weight:700"></span></div>
-      <div class="order-row" style="border-bottom:none"><span style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em">Payment</span><span id="c-pay" style="font-weight:700"></span></div>
+      <div class="order-row"><span style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em">Concert Time</span><span id="c-schedule" style="font-weight:700"></span></div>
+      <div class="order-row"><span style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em">Payment</span><span id="c-pay" style="font-weight:700"></span></div>
+      <div class="order-row" style="border-bottom:none"><span style="color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em">Purchased At</span><span id="c-time" style="font-weight:700"></span></div>
     </div>
+    <div id="success-contact-note" class="text-muted" style="font-size:0.85rem;margin-bottom:18px"></div>
     <button class="btn btn-black w-full btn-lg" onclick="window.location.href='my-tickets.html'" style="border-radius:var(--radius)">View My Tickets →</button>
   </div>
 </div>
@@ -329,6 +396,12 @@ async function init(){
     renderMap();
     concert=await API.concerts.get(concertId);
     document.getElementById('o-concert').textContent=concert.name;
+    if(user?.email && !document.getElementById('contact-email').value){
+      document.getElementById('contact-email').value=user.email;
+    }
+    document.getElementById('contact-phone').addEventListener('input', e=>{
+      e.target.value=e.target.value.replace(/[^\d+\s()-]/g,'');
+    });
     const catRes=await API.concerts.seats(concertId);
     categories=catRes.categories||[];
     if(!categories.length){
@@ -465,6 +538,53 @@ function setPaymentAlert(message=''){
   el.classList.remove('hidden');
 }
 
+function normalizePhone(phone=''){
+  return phone.replace(/[^\d+\s()-]/g,'').trim();
+}
+
+function validateContactDetails(){
+  const email=(document.getElementById('contact-email')?.value||'').trim();
+  const phone=normalizePhone(document.getElementById('contact-phone')?.value||'');
+  const emailOk=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const phoneDigits=phone.replace(/\D/g,'');
+  const phoneOk=phoneDigits.length>=7;
+  if(!emailOk) throw new Error('Enter a valid contact email before payment.');
+  if(!phoneOk) throw new Error('Enter a valid contact phone number before payment.');
+  return { email, phone };
+}
+
+async function renderPurchaseSuccess(ticketId, seatNumber, paymentLabel, amountValue, contact){
+  document.getElementById('c-ticket').textContent=ticketId;
+  document.getElementById('c-seat').textContent=seatNumber;
+  document.getElementById('c-schedule').textContent=Util.formatConcertDateTime(concert?.eventDate);
+  document.getElementById('c-pay').textContent=paymentLabel;
+  document.getElementById('c-time').textContent=new Date().toLocaleString('en-SG');
+  const note=`Concert details were sent to ${contact.email} and ${contact.phone}.`;
+  document.getElementById('success-contact-note').textContent=note;
+
+  const qrWrap=document.getElementById('success-qr-wrap');
+  const qrImg=document.getElementById('success-qr');
+  const qrState=document.getElementById('success-qr-state');
+  qrWrap.style.display='none';
+  qrState.textContent='';
+  try{
+    const qr=await API.qr.get(ticketId);
+    if(qr?.qrImageUrl){
+      qrImg.src=qr.qrImageUrl;
+      qrWrap.style.display='block';
+      qrState.textContent=qr.isValid?'VALID QR READY':'QR PENDING';
+    }
+  }catch{}
+
+  LiveSync.emit('ticket-purchased', {
+    concertId,
+    ticketId,
+    amount: amountValue,
+    buyerId: user.userId,
+  });
+  openModal('success-modal');
+}
+
 async function pay(){
   if(!selectedTicket){toast('Select a seat first','warning');return;}
   if(!priceData){toast('Price data is unavailable for this category','warning');return;}
@@ -475,7 +595,9 @@ async function pay(){
     return;
   }
   let stripePaymentMethodId;
+  let contact;
   try{
+    contact=validateContactDetails();
     stripePaymentMethodId=getStripeTestPaymentMethodId();
   }catch(e){
     setPaymentAlert(e.message||'Enter valid Stripe test card details.');
@@ -490,10 +612,13 @@ async function pay(){
       if(latestTicket?.ownerId===user.userId && latestTicket?.status==='CONFIRMED'){
         stopWindowTimer();
         sessionStorage.removeItem(queueSessionStorageKey);
-        document.getElementById('c-ticket').textContent=latestTicket.ticketId||selectedTicket.ticketId;
-        document.getElementById('c-seat').textContent=latestTicket.seatNumber||selectedTicket.seatNumber;
-        document.getElementById('c-pay').textContent=`${Util.formatPrice(latestTicket.purchasePrice||priceData?.basePrice||0,'SGD')} · Confirmed`;
-        openModal('success-modal');
+        await renderPurchaseSuccess(
+          latestTicket.ticketId||selectedTicket.ticketId,
+          latestTicket.seatNumber||selectedTicket.seatNumber,
+          `${Util.formatPrice(latestTicket.purchasePrice||priceData?.basePrice||0,'SGD')} · Confirmed`,
+          latestTicket.purchasePrice||priceData?.basePrice||0,
+          contact||{email:'provided contact',phone:'provided phone'}
+        );
         toast('Ticket purchased!','success');
         return true;
       }
@@ -520,14 +645,19 @@ async function pay(){
       ticketId:liveTicket.ticketId,
       seatNumber:liveTicket.seatNumber || selectedTicket.seatNumber,
       sessionToken:queueSession.sessionToken,
-      stripeToken:stripePaymentMethodId
+      stripeToken:stripePaymentMethodId,
+      contactEmail:contact.email,
+      contactPhone:contact.phone
     });
     stopWindowTimer();
     sessionStorage.removeItem(queueSessionStorageKey);
-    document.getElementById('c-ticket').textContent=r.ticketId||selectedTicket.ticketId;
-    document.getElementById('c-seat').textContent=selectedTicket.seatNumber;
-    document.getElementById('c-pay').textContent=`${Util.formatPrice(r.amount||priceData?.basePrice||0,'SGD')} · ${r.paymentId}`;
-    openModal('success-modal');
+    await renderPurchaseSuccess(
+      r.ticketId||selectedTicket.ticketId,
+      selectedTicket.seatNumber,
+      `${Util.formatPrice(r.amount||priceData?.basePrice||0,'SGD')} · ${r.paymentId}`,
+      r.amount||priceData?.basePrice||0,
+      contact
+    );
     toast('Ticket purchased!','success');
   }catch(e){
     const recovered=await resolvePurchaseAfterError(e);

@@ -187,6 +187,46 @@ body { background: var(--black); }
   letter-spacing: -0.04em; margin-bottom: 20px;
   font-style: italic; position: relative; z-index: 1;
 }
+
+@media(max-width:900px){
+  .q-page {
+    padding: calc(var(--nav-h) + 28px) 0 52px;
+    align-items: flex-start;
+  }
+  .waiting-box,
+  .window-box,
+  .expired-box {
+    padding: 32px 24px;
+  }
+  .stats-row {
+    grid-template-columns: 1fr;
+  }
+  .stat-cell {
+    border-right: none;
+    border-bottom: 1.5px solid rgba(255,255,255,0.08);
+  }
+  .stat-cell:last-child {
+    border-bottom: none;
+  }
+}
+
+@media(max-width:640px){
+  .concert-chip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 16px;
+  }
+  .waiting-box,
+  .window-box,
+  .expired-box {
+    padding: 24px 18px;
+  }
+  .tip-box {
+    font-size: 0.78rem;
+    padding: 12px 14px;
+  }
+}
 </style>
 </head>
 <body>
@@ -309,7 +349,7 @@ async function loadConcert(){
   try{
     const c=await API.concerts.get(concertId);
     document.getElementById('q-concert-name').textContent=c.name;
-    document.getElementById('q-concert-meta').textContent=`${Util.formatDateShort(c.eventDate)} · ${c.venue?.split(',')[0]}`;
+    document.getElementById('q-concert-meta').textContent=`${Util.formatConcertDateTime(c.eventDate)} · ${c.venue?.split(',')[0]}`;
     document.getElementById('q-concert-status').innerHTML=Util.tag(c.status);
     document.getElementById('q-avail').textContent=c.availableSeats?.toLocaleString()||'—';
   }catch{}
