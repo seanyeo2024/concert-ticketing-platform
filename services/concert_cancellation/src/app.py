@@ -74,21 +74,32 @@ def cancel_concert(concert_id):
                                       json={"userId": payment["userId"], "ticketId": payment["ticketId"],
                                             "paymentId": payment["paymentId"], "amount": payment["amount"],
                                             "reason": "CONCERT_CANCELLED"}, timeout=10)
-                    if r.status_code == 201: refund_count += 1
-                    else: refund_failures += 1
-                except Exception: refund_failures += 1
+                    if r.status_code == 201:
+                        refund_count += 1
+                        try:
+                            mq_publish("concert.cancelled", {
+                                "eventType": "concert.cancelled",
+                                "channel": "SMS",
+                                "userId": payment["userId"],
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "data": {
+                                    "concertId": concert_id,
+                                    "amount": payment["amount"],
+                                    "currency": payment.get("currency", "SGD"),
+                                    "reason": reason,
+                                },
+                            })
+                        except Exception:
+                            pass
+                    else:
+                        refund_failures += 1
+                except Exception:
+                    refund_failures += 1
     except Exception as e:
         print(f"[S3] Refund loop failed: {e}")
 
-    # Step 6 — publish notification (non-critical)
-    try:
-        mq_publish("concert.cancelled", {
-            "eventType": "concert.cancelled",
-            "timestamp": datetime.utcnow().isoformat(),
-            "data": {"concertId": concert_id, "reason": reason,
-                     "ticketsRefunded": tickets_refunded}
-        })
-    except Exception: pass
+    # Step 6 — publish per-user cancellation notifications after successful refunds
+    # so notification service can resolve the recipient and send SMS.
 
     return jsonify({"success": True, "concertId": concert_id,
                     "ticketsRefunded": tickets_refunded,

@@ -200,12 +200,20 @@ def purchase(concert_id):
 
     # Step 9 — publish notification event (non-critical)
     try:
-        mq_publish("ticket.purchased", {
-            "eventType": "ticket.purchased", "userId": user_id,
+        user_phone = data.get("phoneNumber") or data.get("toNumber")
+        event_payload = {
+            "eventType": "ticket.purchased", "channel": "SMS", "userId": user_id,
             "timestamp": datetime.utcnow().isoformat(),
             "data": {"ticketId": ticket_id, "concertId": concert_id,
                      "seatNumber": ticket.get("seatNumber"), "amount": amount, "currency": currency,
                      "qrImageUrl": qr_data.get("qrImageUrl")}
+        }
+        if user_phone:
+            event_payload["phoneNumber"] = user_phone
+            event_payload["data"]["phoneNumber"] = user_phone
+
+        mq_publish("ticket.purchased", {
+            **event_payload
         })
     except Exception: pass
 

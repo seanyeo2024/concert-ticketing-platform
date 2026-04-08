@@ -102,12 +102,17 @@ def list_ticket():
 
     # Step 4 — notify seller (non-critical)
     try:
-        mq_publish("ticket.resale.listed", {
-            "eventType": "ticket.resale.listed", "userId": data["sellerId"],
+        seller_phone = data.get("sellerPhoneNumber") or data.get("phoneNumber") or data.get("toNumber")
+        event_payload = {
+            "eventType": "ticket.resale.listed", "channel": "SMS", "userId": data["sellerId"],
             "timestamp": datetime.utcnow().isoformat(),
             "data": {"ticketId": data["ticketId"], "concertId": data["concertId"],
                      "resalePrice": data["resalePrice"]}
-        })
+        }
+        if seller_phone:
+            event_payload["phoneNumber"] = seller_phone
+            event_payload["data"]["phoneNumber"] = seller_phone
+        mq_publish("ticket.resale.listed", event_payload)
     except Exception: pass
 
     return jsonify({"success": True, "listingId": listing_id, "ticketId": data["ticketId"],
@@ -225,13 +230,19 @@ def purchase_resale():
 
     # Step 9 — notify both parties (non-critical)
     try:
-        mq_publish("ticket.resale.sold", {
+        seller_phone = data.get("sellerPhoneNumber") or data.get("phoneNumber") or data.get("toNumber")
+        event_payload = {
             "eventType": "ticket.resale.sold",
+            "channel": "SMS",
             "userId": seller_id,
             "timestamp": datetime.utcnow().isoformat(),
             "data": {"ticketId": data["ticketId"], "concertId": data["concertId"],
                      "resalePrice": resale_price, "buyerId": data["buyerId"]}
-        })
+        }
+        if seller_phone:
+            event_payload["phoneNumber"] = seller_phone
+            event_payload["data"]["phoneNumber"] = seller_phone
+        mq_publish("ticket.resale.sold", event_payload)
     except Exception: pass
 
     return jsonify({"success": True, "ticketId": data["ticketId"],
