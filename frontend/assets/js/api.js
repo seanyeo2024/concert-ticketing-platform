@@ -211,6 +211,7 @@ const API = (() => {
     qr: {
       generate:     async p  => { try { return await req(`${BASE.qr}/qr`,'POST',p); } catch { return { qrId:`QR-DEMO`, qrData:`Soltistix|${p.ticketId}|${p.userId}|${p.concertId}|demo1234`, isValid:true }; } },
       get:          async id => { try { return await req(`${BASE.qr}/qr/${id}`); } catch { return { qrData:`Soltistix|${id}|DEMO|CONC|demo1234`, isValid:true }; } },
+      scan:         p        => req(`${BASE.qr}/scan`,'POST',p),
       invalidate:   (id,p)   => req(`${BASE.qr}/qr/${id}/invalidate`,'PUT',p).catch(()=>{}),
       invalidateAll:cid      => req(`${BASE.qr}/qr/concert/${cid}/invalidate-all`,'PUT',{}).catch(()=>{}),
     },
@@ -290,7 +291,7 @@ function renderNav(active='') {
   const homeHref = Auth.homePage();
   const navItems = user?.role==='admin'
     ? [
-        { href:'admin.html', label:'ADMIN', key:'admin' },
+        { href:'admin.html#scan-qr', label:'SCAN QR CODE', key:'admin' },
       ]
     : [
         { href:'index.html',      label:'LINEUP',     key:'concerts' },
@@ -299,12 +300,12 @@ function renderNav(active='') {
         { href:'admin.html',      label:'ADMIN',      key:'admin',    adminOnly:true },
       ].filter(l=>(!l.auth||user)&&(!l.adminOnly||user?.role==='admin'));
   const links = navItems
-   .map(l=>`<a href="${l.href}" class="nav-link ${active===l.key?'active':''}">${l.label}</a>`)
+   .map(l=>`<a href="${l.href}" class="nav-link ${active===l.key?'active':''} ${user?.role==='admin'&&l.key==='admin'?'nav-link-scan':''}">${l.label}</a>`)
    .join('');
   const mobileLinks = [
     ...navItems,
     ...(user ? [{ href:'profile.html', label:'PROFILE', key:'profile' }] : []),
-  ].map(l=>`<a href="${l.href}" class="nav-mobile-link ${active===l.key?'active':''}">${l.label}</a>`)
+  ].map(l=>`<a href="${l.href}" class="nav-mobile-link ${active===l.key?'active':''} ${user?.role==='admin'&&l.key==='admin'?'nav-mobile-link-scan':''}">${l.label}</a>`)
    .join('');
   const userArea = user
     ? `<div class="nav-user-meta">
