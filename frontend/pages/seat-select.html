@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Select Seat — Solstitix</title>
+<title>Select Seat — Soltistix</title>
 <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
 <link rel="stylesheet" href="../assets/css/global.css">
 <style>
@@ -203,6 +203,16 @@
     grid-template-columns: 1fr;
   }
 }
+
+.success-modal {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.success-modal::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
 </style>
 </head>
 <body>
@@ -294,7 +304,7 @@
 
 <!-- Success modal -->
 <div class="modal-overlay" id="success-modal">
-  <div class="modal" style="text-align:center">
+  <div class="modal success-modal" style="text-align:center">
     <div style="font-size:4rem;margin-bottom:8px">🎉</div>
     <div style="font-family:var(--font-display);font-size:2.5rem;font-weight:900;letter-spacing:-0.02em;margin-bottom:8px">Ticket Confirmed!</div>
     <p style="color:#777;margin-bottom:20px;font-size:0.9rem">Your ticket is confirmed and a fresh valid QR has been issued.</p>

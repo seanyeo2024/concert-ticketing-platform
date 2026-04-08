@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Solstitix — Concert Tickets</title>
+<title>Soltistix — Concert Tickets</title>
 <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
 <link rel="stylesheet" href="../assets/css/global.css">
 <style>
@@ -473,8 +473,7 @@ if (Auth.isAdmin()) window.location.href='admin.html';
 const CC_TOPS = ['cc-top-blue','cc-top-teal','cc-top-yellow','cc-top-pink','cc-top-black'];
 let allConcerts=[], activeFilter='ALL';
 let isLoadingConcerts = true;
-let refreshTimer = null;
-const REFRESH_MS = 12000;
+let midnightRefreshTimeout = null;
 const PAGE_SIZE = 6;
 let currentPage = 1;
 renderNav('concerts');
@@ -496,6 +495,7 @@ async function refreshConcerts(){
     allConcerts = next;
     document.getElementById('hero-concert-count').textContent = String(allConcerts.length).padStart(2,'0');
     await refreshAvailabilityCounts(allConcerts);
+    await refreshCardBasePrices(allConcerts);
     await refreshFeaturedConcert();
   } catch {
     if(isLoadingConcerts) allConcerts = [];
@@ -510,25 +510,37 @@ async function refreshConcerts(){
 async function refreshAvailabilityCounts(concerts){
   if(!concerts.length) return;
   const results = await Promise.allSettled(
-    concerts.map(c => API.tickets.list(c.concertId,'AVAILABLE'))
+    concerts.map(c => API.tickets.summary(c.concertId))
   );
   results.forEach((res, idx) => {
     if(res.status !== 'fulfilled') return;
-    const available = (res.value.tickets || []).length;
-    if(Number.isFinite(available)){
-      concerts[idx].availableSeats = available;
-    }
+    const summary = res.value || {};
+    if(Number.isFinite(summary.availableSeats)) concerts[idx].availableSeats = summary.availableSeats;
+    if(Number.isFinite(summary.totalSeats)) concerts[idx].totalSeats = summary.totalSeats;
+  });
+}
+
+async function refreshCardBasePrices(concerts){
+  if(!concerts.length) return;
+  const results = await Promise.allSettled(
+    concerts.map(c => API.concerts.seats(c.concertId))
+  );
+
+  results.forEach((res, idx) => {
+    if(res.status !== 'fulfilled') return;
+    const seatRes = res.value || {};
+    const categories = seatRes?.categories || [];
+    const prices = categories
+      .map(category => Number(category.basePrice))
+      .filter(price => Number.isFinite(price) && price >= 0);
+    concerts[idx].cardFromPrice = prices.length ? Math.min(...prices) : null;
   });
 }
 
 function getUpcomingFeaturedCandidates(){
-  const now = new Date();
   return allConcerts
     .filter(c => String(c.status || '').toUpperCase() === 'ACTIVE')
-    .filter(c => {
-      const parsed = Util.parseDateParts(c.eventDate);
-      return parsed?.date && parsed.date.getTime() > now.getTime();
-    })
+    .filter(c => !concertHasEnded(c))
     .filter(c => Number(c.availableSeats || 0) > 0)
     .sort((a, b) => {
       const aTime = Util.parseDateParts(a.eventDate)?.date?.getTime?.() || Number.MAX_SAFE_INTEGER;
@@ -541,6 +553,17 @@ function getUpcomingFeaturedCandidates(){
     });
 }
 
+function concertHasEnded(concert){
+  const parsed = Util.parseDateParts(concert?.eventDate);
+  if(!parsed?.date) return false;
+  const eventDayStart = new Date(parsed.date);
+  eventDayStart.setHours(0,0,0,0);
+  const todayStart = new Date();
+  todayStart.setHours(0,0,0,0);
+  // Daily cutoff rule: once a date starts at 12:00 AM, that day's concerts are hidden.
+  return eventDayStart.getTime() <= todayStart.getTime();
+}
+
 async function refreshFeaturedConcert(){
   const featured = getUpcomingFeaturedCandidates()[0] || null;
   if(!featured){
@@ -551,16 +574,12 @@ async function refreshFeaturedConcert(){
   try{
     const [seatRes, ticketRes] = await Promise.all([
       API.concerts.seats(featured.concertId),
-      API.tickets.list(featured.concertId,'AVAILABLE'),
+      API.tickets.summary(featured.concertId),
     ]);
     const categories = seatRes?.categories || [];
-    const availableTickets = ticketRes?.tickets || [];
-    const availableByCategory = availableTickets.reduce((acc, ticket) => {
-      const categoryId = ticket?.categoryId;
-      if(!categoryId) return acc;
-      acc[categoryId] = (acc[categoryId] || 0) + 1;
-      return acc;
-    }, {});
+    const availableByCategory = Object.fromEntries(
+      Object.entries(ticketRes?.byCategory || {}).map(([categoryId, counts]) => [categoryId, Number(counts?.available || 0)])
+    );
     const prices = categories
       .filter(category => Number(availableByCategory[category.categoryId] || 0) > 0)
       .map(category => Number(category.basePrice))
@@ -595,7 +614,8 @@ function renderFeaturedConcert(concert){
     .slice(0, 2)
     .join('<br>');
   const seatsLeft = Number(concert.availableSeats || 0).toLocaleString();
-  const fromPrice = Number.isFinite(Number(concert.featuredFromPrice))
+  const featuredFromPrice = Number(concert.featuredFromPrice);
+  const fromPrice = Number.isFinite(featuredFromPrice) && featuredFromPrice > 0
     ? `From <strong>${Util.formatPrice(concert.featuredFromPrice, concert.currency || 'SGD')}</strong>`
     : 'From <strong>TBA</strong>';
 
@@ -613,20 +633,38 @@ function renderFeaturedConcert(concert){
 
 function startAutoRefresh(){
   stopAutoRefresh();
-  refreshTimer = setInterval(() => {
-    if(document.hidden) return;
-    refreshConcerts();
-  }, REFRESH_MS);
+  scheduleMidnightRefresh();
 }
 
 function stopAutoRefresh(){
-  if(refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = null;
+  if(midnightRefreshTimeout) clearTimeout(midnightRefreshTimeout);
+  midnightRefreshTimeout = null;
+}
+
+function msUntilNextMidnight(){
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(24,0,0,0);
+  return Math.max(1000, next.getTime() - now.getTime());
+}
+
+function scheduleMidnightRefresh(){
+  if(midnightRefreshTimeout) clearTimeout(midnightRefreshTimeout);
+  midnightRefreshTimeout = setTimeout(async () => {
+    if(!document.hidden){
+      applyFilters();
+      renderLineup();
+      await refreshFeaturedConcert();
+    }
+    scheduleMidnightRefresh();
+  }, msUntilNextMidnight());
 }
 
 document.addEventListener('visibilitychange', () => {
   if(document.hidden) return;
-  refreshConcerts();
+  applyFilters();
+  renderLineup();
+  refreshFeaturedConcert();
 });
 
 function setFilter(el, f) {
@@ -648,6 +686,8 @@ function applyFilters() {
   }
   const filtered = allConcerts.filter(c=>{
     if (!isAdmin && c.status === 'CANCELLED') return false;
+    const ended = concertHasEnded(c);
+    if(ended && (activeFilter === 'ALL' || activeFilter === 'ACTIVE')) return false;
     const fOk = activeFilter==='ALL'||c.status===activeFilter;
     const artist = (c.artistName || '').toLowerCase();
     const concert = (c.name || '').toLowerCase();
@@ -686,7 +726,14 @@ function applyFilters() {
           <span>📍 ${c.venue}</span>
         </div>
         <div class="flex-sb">
-          <div class="concert-price">${c.currency || 'SGD'}</div>
+          ${(() => {
+            const cardFromPrice = Number(c.cardFromPrice);
+            return `<div class="concert-price">${
+              Number.isFinite(cardFromPrice) && cardFromPrice > 0
+                ? `${Util.formatPrice(cardFromPrice, c.currency || 'SGD')}`
+                : '—'
+            }</div>`;
+          })()}
           <span class="btn btn-sm btn-black">View →</span>
         </div>
         <div class="pct-bar"><div class="pct-fill" style="width:${pct}%"></div></div>
@@ -703,7 +750,7 @@ function renderLineup() {
     row.innerHTML = '<div class="lineup-entry"><div class="lineup-artist" style="color:#555">Loading…</div></div>';
     return;
   }
-  const items = allConcerts.slice(0,4);
+  const items = allConcerts.filter(c=>!concertHasEnded(c)).slice(0,4);
   if(!items.length){row.innerHTML='<div class="lineup-entry"><div class="lineup-artist" style="color:#555">No concerts</div></div>';return;}
   row.innerHTML = items.map(c=>`
     <div class="lineup-entry" onclick="location.href='concert-detail.html?id=${c.concertId}'">

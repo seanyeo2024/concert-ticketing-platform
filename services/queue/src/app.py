@@ -21,7 +21,7 @@ except ImportError:
 WINDOW_SECONDS = int(os.environ.get("PURCHASE_WINDOW_SECONDS", 600))
 max_windows_str = os.environ.get("MAX_ACTIVE_WINDOWS", "5").strip()
 MAX_ACTIVE_WINDOWS = int(max_windows_str) if max_windows_str else 5
-CONCERT_URL = os.environ.get("CONCERT_SERVICE_URL", "http://localhost:5000")
+TICKET_URL = os.environ.get("TICKET_INVENTORY_SERVICE_URL", "http://localhost:5003")
 
 def get_db():
     return mysql.connector.connect(
@@ -128,11 +128,11 @@ def publish_window_granted(user_id, concert_id, expires_at):
 
 def fetch_available_seats(concert_id):
     try:
-        res = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=5)
+        res = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}?status=AVAILABLE", timeout=5)
         if res.status_code != 200:
             return 0
         data = res.json()
-        return max(int(data.get("availableSeats", 0) or 0), 0)
+        return max(len(data.get("tickets", []) or []), 0)
     except Exception:
         return 0
 

@@ -211,6 +211,7 @@ services:
       REDIS_PORT: ${REDIS_PORT}
       PURCHASE_WINDOW_SECONDS: ${PURCHASE_WINDOW_SECONDS}
       CONCERT_SERVICE_URL: ${CONCERT_SERVICE_URL}
+      TICKET_INVENTORY_SERVICE_URL: http://ticket_inventory:5003
       MAX_ACTIVE_WINDOWS: ${MAX_ACTIVE_WINDOWS}
     depends_on:
       rabbitmq:
@@ -264,6 +265,8 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       QR_HMAC_SECRET: ${QR_HMAC_SECRET}
+      TICKET_INVENTORY_SERVICE_URL: http://ticket_inventory:5003
+      CONCERT_SERVICE_URL: ${CONCERT_SERVICE_URL}
     depends_on:
       mysql_qr:
         condition: service_healthy

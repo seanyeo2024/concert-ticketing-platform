@@ -24,7 +24,7 @@ except ImportError:
 WINDOW_SECONDS = int(os.environ.get("PURCHASE_WINDOW_SECONDS", 600))
 MAX_ACTIVE_WINDOWS = int(os.environ.get("MAX_ACTIVE_WINDOWS", 5))
 HEARTBEAT_TIMEOUT_SECONDS = int(os.environ.get("QUEUE_HEARTBEAT_TIMEOUT_SECONDS", 20))
-CONCERT_URL = os.environ.get("CONCERT_SERVICE_URL", "http://localhost:5000")
+TICKET_URL = os.environ.get("TICKET_INVENTORY_SERVICE_URL", "http://localhost:5003")
 REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 QUEUE_STATUSES = ("WAITING", "WINDOW_GRANTED", "COMPLETED", "EXPIRED")
@@ -256,10 +256,10 @@ def publish_window_granted(user_id, concert_id, expires_at):
 
 def fetch_available_seats(concert_id):
     try:
-        res = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=5)
+        res = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}?status=AVAILABLE", timeout=5)
         if res.status_code != 200:
             return 0
-        return max(int(res.json().get("availableSeats", 0) or 0), 0)
+        return max(len(res.json().get("tickets", []) or []), 0)
     except Exception:
         return 0
 
