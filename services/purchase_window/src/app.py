@@ -37,6 +37,16 @@ def safe_json(response):
     except Exception:
         return {"raw": response.text}
 
+
+def fetch_concert_meta(concert_id):
+    try:
+        res = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=5)
+        if res.status_code == 200:
+            return safe_json(res)
+    except Exception:
+        pass
+    return {}
+
 def rollback_ticket(concert_id, ticket_id, version):
     try:
         requests.put(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/{ticket_id}",
@@ -198,14 +208,30 @@ def purchase(concert_id):
         if qr.status_code == 201: qr_data = qr.json()
     except Exception: pass
 
+    concert_meta = fetch_concert_meta(concert_id)
+    concert_name = concert_meta.get("name") or concert_meta.get("concertName") or concert_id
+
     # Step 9 — publish notification event (non-critical)
     try:
         mq_publish("ticket.purchased", {
             "eventType": "ticket.purchased", "channel": "SMS", "userId": user_id,
             "timestamp": datetime.utcnow().isoformat(),
             "data": {"ticketId": ticket_id, "concertId": concert_id,
+                     "concertName": concert_name,
                      "seatNumber": ticket.get("seatNumber"), "amount": amount, "currency": currency,
-                     "qrImageUrl": qr_data.get("qrImageUrl")}
+                     "qrData": qr_data.get("qrData"), "qrImageUrl": qr_data.get("qrImageUrl")}
+        })
+    except Exception: pass
+
+    # Step 10 — publish email notification with the QR image embedded in Gmail
+    try:
+        mq_publish("ticket.purchased", {
+            "eventType": "ticket.purchased", "channel": "EMAIL", "userId": user_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {"ticketId": ticket_id, "concertId": concert_id,
+                     "concertName": concert_name,
+                     "seatNumber": ticket.get("seatNumber"), "amount": amount, "currency": currency,
+                     "qrData": qr_data.get("qrData"), "qrImageUrl": qr_data.get("qrImageUrl")}
         })
     except Exception: pass
 

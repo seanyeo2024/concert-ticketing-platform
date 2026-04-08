@@ -66,6 +66,14 @@ def cancel_concert(concert_id):
     # Step 5 — get all payments for this concert and refund each
     refund_count = 0; refund_failures = 0
     try:
+        concert_name = concert_id
+        try:
+            concert_res = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=10)
+            if concert_res.status_code == 200:
+                concert_payload = concert_res.json()
+                concert_name = concert_payload.get("name") or concert_payload.get("concertName") or concert_id
+        except Exception:
+            pass
         pays = requests.get(f"{PAYMENT_URL}/payment/v1/payment/concert/{concert_id}", timeout=10)
         if pays.status_code == 200:
             for payment in pays.json().get("payments", []):
@@ -84,6 +92,23 @@ def cancel_concert(concert_id):
                                 "timestamp": datetime.utcnow().isoformat(),
                                 "data": {
                                     "concertId": concert_id,
+                                    "concertName": concert_name,
+                                    "amount": payment["amount"],
+                                    "currency": payment.get("currency", "SGD"),
+                                    "reason": reason,
+                                },
+                            })
+                        except Exception:
+                            pass
+                        try:
+                            mq_publish("concert.cancelled", {
+                                "eventType": "concert.cancelled",
+                                "channel": "EMAIL",
+                                "userId": payment["userId"],
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "data": {
+                                    "concertId": concert_id,
+                                    "concertName": concert_name,
                                     "amount": payment["amount"],
                                     "currency": payment.get("currency", "SGD"),
                                     "reason": reason,

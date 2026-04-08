@@ -20,6 +20,7 @@ except ImportError:
     def mq_publish(rk, payload): print(f"[MQ STUB] {rk}: {payload}")
 
 TICKET_URL  = os.environ.get("TICKET_INVENTORY_SERVICE_URL", "http://localhost:5003")
+CONCERT_URL = os.environ.get("CONCERT_SERVICE_URL",          "http://localhost:5000")
 PRICING_URL = os.environ.get("PRICING_SERVICE_URL",          "http://localhost:5001")
 PAYMENT_URL = os.environ.get("PAYMENT_SERVICE_URL",          "http://localhost:5004")
 QR_URL      = os.environ.get("QR_SERVICE_URL",               "http://localhost:5005")
@@ -44,6 +45,16 @@ def issue_buyer_qr(ticket_id, buyer_id, concert_id, retries=3):
         except requests.RequestException as exc:
             last_error = str(exc)
     return {"error": last_error or "QR generation failed"}
+
+
+def fetch_concert_meta(concert_id):
+    try:
+        res = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=5)
+        if res.status_code == 200:
+            return res.json()
+    except Exception:
+        pass
+    return {}
 
 # ── S2a: Seller lists ticket ──────────────────────────────────────────────────
 # POST /resale/v1/list
@@ -222,6 +233,9 @@ def purchase_resale():
     # Step 8 — generate new QR for buyer
     qr_data = issue_buyer_qr(data["ticketId"], data["buyerId"], data["concertId"])
     qr_ready = "qrId" in qr_data
+    concert_meta = fetch_concert_meta(data["concertId"])
+    concert_name = concert_meta.get("name") or concert_meta.get("concertName") or data["concertId"]
+    seat_number = ticket.get("seatNumber")
 
     # Step 9 — notify both parties (non-critical)
     try:
@@ -234,6 +248,27 @@ def purchase_resale():
                      "resalePrice": resale_price, "buyerId": data["buyerId"]}
         })
     except Exception: pass
+
+    # Step 10 — email the buyer with the new QR code embedded in Gmail
+    try:
+        mq_publish("ticket.purchased", {
+            "eventType": "ticket.purchased",
+            "channel": "EMAIL",
+            "userId": data["buyerId"],
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "ticketId": data["ticketId"],
+                "concertId": data["concertId"],
+                "concertName": concert_name,
+                "seatNumber": seat_number,
+                "resalePrice": resale_price,
+                "currency": "SGD",
+                "qrData": qr_data.get("qrData"),
+                "qrImageUrl": qr_data.get("qrImageUrl"),
+            },
+        })
+    except Exception:
+        pass
 
     return jsonify({"success": True, "ticketId": data["ticketId"],
                     "newOwner": data["buyerId"], "paymentId": payment_data["paymentId"],

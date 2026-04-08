@@ -57,6 +57,6 @@ VALUES
 -- Sample contact data for SMS routing
 INSERT INTO user_contact (userId, email, phoneE164, smsOptIn)
 VALUES
-  ('USR-0042', 'alex@demo.com', '+6591234567', 1),
-  ('USR-0099', 'jamie@demo.com', '+6592345678', 1),
+  ('USR-0042', 'jilliansmuy2t1@gmail.com', '+6596604136', 1),
+  ('USR-0099', 'jilliansmuy2t2@gmail.com', '+6596604136', 1),
   ('USR-9001', 'admin@demo.com', '+6593456789', 0);
