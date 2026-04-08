@@ -541,6 +541,17 @@ function getUpcomingFeaturedCandidates(){
     });
 }
 
+function concertHasEnded(concert){
+  const parsed = Util.parseDateParts(concert?.eventDate);
+  if(!parsed?.date) return false;
+  if(!parsed.hasTime){
+    const end = new Date(parsed.date);
+    end.setHours(23,59,59,999);
+    return end.getTime() < Date.now();
+  }
+  return parsed.date.getTime() < Date.now();
+}
+
 async function refreshFeaturedConcert(){
   const featured = getUpcomingFeaturedCandidates()[0] || null;
   if(!featured){
@@ -648,6 +659,8 @@ function applyFilters() {
   }
   const filtered = allConcerts.filter(c=>{
     if (!isAdmin && c.status === 'CANCELLED') return false;
+    const ended = concertHasEnded(c);
+    if(ended && (activeFilter === 'ALL' || activeFilter === 'ACTIVE')) return false;
     const fOk = activeFilter==='ALL'||c.status===activeFilter;
     const artist = (c.artistName || '').toLowerCase();
     const concert = (c.name || '').toLowerCase();
@@ -703,7 +716,7 @@ function renderLineup() {
     row.innerHTML = '<div class="lineup-entry"><div class="lineup-artist" style="color:#555">Loading…</div></div>';
     return;
   }
-  const items = allConcerts.slice(0,4);
+  const items = allConcerts.filter(c=>!concertHasEnded(c)).slice(0,4);
   if(!items.length){row.innerHTML='<div class="lineup-entry"><div class="lineup-artist" style="color:#555">No concerts</div></div>';return;}
   row.innerHTML = items.map(c=>`
     <div class="lineup-entry" onclick="location.href='concert-detail.html?id=${c.concertId}'">
