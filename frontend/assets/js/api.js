@@ -188,6 +188,7 @@ const API = (() => {
       join:   (cid,p)          => req(`${BASE.queue}/queue/${cid}`,'POST',p),
       status: (cid,uid)        => req(`${BASE.queue}/queue/${cid}/${uid}`),
       depth:  cid              => req(`${BASE.queue}/queue/${cid}`),
+      heartbeat: p             => req(`${BASE.queue}/session/heartbeat`,'POST',p),
       update: (cid,uid,p)      => req(`${BASE.queue}/queue/${cid}/${uid}`,'PUT',p).catch(()=>{}),
       leave:  (cid,uid)        => req(`${BASE.queue}/queue/${cid}/${uid}`,'DELETE').catch(()=>{}),
     },

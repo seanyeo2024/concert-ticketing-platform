@@ -321,8 +321,9 @@ const concertId=Util.getParam('id'), catId=Util.getParam('cat');
 if(!concertId) window.location.href='index.html';
 let selectedTicket=null, currentCat=catId, allTickets=[], priceData=null, concert=null, categories=[];
 let isLoadingSeats = true;
-let windowExpires=null, windowTimerInterval=null, sessionExpiredHandled=false;
+let windowExpires=null, windowTimerInterval=null, heartbeatInterval=null, sessionExpiredHandled=false;
 const queueSessionStorageKey=`ctms_queue_session_${concertId}_${user?.userId||'guest'}`;
+const HEARTBEAT_INTERVAL_MS=5000;
 
 function getQueueSession(){
   try{
@@ -344,10 +345,16 @@ function stopWindowTimer(){
   windowTimerInterval=null;
 }
 
+function stopHeartbeat(){
+  clearInterval(heartbeatInterval);
+  heartbeatInterval=null;
+}
+
 function expireSeatSession(message='Your purchase window expired. Please rejoin the queue.'){
   if(sessionExpiredHandled) return;
   sessionExpiredHandled=true;
   stopWindowTimer();
+  stopHeartbeat();
   sessionStorage.removeItem(queueSessionStorageKey);
   toast(message,'warning',4000);
   window.location.href=`queue.html?id=${concertId}&cat=${currentCat||''}`;
@@ -378,6 +385,30 @@ function startWindowTimer(expiresAt){
   windowTimerInterval=setInterval(renderWindowTimer,1000);
 }
 
+async function sendHeartbeat(){
+  if(sessionExpiredHandled) return;
+  const session=getQueueSession();
+  if(!session?.sessionToken) return;
+  try{
+    await API.queue.heartbeat({
+      concertId,
+      userId:user.userId,
+      sessionToken:session.sessionToken,
+    });
+  }catch(e){
+    if(e.status===410 || e.code==='SESSION_EXPIRED' || e.code==='SESSION_ABANDONED'){
+      expireSeatSession('Your purchase window expired because the session was no longer active. Please rejoin the queue.');
+    }
+  }
+}
+
+function startHeartbeat(){
+  stopHeartbeat();
+  sendHeartbeat();
+  if(sessionExpiredHandled) return;
+  heartbeatInterval=setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+}
+
 async function init(){
   const queueSession=getQueueSession();
   const expiresAt=parseUtcDate(queueSession?.sessionExpiresAt);
@@ -390,6 +421,7 @@ async function init(){
     return;
   }
   startWindowTimer(expiresAt);
+  startHeartbeat();
   try{
     document.getElementById('cat-toggle').innerHTML='<div style="font-size:0.82rem;color:#888">Loading categories…</div>';
     isLoadingSeats = true;
@@ -611,6 +643,7 @@ async function pay(){
       const latestTicket=await API.tickets.get(concertId, selectedTicket.ticketId);
       if(latestTicket?.ownerId===user.userId && latestTicket?.status==='CONFIRMED'){
         stopWindowTimer();
+        stopHeartbeat();
         sessionStorage.removeItem(queueSessionStorageKey);
         await renderPurchaseSuccess(
           latestTicket.ticketId||selectedTicket.ticketId,
@@ -650,6 +683,7 @@ async function pay(){
       contactPhone:contact.phone
     });
     stopWindowTimer();
+    stopHeartbeat();
     sessionStorage.removeItem(queueSessionStorageKey);
     await renderPurchaseSuccess(
       r.ticketId||selectedTicket.ticketId,

@@ -118,6 +118,13 @@
   line-height: 0.95; font-weight: 900; letter-spacing: -0.02em;
   margin-bottom: 20px; font-style: italic;
 }
+.hero-featured-subtitle {
+  font-size: 0.95rem;
+  color: #aaa;
+  margin: -8px 0 18px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
 .hero-featured-meta { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 28px; }
 .hero-featured-meta span {
   font-size: 0.8rem; color: #aaa;
@@ -388,6 +395,7 @@
     <div class="hero-featured-card" id="hero-featured">
       <div class="hero-featured-label">Featured Tonight</div>
       <div class="hero-featured-name" id="hero-featured-name">Loading…</div>
+      <div class="hero-featured-subtitle" id="hero-featured-subtitle"></div>
       <div class="hero-featured-meta" id="hero-featured-meta">
         <span>Loading featured concert…</span>
       </div>
@@ -567,12 +575,14 @@ async function refreshFeaturedConcert(){
 
 function renderFeaturedConcert(concert){
   const nameEl = document.getElementById('hero-featured-name');
+  const subtitleEl = document.getElementById('hero-featured-subtitle');
   const metaEl = document.getElementById('hero-featured-meta');
   const priceEl = document.getElementById('hero-featured-price');
   const linkEl = document.getElementById('hero-featured-link');
 
   if(!concert){
     nameEl.innerHTML = 'No Featured<br>Concert';
+    subtitleEl.textContent = '';
     metaEl.innerHTML = '<span>📅 Check back soon</span><span>📍 More events coming</span>';
     priceEl.innerHTML = 'From <strong>—</strong>';
     linkEl.href = '#concerts';
@@ -580,7 +590,7 @@ function renderFeaturedConcert(concert){
     return;
   }
 
-  const displayName = (concert.artistName || concert.name || concert.concertId || 'Featured Concert')
+  const displayName = (concert.name || concert.artistName || concert.concertId || 'Featured Concert')
     .split(/\s+/)
     .slice(0, 2)
     .join('<br>');
@@ -590,6 +600,7 @@ function renderFeaturedConcert(concert){
     : 'From <strong>TBA</strong>';
 
   nameEl.innerHTML = displayName;
+  subtitleEl.textContent = concert.artistName || '';
   metaEl.innerHTML = [
     `<span>📅 ${Util.formatDateShort(concert.eventDate)}</span>`,
     `<span>📍 ${concert.venue || 'Venue TBA'}</span>`,
