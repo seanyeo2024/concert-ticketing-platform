@@ -332,6 +332,7 @@ if(!concertId) window.location.href='index.html';
 let selectedTicket=null, currentCat=catId, allTickets=[], priceData=null, concert=null, categories=[];
 let isLoadingSeats = true;
 let windowExpires=null, windowTimerInterval=null, heartbeatInterval=null, sessionExpiredHandled=false;
+let contactPrefill=null;
 const queueSessionStorageKey=`ctms_queue_session_${concertId}_${user?.userId||'guest'}`;
 const HEARTBEAT_INTERVAL_MS=5000;
 
@@ -438,8 +439,24 @@ async function init(){
     renderMap();
     concert=await API.concerts.get(concertId);
     document.getElementById('o-concert').textContent=concert.name;
-    if(user?.email && !document.getElementById('contact-email').value){
-      document.getElementById('contact-email').value=user.email;
+    const cachedContact=ContactProfile.readCached(user?.userId)||{};
+    try{
+      const remoteContact=await ContactProfile.fetch(user);
+      contactPrefill={
+        email:(remoteContact?.email||cachedContact?.email||user?.contactEmail||user?.email||'').trim(),
+        phoneNumber:(remoteContact?.phoneNumber||cachedContact?.phoneNumber||user?.contactPhone||user?.phone||'').trim(),
+      };
+    }catch{
+      contactPrefill={
+        email:(cachedContact?.email||user?.contactEmail||user?.email||'').trim(),
+        phoneNumber:(cachedContact?.phoneNumber||user?.contactPhone||user?.phone||'').trim(),
+      };
+    }
+    if(!document.getElementById('contact-email').value){
+      document.getElementById('contact-email').value=(contactPrefill?.email||user?.email||'').trim();
+    }
+    if(!document.getElementById('contact-phone').value && contactPrefill?.phoneNumber){
+      document.getElementById('contact-phone').value=contactPrefill.phoneNumber;
     }
     document.getElementById('contact-phone').addEventListener('input', e=>{
       e.target.value=e.target.value.replace(/[^\d+\s()-]/g,'');
