@@ -554,8 +554,11 @@ strong { font-weight: 700; }
   transform: translateY(24px) scale(0.97);
   transition: transform 0.28s var(--ease);
   max-height: 90vh; overflow-y: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
   box-shadow: 0 32px 80px rgba(17,17,17,0.18);
 }
+.modal::-webkit-scrollbar { width: 0; height: 0; }
 .modal-overlay.open .modal { transform: translateY(0) scale(1); }
 .modal-close {
   position: absolute; top: 18px; right: 18px;
