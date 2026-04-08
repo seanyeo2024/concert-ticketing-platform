@@ -455,25 +455,36 @@ async function syncTransferredTicket() {
   const refreshConcertId = Util.getParam('refreshConcert');
   if (!refreshTicketId || !refreshConcertId) return;
 
+  const clearRefreshParams=()=>{
+    try{
+      const url=new URL(window.location.href);
+      url.searchParams.delete('refreshTicket');
+      url.searchParams.delete('refreshConcert');
+      window.history.replaceState({},'',`${url.pathname}${url.search}${url.hash}`);
+    }catch{}
+  };
+
   // Poll briefly so buyer sees the transferred ticket even under short backend propagation delay.
   for (let i = 0; i < 8; i++) {
     try {
       const t = await API.tickets.get(refreshConcertId, refreshTicketId);
       if (t && t.ownerId && t.ownerId !== user.userId) {
-        const next = encodeURIComponent(`my-tickets.html?refreshTicket=${refreshTicketId}&refreshConcert=${refreshConcertId}`);
-        const requiredOwner = encodeURIComponent(t.ownerId);
-        window.location.href = `login.html?next=${next}&requiredOwner=${requiredOwner}`;
+        // The user may have opened an older notification link after ownership changed.
+        // Do not force account switching from here; keep the current session stable.
+        clearRefreshParams();
         return;
       }
       if (t && t.ownerId === user.userId) {
         const idx = allTickets.findIndex(x=>x.ticketId===refreshTicketId);
         if (idx >= 0) allTickets[idx] = t;
         else allTickets.push(t);
+        clearRefreshParams();
         return;
       }
     } catch {}
     await new Promise(r=>setTimeout(r, 500));
   }
+  clearRefreshParams();
 }
 
 async function load({ silent=false }={}){
