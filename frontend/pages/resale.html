@@ -217,7 +217,7 @@ input[type=range] { width: 100%; accent-color: var(--black); }
       <!-- Listings -->
       <div class="listings-col">
         <div class="sort-row">
-          <div class="sort-count"><span id="listing-count">—</span> Listings</div>
+          <div class="sort-count"><span id="listing-count">—</span> listings</div>
           <div class="flex-c gap-12">
             <button class="btn btn-sm btn-outline" onclick="refreshResaleListings()" style="border-radius:100px">↻ Refresh</button>
             <select id="f-sort" class="form-select" onchange="applyFilters()" style="width:auto;border-radius:100px;padding:8px 16px">
@@ -671,7 +671,7 @@ async function confirmBuy(){
   const rawEmail=(document.getElementById('buy-email')?.value||'').trim();
   const phoneNumber=toE164Phone(rawPhone);
   if(!phoneNumber){
-    document.getElementById('buy-alert').innerHTML='<div class="alert alert-danger">Please enter a valid phone number.</div>';
+    document.getElementById('buy-alert').innerHTML='<div class="alert alert-danger">Enter a valid phone number in E.164 format (for SG, use +65XXXXXXXX or XXXXXXXX).</div>';
     return;
   }
   if(!isValidEmail(rawEmail)){
