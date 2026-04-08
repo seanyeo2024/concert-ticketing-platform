@@ -81,12 +81,136 @@ body {
 .health-row {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 20px; border-bottom: 1.5px solid rgba(17,17,17,0.07);
+  gap: 24px;
 }
 .health-row:last-of-type { border-bottom: none; }
+.health-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.health-row-name {
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.health-row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  flex: 0 0 auto;
+  padding-left: 24px;
+  white-space: nowrap;
+}
+.health-row-status {
+  font-size: 0.75rem;
+  font-weight: 700;
+}
 .hdot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .hdot.ok      { background: var(--teal); box-shadow: 0 0 6px rgba(62,207,178,0.5); }
 .hdot.error   { background: var(--pink); box-shadow: 0 0 6px rgba(240,62,138,0.5); }
 .hdot.unknown { background: #555; }
+
+.scan-modal {
+  max-width: 860px;
+}
+.scan-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.9fr);
+  gap: 24px;
+}
+.scan-stage {
+  position: relative;
+  border-radius: 28px;
+  overflow: hidden;
+  border: 2px solid rgba(17,17,17,0.12);
+  background: linear-gradient(180deg, rgba(17,17,17,0.08) 0%, rgba(17,17,17,0.18) 100%);
+  min-height: 360px;
+}
+.scan-video {
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  object-fit: cover;
+  display: block;
+  background: #0f0f0f;
+}
+.scan-frame {
+  position: absolute;
+  inset: 22% 18%;
+  border: 3px solid rgba(255,255,255,0.9);
+  border-radius: 24px;
+  box-shadow: 0 0 0 999px rgba(17,17,17,0.2);
+  pointer-events: none;
+}
+.scan-status-pill {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(17,17,17,0.76);
+  color: var(--cream);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+}
+.scan-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.scan-card {
+  background: rgba(255,255,255,0.72);
+  border: 2px solid rgba(17,17,17,0.08);
+  border-radius: 24px;
+  padding: 20px;
+}
+.scan-card h4 {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+.scan-card p {
+  font-size: 0.84rem;
+  color: #666;
+}
+.scan-manual-input {
+  min-height: 116px;
+  resize: vertical;
+  font-family: 'Space Grotesk', monospace;
+  font-size: 0.8rem;
+}
+.scan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+.scan-result {
+  min-height: 120px;
+}
+.scan-result .alert {
+  margin: 0;
+}
+.scan-result-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
 
 /* ── Cancel zone ─────────────────────── */
 .cancel-zone {
@@ -181,8 +305,22 @@ body {
     align-items: flex-start;
     gap: 10px;
   }
+  .health-row-meta {
+    padding-left: 0;
+    justify-content: flex-start;
+    white-space: normal;
+  }
   .cancel-zone,
   .config-zone { padding: 20px; }
+}
+
+@media(max-width:860px){
+  .scan-layout {
+    grid-template-columns: 1fr;
+  }
+  .scan-modal {
+    padding: 28px 20px;
+  }
 }
 </style>
 </head>
@@ -394,7 +532,38 @@ body {
   </div>
 </div>
 
+<div class="modal-overlay" id="scan-qr-modal" onclick="if(event.target===this) closeScanQrModal()">
+  <div class="modal scan-modal">
+    <button class="modal-close" onclick="closeScanQrModal()">✕</button>
+    <div class="modal-title">Scan QR Code</div>
+    <div class="modal-sub">Scan a customer ticket at the gate. Confirmed tickets will be marked as used. Refunded, invalid, expired, or already-used tickets will be rejected with a clear result.</div>
+    <div class="scan-layout">
+      <div class="scan-stage">
+        <video id="scan-video" class="scan-video" playsinline muted autoplay></video>
+        <div class="scan-frame"></div>
+        <div id="scan-status-pill" class="scan-status-pill">Starting camera…</div>
+      </div>
+      <div class="scan-side">
+        <div class="scan-card">
+          <h4>Manual Fallback</h4>
+          <p>Paste the raw QR payload if camera access is blocked or unsupported.</p>
+          <textarea id="scan-manual-input" class="form-input scan-manual-input" placeholder="CTMS|TICKET_ID|USER_ID|CONCERT_ID|SIGNATURE"></textarea>
+          <div class="scan-actions">
+            <button class="btn btn-black btn-sm" onclick="submitManualQrScan()" style="border-radius:100px">Validate Payload</button>
+            <button class="btn btn-outline btn-sm" onclick="restartQrScanner()" style="border-radius:100px">Restart Camera</button>
+          </div>
+        </div>
+        <div class="scan-card scan-result">
+          <h4>Latest Result</h4>
+          <div id="scan-result-panel" class="alert alert-warning">Awaiting scan…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="../assets/js/api.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script>
 Auth.requireAdmin(); renderNav('admin');
 
@@ -403,6 +572,29 @@ function isSameDay(a,b){
 }
 
 let queueMonitorInterval=null;
+let qrScanStream=null;
+let qrScanDetector=null;
+let qrScanLoopId=0;
+let qrScanBusy=false;
+let qrScanCooldownUntil=0;
+let qrLastScannedValue='';
+let qrScanCanvas=null;
+let qrScanCtx=null;
+let qrPendingConfirm=null;
+
+function decodeQrFromCanvasRegion(sx, sy, sw, sh){
+  if(!qrScanCtx || !window.jsQR || !sw || !sh) return '';
+  qrScanCanvas.width=sw;
+  qrScanCanvas.height=sh;
+  qrScanCtx.drawImage(
+    document.getElementById('scan-video'),
+    sx, sy, sw, sh,
+    0, 0, sw, sh
+  );
+  const imageData=qrScanCtx.getImageData(0, 0, sw, sh);
+  const decoded=window.jsQR(imageData.data, sw, sh, { inversionAttempts:'attemptBoth' });
+  return decoded?.data?.trim?.() || '';
+}
 
 function stopQueueMonitorAutoRefresh(){
   if(queueMonitorInterval){
@@ -421,6 +613,234 @@ function startQueueMonitorAutoRefresh(){
     }
     loadQueueDepth();
   },5000);
+}
+
+function setScanStatus(message){
+  const el=document.getElementById('scan-status-pill');
+  if(el) el.textContent=message;
+}
+
+function resetScanResult(){
+  qrPendingConfirm=null;
+  renderScanResult({ message:'Awaiting scan…' }, 'info');
+  setScanStatus('Ready to scan');
+}
+
+function renderScanResult(result, tone='info', actionsHtml=''){
+  const panel=document.getElementById('scan-result-panel');
+  if(!panel) return;
+  const classMap={ success:'alert-success', error:'alert-danger', warning:'alert-warning', info:'alert-warning' };
+  const extra=result?.ticketId ? `<div style="margin-top:8px;font-size:0.76rem;color:#666">Ticket: ${result.ticketId}${result.concertName?` · ${result.concertName}`:''}</div>` : '';
+  panel.className='';
+  panel.innerHTML=`<div class="alert ${classMap[tone]||'alert-warning'}"><strong>${result?.message||'No result available.'}</strong>${extra}</div>${actionsHtml ? `<div class="scan-result-actions">${actionsHtml}</div>` : ''}`;
+}
+
+function stopQrScanner(){
+  if(qrScanLoopId){
+    cancelAnimationFrame(qrScanLoopId);
+    qrScanLoopId=0;
+  }
+  const video=document.getElementById('scan-video');
+  if(video){
+    video.pause?.();
+    video.srcObject=null;
+  }
+  if(qrScanStream){
+    qrScanStream.getTracks().forEach(track=>track.stop());
+    qrScanStream=null;
+  }
+}
+
+async function scanQrLoop(){
+  const video=document.getElementById('scan-video');
+  if(!video || qrScanBusy || qrPendingConfirm){
+    qrScanLoopId=requestAnimationFrame(scanQrLoop);
+    return;
+  }
+  try{
+    if(video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA){
+      let rawValue='';
+      if(qrScanDetector){
+        const codes=await qrScanDetector.detect(video);
+        rawValue=codes?.[0]?.rawValue?.trim?.() || '';
+      }else if(window.jsQR){
+        const width=video.videoWidth || 0;
+        const height=video.videoHeight || 0;
+        if(width && height){
+          if(!qrScanCanvas){
+            qrScanCanvas=document.createElement('canvas');
+            qrScanCtx=qrScanCanvas.getContext('2d', { willReadFrequently:true });
+          }
+          const cropX=Math.floor(width * 0.18);
+          const cropY=Math.floor(height * 0.22);
+          const cropW=Math.floor(width * 0.64);
+          const cropH=Math.floor(height * 0.56);
+
+          rawValue=decodeQrFromCanvasRegion(cropX, cropY, cropW, cropH);
+          if(!rawValue){
+            rawValue=decodeQrFromCanvasRegion(0, 0, width, height);
+          }
+        }
+      }
+      if(rawValue){
+        if(Date.now() >= qrScanCooldownUntil || rawValue !== qrLastScannedValue){
+          qrLastScannedValue=rawValue;
+          qrScanCooldownUntil=Date.now()+2500;
+          processQrPayload(rawValue, 'camera');
+        }
+      }
+    }
+  }catch{}
+  qrScanLoopId=requestAnimationFrame(scanQrLoop);
+}
+
+async function startQrScanner(){
+  stopQrScanner();
+  const manual=document.getElementById('scan-manual-input');
+  if(manual) manual.value='';
+  resetScanResult();
+  if(!navigator.mediaDevices?.getUserMedia){
+    setScanStatus('Camera access not supported. Use manual fallback.');
+    return;
+  }
+  try{
+    qrScanDetector='BarcodeDetector' in window ? new BarcodeDetector({ formats:['qr_code'] }) : null;
+    if(!qrScanDetector && !window.jsQR){
+      setScanStatus('QR detection is unavailable here. Use manual fallback.');
+      return;
+    }
+    qrScanStream=await navigator.mediaDevices.getUserMedia({
+      video:{
+        facingMode:{ ideal:'environment' },
+        width:{ ideal:1280 },
+        height:{ ideal:720 },
+      },
+      audio:false,
+    });
+    const video=document.getElementById('scan-video');
+    if(!video) return;
+    video.srcObject=qrScanStream;
+    await video.play();
+    setScanStatus('Ready to scan');
+    qrScanLoopId=requestAnimationFrame(scanQrLoop);
+  }catch{
+    setScanStatus('Camera unavailable. Use manual fallback.');
+  }
+}
+
+function restartQrScanner(){
+  qrScanCooldownUntil=0;
+  qrLastScannedValue='';
+  startQrScanner();
+}
+
+async function processQrPayload(qrData, source='manual'){
+  if(qrScanBusy || qrPendingConfirm) return;
+  qrScanBusy=true;
+  setScanStatus(source==='camera' ? 'Checking ticket…' : 'Checking manual payload…');
+  try{
+    const result=await API.qr.scan({ qrData, confirm:false });
+    if(result?.success && result?.actionRequired){
+      qrPendingConfirm={ qrData };
+      renderScanResult(
+        result,
+        'success',
+        `<button class="btn btn-black btn-sm" onclick="confirmPendingScan()" style="border-radius:100px">OK</button><button class="btn btn-outline btn-sm" onclick="resetScanResult()" style="border-radius:100px">Cancel</button>`
+      );
+      setScanStatus('Review result and confirm entry');
+    }else if(result?.success){
+      renderScanResult(
+        result,
+        'success',
+        `<button class="btn btn-black btn-sm" onclick="resetScanResult()" style="border-radius:100px">OK</button>`
+      );
+      setScanStatus('Ticket processed');
+    }else{
+      const code=String(result?.code||'');
+      const tone=(code.includes('USED') || code.includes('REFUNDED') || code.includes('EXPIRED') || code.includes('INVALID')) ? 'error' : 'warning';
+      renderScanResult(
+        result||{ message:'Ticket could not be validated.' },
+        tone,
+        `<button class="btn btn-black btn-sm" onclick="resetScanResult()" style="border-radius:100px">OK</button>`
+      );
+      setScanStatus('Result ready');
+    }
+  }catch(e){
+    renderScanResult(
+      { message:e?.message||'QR scan service unavailable.' },
+      'error',
+      `<button class="btn btn-black btn-sm" onclick="resetScanResult()" style="border-radius:100px">OK</button>`
+    );
+    setScanStatus('Scan failed. Check backend services.');
+  }finally{
+    qrScanBusy=false;
+  }
+}
+
+async function confirmPendingScan(){
+  if(qrScanBusy || !qrPendingConfirm?.qrData) return;
+  qrScanBusy=true;
+  setScanStatus('Confirming entry…');
+  try{
+    const result=await API.qr.scan({ qrData: qrPendingConfirm.qrData, confirm:true });
+    qrPendingConfirm=null;
+    if(result?.success){
+      renderScanResult(
+        result,
+        'success',
+        `<button class="btn btn-black btn-sm" onclick="resetScanResult()" style="border-radius:100px">OK</button>`
+      );
+      setScanStatus('Entry confirmed');
+    }else{
+      renderScanResult(
+        result||{ message:'Ticket could not be confirmed.' },
+        'error',
+        `<button class="btn btn-black btn-sm" onclick="resetScanResult()" style="border-radius:100px">OK</button>`
+      );
+      setScanStatus('Confirmation failed');
+    }
+  }catch(e){
+    qrPendingConfirm=null;
+    renderScanResult(
+      { message:e?.message||'QR scan service unavailable.' },
+      'error',
+      `<button class="btn btn-black btn-sm" onclick="resetScanResult()" style="border-radius:100px">OK</button>`
+    );
+    setScanStatus('Confirmation failed');
+  }finally{
+    qrScanBusy=false;
+  }
+}
+
+function submitManualQrScan(){
+  const qrData=document.getElementById('scan-manual-input')?.value?.trim();
+  if(!qrData){
+    renderScanResult({ message:'Paste a QR payload first.' }, 'warning');
+    return;
+  }
+  processQrPayload(qrData, 'manual');
+}
+
+function openScanQrModal(){
+  openModal('scan-qr-modal');
+  startQrScanner();
+}
+
+function closeScanQrModal(){
+  stopQrScanner();
+  closeModal('scan-qr-modal');
+  qrScanCooldownUntil=0;
+  qrLastScannedValue='';
+  qrPendingConfirm=null;
+  if(location.hash==='#scan-qr'){
+    history.replaceState(null, '', `${location.pathname}${location.search}`);
+  }
+}
+
+function handleAdminHashAction(){
+  if(location.hash==='#scan-qr'){
+    openScanQrModal();
+  }
 }
 
 function showPanel(n,el){
@@ -543,10 +963,10 @@ async function loadHealth(){
   }));
   document.getElementById('health-list').innerHTML=rows.map(r=>`
     <div class="health-row">
-      <div class="flex-c gap-12"><div class="hdot ${r.status}"></div><span style="font-size:0.88rem;font-weight:500">${r.name}</span></div>
-      <div class="flex-c gap-12">
+      <div class="health-row-main"><div class="hdot ${r.status}"></div><span class="health-row-name">${r.name}</span></div>
+      <div class="health-row-meta">
         ${r.ms?`<span class="text-xs text-muted">${r.ms}ms</span>`:''}
-        <span style="font-size:0.75rem;font-weight:700;color:${r.status==='ok'?'var(--teal)':r.status==='error'?'var(--pink)':'#888'}">${r.status==='ok'?'Online':r.status==='error'?'Offline':r.note||'Unknown'}</span>
+        <span class="health-row-status" style="color:${r.status==='ok'?'var(--teal)':r.status==='error'?'var(--pink)':'#888'}">${r.status==='ok'?'Online':r.status==='error'?'Offline':r.note||'Unknown'}</span>
       </div>
     </div>`).join('');
 }
@@ -1423,6 +1843,8 @@ document.getElementById('cfg-markup-pct')?.addEventListener('input', ()=>{
   const value=Number(input?.value);
   if(input && (!Number.isFinite(value) || value < 0)) input.value='0';
 });
+window.addEventListener('hashchange', handleAdminHashAction);
+handleAdminHashAction();
 loadDashboard();
 </script>
 </body>
