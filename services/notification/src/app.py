@@ -13,6 +13,7 @@ import pika
 import re
 import time
 import smtplib
+import math
 from urllib.parse import parse_qs, quote, urlparse
 from email.message import EmailMessage
 from importlib import import_module
@@ -68,15 +69,24 @@ def get_user_contact(user_id):
 def fetch_concert_meta(concert_id):
     concert_name = concert_id or "N/A"
     concert_dt = None
-    concert_url = os.environ.get("CONCERT_SERVICE_URL", "http://localhost:5000")
-    try:
-        res = import_module("requests").get(f"{concert_url}/concerts/{concert_id}", timeout=5)
-        if res.status_code == 200 and isinstance(res.json(), dict):
-            data = res.json()
-            concert_name = data.get("name") or concert_name
-            concert_dt = data.get("eventDate")
-    except Exception:
-        pass
+    configured_url = (os.environ.get("CONCERT_SERVICE_URL", "http://localhost:5000") or "").rstrip("/")
+    base_urls = [configured_url, "http://concert:5000", "http://kong:8000", "http://localhost:5000"]
+    unique_base_urls = []
+    for base in base_urls:
+        if base and base not in unique_base_urls:
+            unique_base_urls.append(base)
+
+    for base in unique_base_urls:
+        try:
+            res = import_module("requests").get(f"{base}/concerts/{concert_id}", timeout=5)
+            if res.status_code == 200 and isinstance(res.json(), dict):
+                data = res.json()
+                concert_name = data.get("name") or data.get("concertName") or data.get("title") or concert_name
+                concert_dt = data.get("eventDate") or data.get("concertDateTime")
+                if concert_name and concert_name != concert_id:
+                    break
+        except Exception:
+            continue
     return {"concertName": concert_name, "concertDateTime": concert_dt}
 
 
@@ -367,7 +377,7 @@ def send_whatsapp(to_number, body):
 TEMPLATES = {
     "ticket.resale.listed": ("Your ticket is listed for resale", "Ticket {ticketId} for {concertName} has been listed at {resalePrice} {currency}."),
     "concert.cancelled":    ("Concert Cancelled — Refund Issued", "We regret to inform you that {concertName} has been cancelled. A full refund of {amount} {currency} will be processed."),
-    "queue.window.granted": ("It's your turn!", "Your purchase window for {concertName} is now open. You have 10 minutes to complete your purchase."),
+    "queue.window.granted": ("It's your turn!", "Your purchase window for {concertName} is now open. You have {windowDurationMinutes} minutes to complete your purchase."),
     "queue.window.expired": ("Purchase window expired", "Your purchase window has expired. Please rejoin the queue to try again."),
 }
 
@@ -391,6 +401,67 @@ def _money(data, primary_key="amount", fallback_key="resalePrice"):
         return f"{currency} {float(amount):.2f}"
     except Exception:
         return f"{currency} {amount}"
+
+
+def _is_blank(value):
+    return value is None or str(value).strip() in ("", "N/A")
+
+
+def _resolve_window_minutes(payload, data):
+    for candidate in (
+        data.get("windowDurationMinutes"),
+        payload.get("windowDurationMinutes"),
+    ):
+        try:
+            if candidate is not None:
+                value = int(candidate)
+                if value > 0:
+                    return value
+        except Exception:
+            pass
+
+    for candidate in (
+        data.get("windowDurationSeconds"),
+        payload.get("windowDurationSeconds"),
+    ):
+        try:
+            if candidate is not None:
+                value = int(candidate)
+                if value > 0:
+                    return max(1, math.ceil(value / 60))
+        except Exception:
+            pass
+
+    try:
+        expires_at = data.get("windowExpiresAt")
+        event_ts = data.get("timestamp") or payload.get("timestamp")
+        if expires_at and event_ts:
+            expires_dt = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+            event_dt = datetime.fromisoformat(str(event_ts).replace("Z", "+00:00"))
+            diff_seconds = max(0, int((expires_dt - event_dt).total_seconds()))
+            if diff_seconds:
+                return max(1, math.ceil(diff_seconds / 60))
+    except Exception:
+        pass
+
+    return max(1, math.ceil(int(os.environ.get("PURCHASE_WINDOW_SECONDS", "600")) / 60))
+
+
+def enrich_concert_fields(payload, data):
+    concert_id = data.get("concertId") or payload.get("concertId")
+    if not concert_id:
+        return
+
+    needs_name = _is_blank(data.get("concertName"))
+    needs_dt = _is_blank(data.get("concertDateTime"))
+    if not needs_name and not needs_dt:
+        return
+
+    meta = fetch_concert_meta(concert_id)
+    if needs_name:
+        data["concertName"] = meta.get("concertName") or concert_id
+    if needs_dt:
+        data["concertDateTime"] = meta.get("concertDateTime")
 
 
 def _qr_link(data):
@@ -534,9 +605,11 @@ def compose_sms_message(event_type, data):
         )
 
     if event_type == "queue.window.granted":
+        window_minutes = _value(data, "windowDurationMinutes", "N/A")
         return (
             "Your purchase window is open\n"
             f"Concert: {concert_name}\n"
+            f"Window: {window_minutes} minutes\n"
             f"{footer}"
         )
 
@@ -638,14 +711,10 @@ def handle_event(event_type, payload):
         data["timestamp"] = payload.get("timestamp")
     if isinstance(data, dict) and "userId" not in data and payload.get("userId"):
         data["userId"] = payload.get("userId")
-    if isinstance(data, dict) and payload.get("eventType") in ("queue.window.granted", "queue.window.expired"):
-        concert_id = data.get("concertId") or payload.get("concertId")
-        if concert_id and (not data.get("concertName") or str(data.get("concertName")).strip() in ("", "N/A")):
-            meta = fetch_concert_meta(concert_id)
-            data["concertName"] = meta.get("concertName")
-        if concert_id and not data.get("concertDateTime"):
-            meta = fetch_concert_meta(concert_id)
-            data["concertDateTime"] = meta.get("concertDateTime")
+    if isinstance(data, dict):
+        enrich_concert_fields(payload, data)
+        if event_type == "queue.window.granted":
+            data["windowDurationMinutes"] = _resolve_window_minutes(payload, data)
     user_id = payload.get("userId", data.get("userId", "UNKNOWN"))
     persist_contact_hints(payload, data, user_id)
     subject, body = compose_message(event_type, data)

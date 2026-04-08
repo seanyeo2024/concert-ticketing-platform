@@ -52,16 +52,22 @@ def issue_buyer_qr(ticket_id, buyer_id, concert_id, retries=3):
 
 
 def fetch_concert_meta(concert_id):
-    try:
-        res = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=5)
-        if res.status_code == 200 and isinstance(res.json(), dict):
-            data = res.json()
-            return {
-                "concertName": data.get("name") or concert_id,
-                "concertDateTime": data.get("eventDate"),
-            }
-    except Exception:
-        pass
+    base_urls = [(CONCERT_URL or "").rstrip("/"), "http://concert:5000", "http://kong:8000", "http://localhost:5000"]
+    tried = set()
+    for base in base_urls:
+        if not base or base in tried:
+            continue
+        tried.add(base)
+        try:
+            res = requests.get(f"{base}/concerts/{concert_id}", timeout=5)
+            if res.status_code == 200 and isinstance(res.json(), dict):
+                data = res.json()
+                return {
+                    "concertName": data.get("name") or data.get("concertName") or data.get("title") or concert_id,
+                    "concertDateTime": data.get("eventDate") or data.get("concertDateTime"),
+                }
+        except Exception:
+            continue
     return {"concertName": concert_id, "concertDateTime": None}
 
 # ── S2a: Seller lists ticket ──────────────────────────────────────────────────

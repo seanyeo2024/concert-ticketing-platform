@@ -38,16 +38,22 @@ def err(code, message, status=400):
 
 
 def fetch_concert_meta(concert_id):
-    try:
-        res = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=5)
-        if res.status_code == 200 and isinstance(res.json(), dict):
-            data = res.json()
-            return {
-                "concertName": data.get("name") or concert_id,
-                "concertDateTime": data.get("eventDate"),
-            }
-    except Exception:
-        pass
+    base_urls = [(CONCERT_URL or "").rstrip("/"), "http://concert:5000", "http://localhost:5000"]
+    tried = set()
+    for base in base_urls:
+        if not base or base in tried:
+            continue
+        tried.add(base)
+        try:
+            res = requests.get(f"{base}/concerts/{concert_id}", timeout=5)
+            if res.status_code == 200 and isinstance(res.json(), dict):
+                data = res.json()
+                return {
+                    "concertName": data.get("name") or data.get("concertName") or data.get("title") or concert_id,
+                    "concertDateTime": data.get("eventDate") or data.get("concertDateTime"),
+                }
+        except Exception:
+            continue
     return {"concertName": concert_id, "concertDateTime": None}
 
 
@@ -112,6 +118,8 @@ def publish_window_granted(user_id, concert_id, expires_at):
                 "concertName": concert_meta.get("concertName"),
                 "concertDateTime": concert_meta.get("concertDateTime"),
                 "windowExpiresAt": expires_at.isoformat(),
+                "windowDurationSeconds": WINDOW_SECONDS,
+                "windowDurationMinutes": max(1, math.ceil(WINDOW_SECONDS / 60)),
             },
         })
     except Exception:
@@ -383,12 +391,17 @@ def update_entry(concert_id, user_id):
                     (new_status, concert_id, user_id))
         db.commit()
         if new_status == "EXPIRED":
+            concert_meta = fetch_concert_meta(concert_id)
             mq_publish("queue.window.expired", {
                 "eventType": "queue.window.expired",
                 "channel": "SMS",
                 "userId": user_id,
                 "timestamp": datetime.utcnow().isoformat(),
-                "data": {"concertId": concert_id},
+                "data": {
+                    "concertId": concert_id,
+                    "concertName": concert_meta.get("concertName"),
+                    "concertDateTime": concert_meta.get("concertDateTime"),
+                },
             })
     affected = cur.rowcount; cur.close(); db.close()
     if affected == 0: return err("NOT_FOUND", "Queue entry not found", 404)

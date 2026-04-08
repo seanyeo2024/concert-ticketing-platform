@@ -429,10 +429,18 @@ async function init(){
     renderMap();
     concert=await API.concerts.get(concertId);
     document.getElementById('o-concert').textContent=concert.name;
+    const cachedContact=ContactProfile.readCached(user?.userId)||{};
     try{
-      contactPrefill=await ContactProfile.fetch(user);
+      const remoteContact=await ContactProfile.fetch(user);
+      contactPrefill={
+        email:(remoteContact?.email||cachedContact?.email||user?.contactEmail||user?.email||'').trim(),
+        phoneNumber:(remoteContact?.phoneNumber||cachedContact?.phoneNumber||user?.contactPhone||user?.phone||'').trim(),
+      };
     }catch{
-      contactPrefill={ email:user?.email||'', phoneNumber:'' };
+      contactPrefill={
+        email:(cachedContact?.email||user?.contactEmail||user?.email||'').trim(),
+        phoneNumber:(cachedContact?.phoneNumber||user?.contactPhone||user?.phone||'').trim(),
+      };
     }
     if(!document.getElementById('contact-email').value){
       document.getElementById('contact-email').value=(contactPrefill?.email||user?.email||'').trim();

@@ -355,10 +355,20 @@ function setupLiveSync(){
 
 async function ensureContactPrefill(){
   if(contactPrefill) return contactPrefill;
+  const cachedContact=ContactProfile.readCached(user?.userId)||{};
   try{
-    contactPrefill=await ContactProfile.fetch(user);
+    const remoteContact=await ContactProfile.fetch(user);
+    contactPrefill={
+      email:(remoteContact?.email||cachedContact?.email||user?.contactEmail||user?.email||'').trim(),
+      phoneNumber:(remoteContact?.phoneNumber||cachedContact?.phoneNumber||user?.contactPhone||user?.phone||'').trim(),
+      smsOptIn:Number(remoteContact?.smsOptIn||cachedContact?.smsOptIn||0),
+    };
   }catch{
-    contactPrefill={ email:user?.email||'', phoneNumber:user?.phone||'' };
+    contactPrefill={
+      email:(cachedContact?.email||user?.contactEmail||user?.email||'').trim(),
+      phoneNumber:(cachedContact?.phoneNumber||user?.contactPhone||user?.phone||'').trim(),
+      smsOptIn:Number(cachedContact?.smsOptIn||0),
+    };
   }
   return contactPrefill;
 }

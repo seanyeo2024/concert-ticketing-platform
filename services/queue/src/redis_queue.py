@@ -69,6 +69,26 @@ def parse_int(value, default=0):
         return default
 
 
+def fetch_concert_meta(concert_id):
+    base_urls = [(CONCERT_URL or "").rstrip("/"), "http://concert:5000", "http://kong:8000", "http://localhost:5000"]
+    tried = set()
+    for base in base_urls:
+        if not base or base in tried:
+            continue
+        tried.add(base)
+        try:
+            res = requests.get(f"{base}/concerts/{concert_id}", timeout=5)
+            if res.status_code == 200 and isinstance(res.json(), dict):
+                data = res.json()
+                return {
+                    "concertName": data.get("name") or data.get("concertName") or data.get("title") or concert_id,
+                    "concertDateTime": data.get("eventDate") or data.get("concertDateTime"),
+                }
+        except Exception:
+            continue
+    return {"concertName": concert_id, "concertDateTime": None}
+
+
 def iso_to_epoch(value):
     if not value:
         return now_epoch()
@@ -190,6 +210,7 @@ def is_heartbeat_stale(row):
 
 def publish_window_expired(row):
     try:
+        concert_meta = fetch_concert_meta(row["concertId"])
         mq_publish(
             "queue.window.expired",
             {
@@ -199,6 +220,8 @@ def publish_window_expired(row):
                 "timestamp": datetime.utcnow().isoformat(),
                 "data": {
                     "concertId": row["concertId"],
+                    "concertName": concert_meta.get("concertName"),
+                    "concertDateTime": concert_meta.get("concertDateTime"),
                     "queueId": row["queueId"],
                 },
             },
@@ -209,6 +232,7 @@ def publish_window_expired(row):
 
 def publish_window_granted(user_id, concert_id, expires_at):
     try:
+        concert_meta = fetch_concert_meta(concert_id)
         mq_publish(
             "queue.window.granted",
             {
@@ -218,7 +242,11 @@ def publish_window_granted(user_id, concert_id, expires_at):
                 "timestamp": datetime.utcnow().isoformat(),
                 "data": {
                     "concertId": concert_id,
+                    "concertName": concert_meta.get("concertName"),
+                    "concertDateTime": concert_meta.get("concertDateTime"),
                     "windowExpiresAt": expires_at.isoformat(),
+                    "windowDurationSeconds": WINDOW_SECONDS,
+                    "windowDurationMinutes": max(1, math.ceil(WINDOW_SECONDS / 60)),
                 },
             },
         )
