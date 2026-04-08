@@ -395,6 +395,14 @@ let concertId, concert;
 let categories = [], prices = [], selectedCat = null;
 let isAdmin = false;
 
+function resolveCategoryPrice(cat){
+  if(!cat) return null;
+  const fromPricing = prices.find(p => p.categoryId === cat.categoryId);
+  const candidate = fromPricing?.basePrice ?? cat.basePrice;
+  const amount = Number(candidate);
+  return Number.isFinite(amount) && amount >= 0 ? amount : null;
+}
+
 renderNav('concerts');
 
 function checkIfAdmin() {
@@ -451,13 +459,13 @@ async function init() {
     renderCats();
 
     // ✅ Safe price calculation
-    const validPrices = prices
-      .map(p => p.basePrice)
-      .filter(p => typeof p === 'number');
+    const validPrices = categories
+      .map(resolveCategoryPrice)
+      .filter(p => Number.isFinite(p) && p >= 0);
 
     if (validPrices.length) {
       const minPrice = Math.min(...validPrices);
-      document.getElementById('b-price-from').textContent = `SGD ${minPrice}`;
+      document.getElementById('b-price-from').textContent = `SGD ${minPrice.toFixed(2)}`;
     }
 
   } catch (e) {
@@ -530,7 +538,7 @@ function renderCats() {
   }
 
   list.innerHTML = categories.map(cat => {
-    const price = prices.find(p => p.categoryId === cat.categoryId);
+    const amount = resolveCategoryPrice(cat);
     const soldOut = cat.availableSeats === 0;
     const disabled = soldOut || isAdmin;
 
@@ -547,7 +555,7 @@ function renderCats() {
         </div>
         <div>
           <div class="cat-row-price">
-            ${price ? `SGD ${price.basePrice}` : '—'}
+            ${amount !== null ? `SGD ${amount.toFixed(2)}` : '—'}
           </div>
         </div>
       </div>
@@ -570,7 +578,7 @@ function selectCat(catId) {
   document.getElementById(`cr-${catId}`)?.classList.add('selected');
 
   selectedCat = cat;
-  const price = prices.find(p => p.categoryId === catId);
+  const amount = resolveCategoryPrice(cat);
 
   document.getElementById('order-empty').classList.add('hidden');
   document.getElementById('order-detail').classList.remove('hidden');
@@ -579,7 +587,7 @@ function selectCat(catId) {
   document.getElementById('o-concert').textContent = concert.name;
   document.getElementById('o-cat').textContent = cat.categoryName;
   document.getElementById('o-price').textContent =
-    price ? `SGD ${price.basePrice}` : '—';
+    amount !== null ? `SGD ${amount.toFixed(2)}` : '—';
 }
 
 async function joinQueue() {
