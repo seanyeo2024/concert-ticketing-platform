@@ -290,18 +290,19 @@ def purchase_resale():
     qr_ready = "qrId" in qr_data
 
     # Step 9 — notify both parties (non-critical)
+    concert_meta = fetch_concert_meta(data["concertId"])
+    sale_dt = payment_data.get("createdAt") or datetime.utcnow().isoformat()
+    next_page = quote(
+        f"my-tickets.html?refreshTicket={data['ticketId']}&refreshConcert={data['concertId']}",
+        safe="",
+    )
+    qr_link = (
+        f"{FRONTEND_PAGES_BASE_URL}/login.html?next={next_page}"
+        f"&requiredOwner={quote(str(data['buyerId']), safe='')}"
+    )
+
     try:
-        concert_meta = fetch_concert_meta(data["concertId"])
-        sale_dt = payment_data.get("createdAt") or datetime.utcnow().isoformat()
-        next_page = quote(
-            f"my-tickets.html?refreshTicket={data['ticketId']}&refreshConcert={data['concertId']}",
-            safe="",
-        )
-        qr_link = (
-            f"{FRONTEND_PAGES_BASE_URL}/login.html?next={next_page}"
-            f"&requiredOwner={quote(str(data['buyerId']), safe='')}"
-        )
-        seller_phone = data.get("sellerPhoneNumber") or data.get("phoneNumber") or data.get("toNumber")
+        seller_phone = data.get("sellerPhoneNumber") or data.get("sellerContactPhone") or data.get("sellerToNumber")
         event_payload = {
             "eventType": "ticket.resale.sold",
             "channel": "SMS",
@@ -321,10 +322,15 @@ def purchase_resale():
         if seller_email:
             event_payload["toEmail"] = seller_email
             event_payload["contactEmail"] = seller_email
+            event_payload["email"] = seller_email
             event_payload["data"]["toEmail"] = seller_email
             event_payload["data"]["contactEmail"] = seller_email
+            event_payload["data"]["email"] = seller_email
         mq_publish("ticket.resale.sold", event_payload)
+    except Exception as exc:
+        print(f"[RESALE_PURCHASE] Seller notification publish failed: {exc}")
 
+    try:
         buyer_event = {
             "eventType": "ticket.purchased",
             "channel": "SMS",
@@ -332,6 +338,7 @@ def purchase_resale():
             "phoneNumber": buyer_phone,
             "timestamp": datetime.utcnow().isoformat(),
             "data": {
+                "userId": data["buyerId"],
                 "ticketId": data["ticketId"],
                 "concertId": data["concertId"],
                 "concertName": concert_meta.get("concertName"),
@@ -349,11 +356,14 @@ def purchase_resale():
         if buyer_email:
             buyer_event["toEmail"] = buyer_email
             buyer_event["contactEmail"] = buyer_email
+            buyer_event["email"] = buyer_email
             buyer_event["data"]["toEmail"] = buyer_email
             buyer_event["data"]["contactEmail"] = buyer_email
+            buyer_event["data"]["email"] = buyer_email
 
         mq_publish("ticket.purchased", buyer_event)
-    except Exception: pass
+    except Exception as exc:
+        print(f"[RESALE_PURCHASE] Buyer notification publish failed: {exc}")
 
     return jsonify({"success": True, "ticketId": data["ticketId"],
                     "newOwner": data["buyerId"], "paymentId": payment_data["paymentId"],

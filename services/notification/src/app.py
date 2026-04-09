@@ -751,28 +751,50 @@ def handle_event(event_type, payload):
 ensure_schema()
 
 def start_consumer():
-    """Background thread: consumes all messages from ctms_topic."""
-    try:
-        creds = pika.PlainCredentials(os.environ.get("RABBITMQ_USER","ctms"),
-                                      os.environ.get("RABBITMQ_PASSWORD","ctms_pass"))
-        params = pika.ConnectionParameters(host=os.environ.get("RABBITMQ_HOST","localhost"),
-                                           credentials=creds, heartbeat=60)
-        conn = pika.BlockingConnection(params)
-        ch = conn.channel()
-        exchange = os.environ.get("RABBITMQ_EXCHANGE","ctms_topic")
-        ch.exchange_declare(exchange=exchange, exchange_type="topic", durable=True)
-        q = ch.queue_declare(queue="notification_all", durable=True)
-        ch.queue_bind(exchange=exchange, queue="notification_all", routing_key="#")
-        def callback(ch, method, props, body):
+    """Background thread: consumes all messages from ctms_topic and reconnects on failure."""
+    creds = pika.PlainCredentials(
+        os.environ.get("RABBITMQ_USER", "ctms"),
+        os.environ.get("RABBITMQ_PASSWORD", "ctms_pass"),
+    )
+    host = os.environ.get("RABBITMQ_HOST", "localhost")
+    port = int(os.environ.get("RABBITMQ_PORT", "5672"))
+    exchange = os.environ.get("RABBITMQ_EXCHANGE", "ctms_topic")
+
+    while True:
+        conn = None
+        try:
+            params = pika.ConnectionParameters(
+                host=host,
+                port=port,
+                credentials=creds,
+                heartbeat=60,
+                blocked_connection_timeout=30,
+            )
+            conn = pika.BlockingConnection(params)
+            ch = conn.channel()
+            ch.exchange_declare(exchange=exchange, exchange_type="topic", durable=True)
+            ch.queue_declare(queue="notification_all", durable=True)
+            ch.queue_bind(exchange=exchange, queue="notification_all", routing_key="#")
+
+            def callback(ch, method, props, body):
+                try:
+                    payload = json.loads(body)
+                    handle_event(method.routing_key, payload)
+                except Exception as e:
+                    print(f"[NOTIFICATION] Error handling event: {e}")
+
+            print(f"[NOTIFICATION] RabbitMQ consumer connected to {host}:{port}")
+            ch.basic_consume(queue="notification_all", on_message_callback=callback, auto_ack=True)
+            ch.start_consuming()
+        except Exception as e:
+            print(f"[NOTIFICATION] RabbitMQ consumer failed: {e}. Retrying in 5 seconds...")
+            time.sleep(5)
+        finally:
             try:
-                payload = json.loads(body)
-                handle_event(method.routing_key, payload)
-            except Exception as e:
-                print(f"[NOTIFICATION] Error handling event: {e}")
-        ch.basic_consume(queue="notification_all", on_message_callback=callback, auto_ack=True)
-        ch.start_consuming()
-    except Exception as e:
-        print(f"[NOTIFICATION] RabbitMQ consumer failed: {e}")
+                if conn and conn.is_open:
+                    conn.close()
+            except Exception:
+                pass
 
 # REST endpoints (admin/monitoring)
 @app.route("/notification/v1/notification/<notif_id>", methods=["GET"])
