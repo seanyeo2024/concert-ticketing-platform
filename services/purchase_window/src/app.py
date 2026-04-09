@@ -9,6 +9,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests, os, sys
 from datetime import datetime
+from urllib.parse import quote
 
 app = Flask(__name__)
 CORS(app)
@@ -25,6 +26,7 @@ QUEUE_URL    = os.environ.get("QUEUE_SERVICE_URL",            "http://localhost:
 TICKET_URL   = os.environ.get("TICKET_INVENTORY_SERVICE_URL", "http://localhost:5003")
 PAYMENT_URL  = os.environ.get("PAYMENT_SERVICE_URL",          "http://localhost:5004")
 QR_URL       = os.environ.get("QR_SERVICE_URL",               "http://localhost:5005")
+FRONTEND_PAGES_BASE_URL = os.environ.get("FRONTEND_PAGES_BASE_URL", "http://localhost:8080/pages")
 
 def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
@@ -63,6 +65,26 @@ def resolve_ticket(concert_id, ticket_id, seat_number):
 
     return fallback, f"Recovered ticket by seat number {seat_number}"
 
+
+def fetch_concert_meta(concert_id):
+    base_urls = [(CONCERT_URL or "").rstrip("/"), "http://concert:5000", "http://kong:8000", "http://localhost:5000"]
+    tried = set()
+    for base in base_urls:
+        if not base or base in tried:
+            continue
+        tried.add(base)
+        try:
+            res = requests.get(f"{base}/concerts/{concert_id}", timeout=5)
+            if res.status_code == 200 and isinstance(res.json(), dict):
+                data = res.json()
+                return {
+                    "concertName": data.get("name") or data.get("concertName") or data.get("title") or concert_id,
+                    "concertDateTime": data.get("eventDate") or data.get("concertDateTime"),
+                }
+        except Exception:
+            continue
+    return {"concertName": concert_id, "concertDateTime": None}
+
 # POST /purchase/v1/window/<concertId>
 @app.route("/purchase/v1/window/<concert_id>", methods=["POST"])
 def purchase(concert_id):
@@ -72,8 +94,12 @@ def purchase(concert_id):
     seat_number = data.get("seatNumber")
     session_token = data.get("sessionToken")
     stripe_token = data.get("stripeToken", "tok_simulated")
+    contact_email = (data.get("contactEmail") or data.get("toEmail") or data.get("email") or "").strip()
+    contact_phone = data.get("contactPhone") or data.get("phoneNumber") or data.get("toNumber")
     if not all([user_id, ticket_id, session_token]):
         return err("MISSING_FIELDS", "userId, ticketId, and sessionToken are required")
+    if not contact_phone:
+        return err("MISSING_FIELDS", "contactPhone is required")
 
     # Step 1 — verify queue window is WINDOW_GRANTED and not expired
     q = requests.get(f"{QUEUE_URL}/queue/v1/queue/{concert_id}/{user_id}", timeout=5)
@@ -200,12 +226,31 @@ def purchase(concert_id):
 
     # Step 9 — publish notification event (non-critical)
     try:
-        mq_publish("ticket.purchased", {
+        concert_meta = fetch_concert_meta(concert_id)
+        purchase_dt = payment_data.get("createdAt") or datetime.utcnow().isoformat()
+        next_page = quote(f"my-tickets.html?refreshTicket={ticket_id}&refreshConcert={concert_id}", safe="")
+        qr_link = f"{FRONTEND_PAGES_BASE_URL}/login.html?next={next_page}&requiredOwner={quote(str(user_id), safe='')}"
+        event_payload = {
             "eventType": "ticket.purchased", "channel": "SMS", "userId": user_id,
+            "phoneNumber": contact_phone,
             "timestamp": datetime.utcnow().isoformat(),
             "data": {"ticketId": ticket_id, "concertId": concert_id,
+                     "concertName": concert_meta.get("concertName"),
+                     "concertDateTime": concert_meta.get("concertDateTime"),
                      "seatNumber": ticket.get("seatNumber"), "amount": amount, "currency": currency,
-                     "qrImageUrl": qr_data.get("qrImageUrl")}
+                     "purchaseDateTime": purchase_dt,
+                     "purchaseType": "PRIMARY",
+                     "toEmail": contact_email,
+                     "contactEmail": contact_email,
+                     "qrImageUrl": qr_data.get("qrImageUrl"),
+                     "qrCodeLink": qr_link,
+                     "phoneNumber": contact_phone}
+        }
+        if contact_email:
+            event_payload["toEmail"] = contact_email
+            event_payload["contactEmail"] = contact_email
+        mq_publish("ticket.purchased", {
+            **event_payload
         })
     except Exception: pass
 
