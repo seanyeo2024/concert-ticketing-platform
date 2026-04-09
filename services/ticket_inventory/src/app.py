@@ -185,37 +185,12 @@ def cancel_all(concert_id):
     pending_count = cur.fetchone()["pendingCount"]
     cur.close(); db.close()
     db = get_db(); cur = db.cursor()
-    cur.execute("""UPDATE ticket SET status='PENDING', updatedAt=NOW()
+    cur.execute("""UPDATE ticket SET status='REFUNDED', updatedAt=NOW()
                    WHERE concertId=%s AND status IN ('CONFIRMED','PENDING','RESALE_LISTED','RESALE_PENDING')""",
                 (concert_id,))
     db.commit(); affected = cur.rowcount; cur.close(); db.close()
-    return jsonify({"concertId": concert_id, "ticketsQueuedForRefund": affected, "ticketsPending": pending_count,
+    return jsonify({"concertId": concert_id, "ticketsRefunded": affected, "ticketsPending": pending_count,
                     "reason": reason, "updatedAt": datetime.utcnow().isoformat()})
-
-
-@app.route("/tickets/v1/tickets/<concert_id>/refund-batch", methods=["PUT"])
-def refund_batch(concert_id):
-    data = request.get_json() or {}
-    raw_ticket_ids = data.get("ticketIds") or []
-    ticket_ids = [str(ticket_id).strip() for ticket_id in raw_ticket_ids if str(ticket_id).strip()]
-    if not ticket_ids:
-        return err("EMPTY_PAYLOAD", "ticketIds array is required")
-
-    placeholders = ", ".join(["%s"] * len(ticket_ids))
-    params = [concert_id, *ticket_ids]
-    db = get_db(); cur = db.cursor()
-    cur.execute(
-        f"""UPDATE ticket SET status='REFUNDED', updatedAt=NOW()
-            WHERE concertId=%s AND ticketId IN ({placeholders}) AND status='PENDING'""",
-        params,
-    )
-    db.commit(); affected = cur.rowcount; cur.close(); db.close()
-    return jsonify({
-        "concertId": concert_id,
-        "ticketIds": ticket_ids,
-        "ticketsRefunded": affected,
-        "updatedAt": datetime.utcnow().isoformat(),
-    })
 
 @app.route("/health")
 def health(): return jsonify({"status": "ok", "service": "ticket_inventory"})

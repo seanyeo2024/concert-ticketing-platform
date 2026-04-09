@@ -53,9 +53,9 @@ def cancel_concert(concert_id):
     # Step 2+3 — bulk update all confirmed tickets to REFUNDED
     bulk = requests.put(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/cancel-all",
                         json={"reason": reason}, timeout=30)
-    tickets_queued = 0
+    tickets_refunded = 0
     if bulk.status_code == 200:
-        tickets_queued = bulk.json().get("ticketsQueuedForRefund", 0)
+        tickets_refunded = bulk.json().get("ticketsRefunded", 0)
 
     # Step 4 — bulk invalidate all QRs
     try:
@@ -65,7 +65,6 @@ def cancel_concert(concert_id):
 
     # Step 5 — get all payments for this concert and refund each
     refund_count = 0; refund_failures = 0
-    refunded_ticket_ids = []
     try:
         pays = requests.get(f"{PAYMENT_URL}/payment/v1/payment/concert/{concert_id}", timeout=10)
         if pays.status_code == 200:
@@ -77,7 +76,6 @@ def cancel_concert(concert_id):
                                             "reason": "CONCERT_CANCELLED"}, timeout=10)
                     if r.status_code == 201:
                         refund_count += 1
-                        refunded_ticket_ids.append(payment["ticketId"])
                         try:
                             mq_publish("concert.cancelled", {
                                 "eventType": "concert.cancelled",
@@ -99,24 +97,7 @@ def cancel_concert(concert_id):
     except Exception as e:
         print(f"[S3] Refund loop failed: {e}")
 
-    tickets_refunded = 0
-    if refunded_ticket_ids:
-        try:
-            finalize = requests.put(
-                f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/refund-batch",
-                json={"ticketIds": refunded_ticket_ids},
-                timeout=30,
-            )
-            if finalize.status_code == 200:
-                tickets_refunded = finalize.json().get("ticketsRefunded", 0)
-        except Exception as e:
-            print(f"[S3] Ticket refund finalization failed: {e}")
-
-    # Step 6 — publish per-user cancellation notifications after successful refunds
-    # so notification service can resolve the recipient and send SMS.
-
     return jsonify({"success": True, "concertId": concert_id,
-                    "ticketsQueuedForRefund": tickets_queued,
                     "ticketsRefunded": tickets_refunded,
                     "paymentsRefunded": refund_count,
                     "paymentRefundFailures": refund_failures,
