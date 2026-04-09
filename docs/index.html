@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Soltistix Demo Platform</title>
+  <style>
+    :root {
+      --bg: #f6f0e4;
+      --panel: #fffaf0;
+      --ink: #151515;
+      --muted: #5f5a52;
+      --accent: #f2c200;
+      --line: rgba(21, 21, 21, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(242, 194, 0, 0.2), transparent 28%),
+        linear-gradient(180deg, #fbf7ef 0%, var(--bg) 100%);
+      min-height: 100vh;
+    }
+
+    .wrap {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 64px 24px 80px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      padding: 40px 32px;
+      box-shadow: 0 18px 50px rgba(21, 21, 21, 0.08);
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: var(--ink);
+      color: var(--accent);
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 18px 0 14px;
+      font-size: clamp(2.3rem, 6vw, 4.5rem);
+      line-height: 0.95;
+    }
+
+    p {
+      margin: 0 0 18px;
+      max-width: 62ch;
+      font-size: 1.05rem;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin: 28px 0;
+    }
+
+    .tile {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.6);
+    }
+
+    .tile h2 {
+      margin: 0 0 10px;
+      font-size: 1.1rem;
+    }
+
+    .tile p {
+      margin: 0;
+      font-size: 0.96rem;
+    }
+
+    .meta {
+      margin-top: 32px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+      font-size: 0.96rem;
+      color: var(--muted);
+    }
+
+    a {
+      color: inherit;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <div class="eyebrow">Public Demo Page</div>
+      <h1>Soltistix</h1>
+      <p>
+        Soltistix is a demo concert ticketing and resale platform built for academic and sandbox testing use.
+        The platform supports concert browsing, ticket inventory, resale listings, payments, refunds, and seller
+        payout demonstrations in test environments.
+      </p>
+      <p>
+        This public page is provided for platform verification and support reference during third-party sandbox setup.
+      </p>
+
+      <div class="grid">
+        <article class="tile">
+          <h2>Platform Scope</h2>
+          <p>Concert discovery, primary purchase, resale listing and resale purchase orchestration.</p>
+        </article>
+        <article class="tile">
+          <h2>Environment</h2>
+          <p>Demo and sandbox usage only. No live financial activity is intended on this page.</p>
+        </article>
+        <article class="tile">
+          <h2>Support Contact</h2>
+          <p><a href="mailto:support@soltistix-demo.example">support@soltistix-demo.example</a></p>
+        </article>
+      </div>
+
+      <div class="meta">
+        <strong>Project:</strong> IS213 Concert Ticketing Platform Demo<br>
+        <strong>Use case:</strong> Stripe sandbox verification for connected-account and payout testing
+      </div>
+    </section>
+  </main>
+</body>
+</html>
