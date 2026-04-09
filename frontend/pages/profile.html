@@ -570,8 +570,26 @@ async function saveSettings(){
       smsOptIn: true,
     });
   }catch(e){
-    toast(e?.message || 'Could not save contact details right now', 'error');
-    return;
+    const isFetchFailure =
+      !e ||
+      e?.message === 'Failed to fetch' ||
+      e?.message === 'Load failed' ||
+      e?.name === 'TypeError';
+    if(!isFetchFailure){
+      toast(e?.message || 'Could not save contact details right now', 'error');
+      return;
+    }
+
+    const fallback = {
+      userId: user.userId,
+      email: contactEmail,
+      phoneNumber: contactPhone,
+      smsOptIn: 1,
+    };
+    try { localStorage.setItem(`ctms_contact_${user.userId}`, JSON.stringify(fallback)); } catch {}
+    user.contactEmail = contactEmail;
+    user.contactPhone = contactPhone;
+    try { localStorage.setItem('ctms_user', JSON.stringify(user)); } catch {}
   }
 
   const stored = Auth.getUser();

@@ -251,7 +251,22 @@ const API = (() => {
           }
         }
       },
-      saveContact: (id, payload) => req(`${BASE.notification}/contact/${id}`, 'PUT', payload),
+      saveContact: async (id, payload) => {
+        try {
+          return await req(`${BASE.notification}/contact/${id}`, 'PUT', payload);
+        } catch {
+          const fallback = {
+            userId: id,
+            email: String(payload?.email || payload?.contactEmail || '').trim() || null,
+            phoneNumber: String(payload?.phoneNumber || payload?.contactPhone || payload?.toNumber || '').trim() || null,
+            smsOptIn: Number(payload?.smsOptIn ?? 1) ? 1 : 0,
+          };
+          try {
+            localStorage.setItem(`ctms_contact_${id}`, JSON.stringify(fallback));
+          } catch {}
+          return fallback;
+        }
+      },
     },
     purchase: {
       complete: (cid,p) => req(`${BASE.purchase}/window/${cid}`,'POST',p,30000),
