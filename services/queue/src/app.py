@@ -21,7 +21,7 @@ except ImportError:
 WINDOW_SECONDS = int(os.environ.get("PURCHASE_WINDOW_SECONDS", 600))
 max_windows_str = os.environ.get("MAX_ACTIVE_WINDOWS", "5").strip()
 MAX_ACTIVE_WINDOWS = int(max_windows_str) if max_windows_str else 5
-CONCERT_URL = os.environ.get("CONCERT_SERVICE_URL", "http://localhost:5000")
+TICKET_URL = os.environ.get("TICKET_INVENTORY_SERVICE_URL", "http://localhost:5003")
 
 def get_db():
     return mysql.connector.connect(
@@ -35,6 +35,26 @@ def get_db():
 def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "queue", "timestamp": datetime.utcnow().isoformat()}}), status
+
+
+def fetch_concert_meta(concert_id):
+    base_urls = [(CONCERT_URL or "").rstrip("/"), "http://concert:5000", "http://localhost:5000"]
+    tried = set()
+    for base in base_urls:
+        if not base or base in tried:
+            continue
+        tried.add(base)
+        try:
+            res = requests.get(f"{base}/concerts/{concert_id}", timeout=5)
+            if res.status_code == 200 and isinstance(res.json(), dict):
+                data = res.json()
+                return {
+                    "concertName": data.get("name") or data.get("concertName") or data.get("title") or concert_id,
+                    "concertDateTime": data.get("eventDate") or data.get("concertDateTime"),
+                }
+        except Exception:
+            continue
+    return {"concertName": concert_id, "concertDateTime": None}
 
 
 def is_retryable_db_error(exc):
@@ -68,6 +88,7 @@ def ensure_schema():
 
 def publish_window_expired(row):
     try:
+        concert_meta = fetch_concert_meta(row["concertId"])
         mq_publish("queue.window.expired", {
             "eventType": "queue.window.expired",
             "channel": "SMS",
@@ -75,6 +96,8 @@ def publish_window_expired(row):
             "timestamp": datetime.utcnow().isoformat(),
             "data": {
                 "concertId": row["concertId"],
+                "concertName": concert_meta.get("concertName"),
+                "concertDateTime": concert_meta.get("concertDateTime"),
                 "queueId": row["queueId"],
             },
         })
@@ -84,6 +107,7 @@ def publish_window_expired(row):
 
 def publish_window_granted(user_id, concert_id, expires_at):
     try:
+        concert_meta = fetch_concert_meta(concert_id)
         mq_publish("queue.window.granted", {
             "eventType": "queue.window.granted",
             "channel": "SMS",
@@ -91,7 +115,11 @@ def publish_window_granted(user_id, concert_id, expires_at):
             "timestamp": datetime.utcnow().isoformat(),
             "data": {
                 "concertId": concert_id,
+                "concertName": concert_meta.get("concertName"),
+                "concertDateTime": concert_meta.get("concertDateTime"),
                 "windowExpiresAt": expires_at.isoformat(),
+                "windowDurationSeconds": WINDOW_SECONDS,
+                "windowDurationMinutes": max(1, math.ceil(WINDOW_SECONDS / 60)),
             },
         })
     except Exception:
@@ -100,11 +128,11 @@ def publish_window_granted(user_id, concert_id, expires_at):
 
 def fetch_available_seats(concert_id):
     try:
-        res = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=5)
+        res = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}?status=AVAILABLE", timeout=5)
         if res.status_code != 200:
             return 0
         data = res.json()
-        return max(int(data.get("availableSeats", 0) or 0), 0)
+        return max(len(data.get("tickets", []) or []), 0)
     except Exception:
         return 0
 
@@ -363,12 +391,17 @@ def update_entry(concert_id, user_id):
                     (new_status, concert_id, user_id))
         db.commit()
         if new_status == "EXPIRED":
+            concert_meta = fetch_concert_meta(concert_id)
             mq_publish("queue.window.expired", {
                 "eventType": "queue.window.expired",
                 "channel": "SMS",
                 "userId": user_id,
                 "timestamp": datetime.utcnow().isoformat(),
-                "data": {"concertId": concert_id},
+                "data": {
+                    "concertId": concert_id,
+                    "concertName": concert_meta.get("concertName"),
+                    "concertDateTime": concert_meta.get("concertDateTime"),
+                },
             })
     affected = cur.rowcount; cur.close(); db.close()
     if affected == 0: return err("NOT_FOUND", "Queue entry not found", 404)

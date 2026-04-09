@@ -23,7 +23,8 @@ except ImportError:
 
 WINDOW_SECONDS = int(os.environ.get("PURCHASE_WINDOW_SECONDS", 600))
 MAX_ACTIVE_WINDOWS = int(os.environ.get("MAX_ACTIVE_WINDOWS", 5))
-CONCERT_URL = os.environ.get("CONCERT_SERVICE_URL", "http://localhost:5000")
+HEARTBEAT_TIMEOUT_SECONDS = int(os.environ.get("QUEUE_HEARTBEAT_TIMEOUT_SECONDS", 20))
+TICKET_URL = os.environ.get("TICKET_INVENTORY_SERVICE_URL", "http://localhost:5003")
 REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 QUEUE_STATUSES = ("WAITING", "WINDOW_GRANTED", "COMPLETED", "EXPIRED")
@@ -66,6 +67,26 @@ def parse_int(value, default=0):
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def fetch_concert_meta(concert_id):
+    base_urls = [(CONCERT_URL or "").rstrip("/"), "http://concert:5000", "http://kong:8000", "http://localhost:5000"]
+    tried = set()
+    for base in base_urls:
+        if not base or base in tried:
+            continue
+        tried.add(base)
+        try:
+            res = requests.get(f"{base}/concerts/{concert_id}", timeout=5)
+            if res.status_code == 200 and isinstance(res.json(), dict):
+                data = res.json()
+                return {
+                    "concertName": data.get("name") or data.get("concertName") or data.get("title") or concert_id,
+                    "concertDateTime": data.get("eventDate") or data.get("concertDateTime"),
+                }
+        except Exception:
+            continue
+    return {"concertName": concert_id, "concertDateTime": None}
 
 
 def iso_to_epoch(value):
@@ -178,8 +199,18 @@ def token_response(row):
     }
 
 
+def is_heartbeat_stale(row):
+    if row.get("status") != "WINDOW_GRANTED":
+        return False
+    updated_at_epoch = iso_to_epoch(row.get("updatedAt"))
+    if updated_at_epoch <= 0:
+        return False
+    return now_epoch() - updated_at_epoch > HEARTBEAT_TIMEOUT_SECONDS
+
+
 def publish_window_expired(row):
     try:
+        concert_meta = fetch_concert_meta(row["concertId"])
         mq_publish(
             "queue.window.expired",
             {
@@ -189,6 +220,8 @@ def publish_window_expired(row):
                 "timestamp": datetime.utcnow().isoformat(),
                 "data": {
                     "concertId": row["concertId"],
+                    "concertName": concert_meta.get("concertName"),
+                    "concertDateTime": concert_meta.get("concertDateTime"),
                     "queueId": row["queueId"],
                 },
             },
@@ -199,6 +232,7 @@ def publish_window_expired(row):
 
 def publish_window_granted(user_id, concert_id, expires_at):
     try:
+        concert_meta = fetch_concert_meta(concert_id)
         mq_publish(
             "queue.window.granted",
             {
@@ -208,7 +242,11 @@ def publish_window_granted(user_id, concert_id, expires_at):
                 "timestamp": datetime.utcnow().isoformat(),
                 "data": {
                     "concertId": concert_id,
+                    "concertName": concert_meta.get("concertName"),
+                    "concertDateTime": concert_meta.get("concertDateTime"),
                     "windowExpiresAt": expires_at.isoformat(),
+                    "windowDurationSeconds": WINDOW_SECONDS,
+                    "windowDurationMinutes": max(1, math.ceil(WINDOW_SECONDS / 60)),
                 },
             },
         )
@@ -218,10 +256,10 @@ def publish_window_granted(user_id, concert_id, expires_at):
 
 def fetch_available_seats(concert_id):
     try:
-        res = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=5)
+        res = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}?status=AVAILABLE", timeout=5)
         if res.status_code != 200:
             return 0
-        return max(int(res.json().get("availableSeats", 0) or 0), 0)
+        return max(len(res.json().get("tickets", []) or []), 0)
     except Exception:
         return 0
 
@@ -247,7 +285,19 @@ def reconcile_queue_state_locked(concert_id):
 
 def expire_granted_windows_locked(concert_id):
     reconcile_queue_state_locked(concert_id)
-    expired_users = redis_client.zrangebyscore(granted_key(concert_id), 0, now_epoch())
+    granted_users = redis_client.zrange(granted_key(concert_id), 0, -1)
+    if not granted_users:
+        return
+
+    expired_users = []
+    for user_id in granted_users:
+        row = get_entry(concert_id, user_id)
+        if not row or row["status"] != "WINDOW_GRANTED":
+            expired_users.append(user_id)
+            continue
+        expires_at_epoch = iso_to_epoch(row.get("sessionExpiresAt") or row.get("windowExpiresAt"))
+        if expires_at_epoch <= now_epoch() or is_heartbeat_stale(row):
+            expired_users.append(user_id)
     if not expired_users:
         return
 
@@ -258,6 +308,8 @@ def expire_granted_windows_locked(concert_id):
         if not row or row["status"] != "WINDOW_GRANTED":
             continue
         row["status"] = "EXPIRED"
+        row["sessionToken"] = None
+        row["sessionExpiresAt"] = None
         row["updatedAt"] = updated_at
         save_entry(row)
         publish_window_expired(row)
@@ -474,6 +526,47 @@ def validate_session():
             redis_client.zrem(granted_key(concert_id), user_id)
             publish_window_expired(row)
             return jsonify({"valid": False, "reason": "SESSION_EXPIRED"}), 410
+        if is_heartbeat_stale(row):
+            row["status"] = "EXPIRED"
+            row["sessionToken"] = None
+            row["sessionExpiresAt"] = None
+            row["updatedAt"] = now_iso()
+            save_entry(row)
+            redis_client.zrem(granted_key(concert_id), user_id)
+            publish_window_expired(row)
+            return jsonify({"valid": False, "reason": "SESSION_ABANDONED"}), 410
+        return jsonify(token_response(row))
+
+
+@app.route("/queue/v1/session/heartbeat", methods=["POST"])
+def heartbeat_session():
+    data = request.get_json() or {}
+    concert_id = data.get("concertId")
+    user_id = data.get("userId")
+    session_token = data.get("sessionToken")
+    if not all([concert_id, user_id, session_token]):
+        return err("MISSING_FIELDS", "concertId, userId, and sessionToken are required")
+
+    with queue_lock(concert_id):
+        reconcile_queue_state_locked(concert_id)
+        expire_granted_windows_locked(concert_id)
+        row = get_entry(concert_id, user_id)
+        if not row or row["status"] != "WINDOW_GRANTED":
+            return err("NO_ACTIVE_WINDOW", "No active purchase window for this user", 403)
+        if row.get("sessionToken") != session_token:
+            return err("INVALID_SESSION_TOKEN", "Queue session token is invalid", 403)
+        expires_at_epoch = iso_to_epoch(row.get("sessionExpiresAt") or row.get("windowExpiresAt"))
+        if expires_at_epoch <= now_epoch():
+            row["status"] = "EXPIRED"
+            row["sessionToken"] = None
+            row["sessionExpiresAt"] = None
+            row["updatedAt"] = now_iso()
+            save_entry(row)
+            redis_client.zrem(granted_key(concert_id), user_id)
+            publish_window_expired(row)
+            return err("SESSION_EXPIRED", "Purchase window has expired", 410)
+        row["updatedAt"] = now_iso()
+        save_entry(row)
         return jsonify(token_response(row))
 
 
