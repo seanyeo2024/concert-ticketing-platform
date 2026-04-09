@@ -484,6 +484,7 @@ async function load() {
   isLoadingConcerts = true;
   applyFilters();
   renderLineup();
+  renderMarquee();
   await refreshConcerts();
   startAutoRefresh();
 }
@@ -504,6 +505,7 @@ async function refreshConcerts(){
     isLoadingConcerts = false;
     applyFilters();
     renderLineup();
+    renderMarquee();
   }
 }
 
@@ -654,6 +656,7 @@ function scheduleMidnightRefresh(){
     if(!document.hidden){
       applyFilters();
       renderLineup();
+      renderMarquee();
       await refreshFeaturedConcert();
     }
     scheduleMidnightRefresh();
@@ -664,6 +667,7 @@ document.addEventListener('visibilitychange', () => {
   if(document.hidden) return;
   applyFilters();
   renderLineup();
+  renderMarquee();
   refreshFeaturedConcert();
 });
 
@@ -761,6 +765,39 @@ function renderLineup() {
       </div>
       <span class="lineup-arrow">→</span>
     </div>`).join('');
+}
+
+function getVisibleUpcomingConcerts() {
+  return allConcerts.filter(c => {
+    if(!isAdmin && String(c.status || '').toUpperCase() === 'CANCELLED') return false;
+    return !concertHasEnded(c);
+  });
+}
+
+function renderMarquee() {
+  const marquee = document.getElementById('marquee-inner');
+  if(!marquee) return;
+
+  if(isLoadingConcerts){
+    marquee.innerHTML = '<span class="marquee-item">Loading... <span class="marquee-sep">✦</span></span>';
+    return;
+  }
+
+  const labels = [...new Set(
+    getVisibleUpcomingConcerts()
+      .map(c => String(c.name || c.artistName || '').trim())
+      .filter(Boolean)
+  )];
+
+  if(!labels.length){
+    marquee.innerHTML = '<span class="marquee-item">No upcoming concerts <span class="marquee-sep">✦</span></span>';
+    return;
+  }
+
+  const repeated = labels.length === 1 ? Array(6).fill(labels[0]) : [...labels, ...labels];
+  marquee.innerHTML = repeated
+    .map(label => `<span class="marquee-item">${label} <span class="marquee-sep">✦</span></span>`)
+    .join('');
 }
 
 load();
