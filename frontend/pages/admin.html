@@ -933,6 +933,24 @@ async function enrichConcertsWithInventory(concerts=[]){
   });
 }
 
+async function enrichConcertsWithSeatCategoryTotals(concerts=[]){
+  if(!concerts.length) return [];
+  const seatResponses = await mapWithConcurrency(
+    concerts,
+    c => API.concerts.seatsStrict(c.concertId).catch(() => ({ categories: [] })),
+    4
+  );
+  return concerts.map((concert, index) => {
+    const categories = seatResponses[index]?.categories || [];
+    const totalSeats = categories.reduce((sum, category) => sum + Number(category?.totalSeats || 0), 0);
+    return {
+      ...concert,
+      totalSeats,
+      seatCategories: categories,
+    };
+  });
+}
+
 async function loadDashboard(){
   document.getElementById('kpi-concerts').textContent='—';
   document.getElementById('kpi-concerts-sub').textContent='Loading…';
@@ -1053,7 +1071,7 @@ async function loadConfigConcertOptions(selectedId=''){
   sel.innerHTML='<option value="">Choose concert to configure…</option>';
   try{
     const d=await API.concerts.listStrict();
-    const concerts=await enrichConcertsWithInventory(d.concerts||d||[]);
+    const concerts=await enrichConcertsWithSeatCategoryTotals(d.concerts||d||[]);
     concerts.forEach(c=>{
       const o=document.createElement('option');
       o.value=c.concertId;
