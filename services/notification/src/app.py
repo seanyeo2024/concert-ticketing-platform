@@ -53,6 +53,22 @@ def normalize_phone(value):
     return cleaned if is_e164_phone_number(cleaned) else None
 
 
+def _env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _mask_value(value, visible_start=4, visible_end=2):
+    if not value:
+        return None
+    text = str(value).strip()
+    if len(text) <= visible_start + visible_end:
+        return text
+    return f"{text[:visible_start]}...{text[-visible_end:]}"
+
+
 def get_user_contact(user_id):
     db = get_db()
     cur = db.cursor(dictionary=True)
@@ -245,6 +261,40 @@ def ensure_schema():
     cur.close()
     db.close()
 
+
+def get_notification_config():
+    provider = (os.environ.get("EMAIL_PROVIDER") or "sendgrid").strip().lower()
+    smtp_username = (os.environ.get("SMTP_USERNAME") or "").strip()
+    smtp_from = (os.environ.get("SMTP_FROM") or smtp_username or os.environ.get("EMAIL_FROM") or "").strip()
+    twilio_from_number = normalize_phone(os.environ.get("TWILIO_FROM_NUMBER"))
+    twilio_whatsapp_from_number = normalize_phone(os.environ.get("TWILIO_WHATSAPP_FROM_NUMBER") or "+14155238886")
+
+    return {
+        "email": {
+            "provider": provider,
+            "allowStub": _env_bool("EMAIL_ALLOW_STUB", False),
+            "smtp": {
+                "host": (os.environ.get("SMTP_HOST") or "smtp.gmail.com").strip(),
+                "port": int((os.environ.get("SMTP_PORT") or "587").strip()),
+                "useTls": _env_bool("SMTP_USE_TLS", True),
+                "usernameSet": bool(smtp_username),
+                "fromAddress": _mask_value(smtp_from),
+                "configured": bool(smtp_username and (os.environ.get("SMTP_PASSWORD") or "").strip()),
+            },
+            "sendgrid": {
+                "configured": bool((os.environ.get("SENDGRID_API_KEY") or "").strip() and (os.environ.get("SENDGRID_API_KEY") or "").strip().lower() not in ("dummy", "changeme")),
+                "fromAddress": _mask_value((os.environ.get("EMAIL_FROM") or "").strip()),
+            },
+        },
+        "sms": {
+            "accountSidSet": bool((os.environ.get("TWILIO_ACCOUNT_SID") or "").strip()),
+            "authTokenSet": bool((os.environ.get("TWILIO_AUTH_TOKEN") or "").strip()),
+            "fromNumber": _mask_value(twilio_from_number),
+            "whatsappFromNumber": _mask_value(twilio_whatsapp_from_number),
+            "useWhatsappSandboxForSms": _env_bool("USE_WHATSAPP_SANDBOX_FOR_SMS", False),
+        },
+    }
+
 def send_email(to_email, subject, body):
     """Send an email via configured provider (Gmail SMTP or SendGrid), else demo stub."""
     provider = (os.environ.get("EMAIL_PROVIDER") or "sendgrid").strip().lower()
@@ -263,7 +313,7 @@ def send_email(to_email, subject, body):
         smtp_use_tls = (os.environ.get("SMTP_USE_TLS") or "true").strip().lower() in ("1", "true", "yes")
         smtp_username = (os.environ.get("SMTP_USERNAME") or "").strip()
         smtp_password = (os.environ.get("SMTP_PASSWORD") or "").strip()
-        smtp_from = (os.environ.get("SMTP_FROM") or from_email or smtp_username).strip()
+        smtp_from = (os.environ.get("SMTP_FROM") or smtp_username or from_email).strip()
 
         if not (smtp_host and smtp_username and smtp_password and is_valid_email(to_email)):
             print("[NOTIFICATION] SMTP email not configured or invalid recipient")
@@ -316,7 +366,7 @@ def send_sms(to_number, body):
     """Send an SMS via Twilio."""
     account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
     auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
-    from_number = normalize_phone(os.environ.get("TWILIO_FROM_NUMBER") or os.environ.get("WILIO_FROM_NUMBER"))
+    from_number = normalize_phone(os.environ.get("TWILIO_FROM_NUMBER"))
 
     if not account_sid or not auth_token or not from_number:
         raise RuntimeError("Twilio environment variables are not configured")
@@ -374,6 +424,8 @@ TEMPLATES = {
     "concert.cancelled":    ("Concert Cancelled — Refund Issued", "We regret to inform you that {concertName} has been cancelled. A full refund will be processed."),
     "queue.window.granted": ("It's your turn!", "Your purchase window for {concertName} is now open. You have {windowDurationMinutes} minutes to complete your purchase."),
     "queue.window.expired": ("Purchase window expired", "Your purchase window has expired. Please rejoin the queue to try again."),
+    "queue.waiting_room.entered": ("You are in the waiting room", "You are in the virtual waiting room for {concertName}. Position: {queuePosition}."),
+    "queue.waiting_room.session.expired": ("Waiting room session expired", "Your waiting room session for {concertName} has expired. Please rejoin the queue to continue."),
 }
 
 
@@ -562,6 +614,38 @@ def compose_message(event_type, data):
         )
         return subject, body
 
+    if event_type == "queue.window.granted":
+        subject = "It's your turn!"
+        concert_name = _value(data, 'concertName')
+        window_minutes = _value(data, 'windowDurationMinutes', "5")
+        body = (
+            f"Your purchase window for {concert_name} is now open. You have {window_minutes} minutes to complete your purchase."
+        )
+        return subject, body
+
+    if event_type == "queue.waiting_room.entered":
+        subject = "You are in the virtual waiting room"
+        concert_name = _value(data, "concertName")
+        queue_position = _value(data, "queuePosition", "N/A")
+        people_ahead = _value(data, "peopleAhead", "N/A")
+        est_wait = _value(data, "estimatedWaitMins", "N/A")
+        body = (
+            f"You have joined the virtual waiting room for {concert_name}. "
+            f"Your queue position is {queue_position} with {people_ahead} ahead of you. "
+            f"Estimated wait: {est_wait} minutes."
+        )
+        return subject, body
+
+    if event_type == "queue.waiting_room.session.expired":
+        subject = "Waiting room session expired"
+        concert_name = _value(data, "concertName")
+        queue_position = _value(data, "queuePosition", "N/A")
+        body = (
+            f"Your virtual waiting room session for {concert_name} has expired"
+            f" (last known position: {queue_position}). Please rejoin the queue to continue."
+        )
+        return subject, body
+
     tmpl = TEMPLATES.get(event_type, ("Notification", str(data)))
     subject = tmpl[0]
     try:
@@ -632,9 +716,9 @@ def compose_sms_message(event_type, data):
     if event_type == "queue.window.granted":
         window_minutes = _value(data, "windowDurationMinutes", "N/A")
         return (
-            "Your purchase window is open\n"
+            "Purchase window granted\n"
             f"Concert: {concert_name}\n"
-            f"Window: {window_minutes} minutes\n"
+            f"Duration: {window_minutes} minutes\n"
             f"{footer}"
         )
 
@@ -642,6 +726,28 @@ def compose_sms_message(event_type, data):
         return (
             "Purchase window expired\n"
             f"Concert: {concert_name}\n"
+            f"{footer}"
+        )
+
+    if event_type == "queue.waiting_room.entered":
+        queue_position = _value(data, "queuePosition", "N/A")
+        people_ahead = _value(data, "peopleAhead", "N/A")
+        est_wait = _value(data, "estimatedWaitMins", "N/A")
+        return (
+            "You are in the waiting room\n"
+            f"Concert: {concert_name}\n"
+            f"Position: {queue_position} ({people_ahead} ahead)\n"
+            f"Estimated wait: {est_wait} mins\n"
+            f"{footer}"
+        )
+
+    if event_type == "queue.waiting_room.session.expired":
+        queue_position = _value(data, "queuePosition", "N/A")
+        return (
+            "Waiting room session expired\n"
+            f"Concert: {concert_name}\n"
+            f"Last position: {queue_position}\n"
+            f"Please rejoin the queue.\n"
             f"{footer}"
         )
 
@@ -677,7 +783,7 @@ def deliver_email(event_type, payload, data, user_id, subject, body):
         return None
 
     ext_id, ok = send_email(recipient_email, subject, body)
-    status = "SENT_EMAIL_FORCED" if ok else "FAILED"
+    status = "SENT_EMAIL" if ok else "FAILED"
     log_notification(
         user_id,
         event_type,
@@ -692,8 +798,8 @@ def deliver_email(event_type, payload, data, user_id, subject, body):
     return {"channel": "EMAIL", "recipient": recipient_email, "ok": ok, "status": status, "externalMsgId": ext_id}
 
 
-def deliver_sms(event_type, payload, data, user_id, subject, body):
-    prefer_whatsapp = os.environ.get("USE_WHATSAPP_SANDBOX_FOR_SMS", "false").strip().lower() in ("1", "true", "yes")
+def deliver_sms(event_type, payload, data, user_id, subject, body, prefer_whatsapp_override=None):
+    prefer_whatsapp = _env_bool("USE_WHATSAPP_SANDBOX_FOR_SMS", False) if prefer_whatsapp_override is None else bool(prefer_whatsapp_override)
     try:
         recipient_phone = resolve_sms_recipient(payload, data, user_id)
     except Exception as e:
@@ -859,6 +965,57 @@ def upsert_contact(user_id):
         cur.close(); db.close()
 
     return jsonify({"userId": user_id, "email": email, "phoneNumber": phone, "smsOptIn": sms_opt_in})
+
+
+@app.route("/notification/v1/config", methods=["GET"])
+def config():
+    return jsonify(get_notification_config())
+
+
+@app.route("/notification/v1/test", methods=["POST"])
+def test_delivery():
+    payload = request.get_json(silent=True) or {}
+    user_id = payload.get("userId", "UNKNOWN")
+    channels_raw = payload.get("channels") or payload.get("channel") or ["email", "sms"]
+    if isinstance(channels_raw, str):
+        channels = [channels_raw]
+    elif isinstance(channels_raw, (list, tuple, set)):
+        channels = list(channels_raw)
+    else:
+        channels = ["email", "sms"]
+
+    channels = {str(channel).strip().lower() for channel in channels if str(channel).strip()}
+    if not channels:
+        channels = {"email", "sms"}
+
+    subject = (payload.get("subject") or "CTMS notification smoke test").strip()
+    body = (payload.get("body") or "This is a CTMS notification smoke test.").strip()
+    data = dict(payload)
+    data["userId"] = user_id
+
+    results = []
+    if "email" in channels:
+        email_result = deliver_email("notification.test", payload, data, user_id, subject, body)
+        if email_result:
+            results.append(email_result)
+
+    if "sms" in channels:
+        sms_result = deliver_sms("notification.test", payload, data, user_id, subject, body, prefer_whatsapp_override=False)
+        if sms_result:
+            results.append(sms_result)
+
+    if "whatsapp" in channels:
+        whatsapp_result = deliver_sms("notification.test", payload, data, user_id, subject, body, prefer_whatsapp_override=True)
+        if whatsapp_result:
+            results.append(whatsapp_result)
+
+    return jsonify({
+        "ok": any(result.get("ok") for result in results),
+        "eventType": "notification.test",
+        "channels": sorted(channels),
+        "results": results,
+        "config": get_notification_config(),
+    })
 
 @app.route("/health")
 def health(): return jsonify({"status": "ok", "service": "notification"})

@@ -25,6 +25,7 @@ WINDOW_SECONDS = int(os.environ.get("PURCHASE_WINDOW_SECONDS", 600))
 MAX_ACTIVE_WINDOWS = int(os.environ.get("MAX_ACTIVE_WINDOWS", 5))
 HEARTBEAT_TIMEOUT_SECONDS = int(os.environ.get("QUEUE_HEARTBEAT_TIMEOUT_SECONDS", 20))
 TICKET_URL = os.environ.get("TICKET_INVENTORY_SERVICE_URL", "http://localhost:5003")
+CONCERT_URL = os.environ.get("CONCERT_SERVICE_URL", "http://localhost:5000")
 REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 QUEUE_STATUSES = ("WAITING", "WINDOW_GRANTED", "COMPLETED", "EXPIRED")
@@ -254,6 +255,59 @@ def publish_window_granted(user_id, concert_id, expires_at):
         pass
 
 
+def publish_waiting_room_entered(user_id, concert_id, queue_id, queue_position):
+    try:
+        concert_meta = fetch_concert_meta(concert_id)
+        position = max(parse_int(queue_position, 1), 1)
+        people_ahead = max(position - 1, 0)
+        mq_publish(
+            "queue.waiting_room.entered",
+            {
+                "eventType": "queue.waiting_room.entered",
+                "channel": "SMS",
+                "userId": user_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "data": {
+                    "concertId": concert_id,
+                    "concertName": concert_meta.get("concertName"),
+                    "concertDateTime": concert_meta.get("concertDateTime"),
+                    "queueId": queue_id,
+                    "queuePosition": position,
+                    "peopleAhead": people_ahead,
+                    "estimatedWaitMins": math.ceil(people_ahead / 10),
+                },
+            },
+        )
+    except Exception:
+        pass
+
+
+def publish_waiting_room_session_expired(row):
+    try:
+        concert_meta = fetch_concert_meta(row["concertId"])
+        queue_position = row.get("position")
+        if queue_position is None:
+            queue_position = compute_position(row["concertId"], row)
+        mq_publish(
+            "queue.waiting_room.session.expired",
+            {
+                "eventType": "queue.waiting_room.session.expired",
+                "channel": "SMS",
+                "userId": row["userId"],
+                "timestamp": datetime.utcnow().isoformat(),
+                "data": {
+                    "concertId": row["concertId"],
+                    "concertName": concert_meta.get("concertName"),
+                    "concertDateTime": concert_meta.get("concertDateTime"),
+                    "queueId": row.get("queueId"),
+                    "queuePosition": queue_position if queue_position is not None else 0,
+                },
+            },
+        )
+    except Exception:
+        pass
+
+
 def fetch_available_seats(concert_id):
     try:
         res = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}?status=AVAILABLE", timeout=5)
@@ -391,8 +445,11 @@ def join_queue(concert_id):
         }
         save_entry(row)
         redis_client.zadd(waiting_key(concert_id), {user_id: iso_to_epoch(row["joinedAt"])})
+        initial_position = compute_position(concert_id, row)
         grant_windows_if_needed_locked(concert_id)
         latest = get_entry(concert_id, user_id)
+        if latest and latest["status"] == "WAITING":
+            publish_waiting_room_entered(user_id, concert_id, latest.get("queueId"), initial_position)
 
     return jsonify(format_row(concert_id, latest)), 201
 
@@ -444,6 +501,9 @@ def update_entry(concert_id, user_id):
         if not row:
             return err("NOT_FOUND", "Queue entry not found", 404)
 
+        previous_status = row["status"]
+        previous_position = compute_position(concert_id, row)
+
         row["status"] = new_status
         row["updatedAt"] = now_iso()
         pipe = redis_client.pipeline()
@@ -469,7 +529,11 @@ def update_entry(concert_id, user_id):
         elif new_status == "EXPIRED":
             row["sessionToken"] = None
             row["sessionExpiresAt"] = None
-            publish_window_expired(row)
+            row["position"] = previous_position
+            if previous_status == "WINDOW_GRANTED":
+                publish_window_expired(row)
+            else:
+                publish_waiting_room_session_expired(row)
         else:
             row["sessionToken"] = None
             row["sessionExpiresAt"] = None

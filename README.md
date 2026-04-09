@@ -214,6 +214,26 @@ SMTP_PASSWORD=dummy
 SMTP_FROM=demo@example.com
 ```
 
+## Notification Smoke Test
+
+After the stack is up, you can verify the notification service directly without going through checkout.
+
+Check the loaded delivery configuration:
+
+```bash
+curl http://localhost:8000/notification/v1/config
+```
+
+Send a test email and SMS to your own recipients:
+
+```bash
+curl -X POST http://localhost:8000/notification/v1/test \
+  -H "Content-Type: application/json" \
+  -d "{\"userId\":\"demo-user\",\"email\":\"you@example.com\",\"phoneNumber\":\"+6591234567\",\"channels\":[\"email\",\"sms\"],\"subject\":\"CTMS smoke test\",\"body\":\"This is a notification smoke test.\"}"
+```
+
+If you want to test WhatsApp delivery through Twilio sandbox, change `channels` to include `whatsapp` and set `USE_WHATSAPP_SANDBOX_FOR_SMS=true`.
+
 ## Running The Platform
 
 ### Start backend services

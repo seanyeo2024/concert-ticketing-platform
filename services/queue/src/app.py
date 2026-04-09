@@ -126,6 +126,51 @@ def publish_window_granted(user_id, concert_id, expires_at):
         pass
 
 
+def publish_waiting_room_entered(user_id, concert_id, queue_id, position):
+    try:
+        concert_meta = fetch_concert_meta(concert_id)
+        queue_position = max(int(position or 1), 1)
+        waiting_ahead = max(queue_position - 1, 0)
+        mq_publish("queue.waiting_room.entered", {
+            "eventType": "queue.waiting_room.entered",
+            "channel": "SMS",
+            "userId": user_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "concertId": concert_id,
+                "concertName": concert_meta.get("concertName"),
+                "concertDateTime": concert_meta.get("concertDateTime"),
+                "queueId": queue_id,
+                "queuePosition": queue_position,
+                "peopleAhead": waiting_ahead,
+                "estimatedWaitMins": math.ceil(waiting_ahead / 10),
+            },
+        })
+    except Exception:
+        pass
+
+
+def publish_waiting_room_session_expired(user_id, concert_id, queue_id=None, position=None):
+    try:
+        concert_meta = fetch_concert_meta(concert_id)
+        queue_position = max(int(position or 1), 1)
+        mq_publish("queue.waiting_room.session.expired", {
+            "eventType": "queue.waiting_room.session.expired",
+            "channel": "SMS",
+            "userId": user_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "concertId": concert_id,
+                "concertName": concert_meta.get("concertName"),
+                "concertDateTime": concert_meta.get("concertDateTime"),
+                "queueId": queue_id,
+                "queuePosition": queue_position,
+            },
+        })
+    except Exception:
+        pass
+
+
 def fetch_available_seats(concert_id):
     try:
         res = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}?status=AVAILABLE", timeout=5)
@@ -329,6 +374,8 @@ def join_queue(concert_id):
     cur.execute("SELECT * FROM queue_entry WHERE queueId=%s", (queue_id,))
     row = cur.fetchone()
     cur.close(); db.close()
+    if row and row.get("status") == "WAITING":
+        publish_waiting_room_entered(user_id, concert_id, row.get("queueId"), row.get("position"))
     return jsonify(row), 201
 
 # GET /queue/v1/queue/<concertId>/<userId>
@@ -376,7 +423,16 @@ def update_entry(concert_id, user_id):
     new_status = data.get("status")
     if new_status not in {"WAITING", "WINDOW_GRANTED", "COMPLETED", "EXPIRED"}:
         return err("INVALID_STATUS", "Unsupported queue status")
-    db = get_db(); cur = db.cursor()
+    db = get_db(); cur = db.cursor(dictionary=True)
+    cur.execute(
+        "SELECT queueId, position, status FROM queue_entry WHERE concertId=%s AND userId=%s ORDER BY joinedAt DESC LIMIT 1",
+        (concert_id, user_id),
+    )
+    existing = cur.fetchone()
+    if not existing:
+        cur.close(); db.close()
+        return err("NOT_FOUND", "Queue entry not found", 404)
+    cur.close(); cur = db.cursor()
     if new_status == "WINDOW_GRANTED":
         granted_at = datetime.utcnow()
         expires_at = granted_at + timedelta(seconds=WINDOW_SECONDS)
@@ -391,18 +447,19 @@ def update_entry(concert_id, user_id):
                     (new_status, concert_id, user_id))
         db.commit()
         if new_status == "EXPIRED":
-            concert_meta = fetch_concert_meta(concert_id)
-            mq_publish("queue.window.expired", {
-                "eventType": "queue.window.expired",
-                "channel": "SMS",
-                "userId": user_id,
-                "timestamp": datetime.utcnow().isoformat(),
-                "data": {
+            if existing.get("status") == "WINDOW_GRANTED":
+                publish_window_expired({
+                    "queueId": existing.get("queueId"),
                     "concertId": concert_id,
-                    "concertName": concert_meta.get("concertName"),
-                    "concertDateTime": concert_meta.get("concertDateTime"),
-                },
-            })
+                    "userId": user_id,
+                })
+            else:
+                publish_waiting_room_session_expired(
+                    user_id,
+                    concert_id,
+                    existing.get("queueId"),
+                    existing.get("position"),
+                )
     affected = cur.rowcount; cur.close(); db.close()
     if affected == 0: return err("NOT_FOUND", "Queue entry not found", 404)
     safe_grant_windows_if_needed(concert_id)
