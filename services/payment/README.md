@@ -9,7 +9,7 @@ This service handles:
 - ticket purchase payments
 - resale purchase payments
 - refunds
-- resale seller payout records
+- Stripe Connect resale routing for sandbox sellers
 - payment record persistence in MySQL
 
 It is designed for demo and test flows only. It uses a Stripe **test secret key** from the root `.env`, but the frontend does **not** use Stripe.js or real card tokenization.
@@ -32,6 +32,9 @@ MYSQL_DATABASE=payment_db
 MYSQL_USER=ctms
 MYSQL_PASSWORD=ctms
 STRIPE_SECRET_KEY=sk_test_...
+STRIPE_CONNECT_ACCOUNT_USR_0042=acct_...
+STRIPE_CONNECT_ACCOUNT_USR_0099=acct_...
+STRIPE_PLATFORM_FEE_PERCENT=0
 ```
 
 From the current project setup, `STRIPE_SECRET_KEY` is already defined in the root `.env`.
@@ -64,35 +67,44 @@ This project currently uses a platform-mediated settlement model.
 
 - the new buyer pays the platform
 - Stripe charges the buyer through the platform account
+- for sandbox demo sellers, the payment service uses Stripe Connect destination charges
+- the seller portion is routed to the seller's connected account during the charge flow
 - the service records a `RESALE_PURCHASE` payment
-- the platform then records a seller payout entry after the resale purchase succeeds
 
 Important:
 
-- this is **not** a real Stripe customer-to-customer transfer
-- this is **not** Stripe Connect
-- the seller-side payout is currently an internal platform settlement record for demo purposes
+- this uses Stripe Connect in sandbox/test mode
+- this is still a demo/test-only integration
+- seller connected accounts must be mapped in environment variables for the payment service to resolve them
 
 In other words:
 
 - buyer -> platform is handled through Stripe test payments
-- platform -> seller is currently represented by an internal payout record in `payment_record`
+- platform -> seller is represented by a Stripe Connect destination charge in sandbox
 
 ## Resale Settlement Flow
 
 The resale path is:
 
 1. buyer pays for the resale ticket
-2. payment service creates a `RESALE_PURCHASE` payment
-3. ownership transfer continues in the resale orchestration
-4. payment service records a seller payout entry linked to that buyer payment
+2. payment service resolves the seller's connected Stripe account from the seller ID
+3. payment service creates a Stripe `PaymentIntent` for `RESALE_PURCHASE`
+4. the Stripe `PaymentIntent` includes `transfer_data[destination]` for the seller connected account
+5. ownership transfer continues in the resale orchestration
 
-The seller payout record uses:
+Current environment mapping used by the demo:
 
-- `type='REFUND'`
-- `reason='RESALE_PAYOUT'`
+- `STRIPE_CONNECT_ACCOUNT_USR_0042`
+- `STRIPE_CONNECT_ACCOUNT_USR_0099`
 
-This keeps the existing UI and payment history logic working for demo use.
+If a seller mapping is missing, `POST /payment/v1/payment` returns:
+
+- `SELLER_ACCOUNT_NOT_CONFIGURED`
+
+Notes:
+
+- the internal `POST /payment/v1/payment/resale-payout` endpoint still exists for backward compatibility
+- the real sandbox money movement now happens during `POST /payment/v1/payment` for `RESALE_PURCHASE`
 
 ## Concert Cancellation Refund Behavior
 
@@ -114,15 +126,15 @@ Current refund-selection rule:
 - one refund path is chosen per ticket
 - for a resold ticket, the latest successful purchase is refunded
 - in practice, that means the current effective holder path is refunded instead of every historical buyer
-
-It does **not** refund the internal resale seller payout record, because the concert payment lookup excludes `REFUND` rows.
+- for `RESALE_PURCHASE`, the refund call now asks Stripe to reverse the seller transfer as part of the refund flow
 
 So the current cancellation behavior is:
 
 - refund the latest successful purchase-side payment per ticket
+- reverse the connected-account transfer for refunded resale purchases
 - not every historical purchase for that ticket
 
-This is a known limitation of the current demo approach and should be described as such in demos and API documentation.
+This is still a demo approach, but it now matches the sandbox Stripe Connect routing model used by resale.
 
 ## Supported Test Cards
 
@@ -140,9 +152,14 @@ The backend maps these to Stripe test payment method IDs such as:
 
 ## API Endpoints
 
+Base URLs:
+
+- direct service: `http://localhost:5104`
+- Kong gateway: `http://localhost:8000/payment/v1`
+
 ### Health
 
-- `GET /health`
+- direct route: `GET http://localhost:5104/health`
 
 Example response:
 
@@ -156,15 +173,41 @@ Example response:
 
 ### Config
 
-- `GET /payment/v1/config`
+- direct route: `GET http://localhost:5104/payment/v1/config`
+- gateway route: `GET http://localhost:8000/payment/v1/config`
 
-Returns service mode and whether Stripe is configured.
+Example response:
+
+```json
+{
+  "service": "payment",
+  "port": 5004,
+  "stripeConfigured": true,
+  "frontendMode": "server-side-test-payment-method",
+  "supportedTestPaymentMethods": [
+    "pm_card_authenticationRequired",
+    "pm_card_chargeDeclined",
+    "pm_card_insufficientFunds",
+    "pm_card_visa",
+    "pm_card_visaDebit"
+  ]
+}
+```
 
 ### Create Payment
 
-- `POST /payment/v1/payment`
+- direct route: `POST http://localhost:5104/payment/v1/payment`
+- gateway route: `POST http://localhost:8000/payment/v1/payment`
 
-Example request:
+Required fields:
+
+- `userId`
+- `ticketId`
+- `amount`
+- `currency`
+- `type`
+
+Primary purchase example request:
 
 ```json
 {
@@ -174,6 +217,21 @@ Example request:
   "amount": 388.00,
   "currency": "SGD",
   "type": "PURCHASE",
+  "stripeToken": "pm_card_visa"
+}
+```
+
+Resale purchase example request:
+
+```json
+{
+  "userId": "USR-0099",
+  "sellerId": "USR-0042",
+  "ticketId": "TKT-10003",
+  "concertId": "CONC-000001",
+  "amount": 388.00,
+  "currency": "SGD",
+  "type": "RESALE_PURCHASE",
   "stripeToken": "pm_card_visa"
 }
 ```
@@ -188,13 +246,26 @@ Example success response:
   "amount": "388.00",
   "currency": "SGD",
   "paymentMethodId": "pm_card_visa",
+  "sellerConnectedAccountId": "acct_xxx",
   "createdAt": "2026-04-08T12:00:00.000000"
 }
 ```
 
+Notes:
+
+- `sellerId` is required for `RESALE_PURCHASE`
+- the payment service uses `sellerId` to resolve the seller's connected Stripe account
+- for non-resale purchases, `sellerConnectedAccountId` is `null` or omitted
+- supported `type` values are `PURCHASE` and `RESALE_PURCHASE`
+- supported request aliases for payment method are:
+  - `stripePaymentMethodId`
+  - `paymentMethodId`
+  - `stripeToken`
+
 ### Refund Payment
 
-- `POST /payment/v1/payment/refund`
+- direct route: `POST http://localhost:5104/payment/v1/payment/refund`
+- gateway route: `POST http://localhost:8000/payment/v1/payment/refund`
 
 Example request:
 
@@ -213,13 +284,22 @@ Use this endpoint for true refund scenarios such as:
 - concert cancellation
 - refunding an earlier successful payment
 
-Do **not** use this endpoint for resale seller settlement.
+For `RESALE_PURCHASE`, the service now calls Stripe with:
+
+- `reverse_transfer=true`
+- `refund_application_fee=true` only when a platform fee is configured
 
 ### Record Resale Seller Payout
 
-- `POST /payment/v1/payment/resale-payout`
+- direct route: `POST http://localhost:5104/payment/v1/payment/resale-payout`
+- gateway route: `POST http://localhost:8000/payment/v1/payment/resale-payout`
 
-This endpoint records the seller-side payout after a buyer has successfully completed a resale purchase.
+This endpoint is retained for backward compatibility with older orchestration paths.
+
+Current note:
+
+- seller-side sandbox money movement for resale now happens during `POST /payment/v1/payment`
+- this endpoint should not be treated as the source of truth for Stripe Connect routing
 
 Example request:
 
@@ -257,9 +337,12 @@ Rules:
 
 ### Lookup Endpoints
 
-- `GET /payment/v1/payment/<paymentId>`
-- `GET /payment/v1/payment/user/<userId>`
-- `GET /payment/v1/payment/concert/<concertId>`
+- direct route: `GET http://localhost:5104/payment/v1/payment/<paymentId>`
+- direct route: `GET http://localhost:5104/payment/v1/payment/user/<userId>`
+- direct route: `GET http://localhost:5104/payment/v1/payment/concert/<concertId>`
+- gateway route: `GET http://localhost:8000/payment/v1/payment/<paymentId>`
+- gateway route: `GET http://localhost:8000/payment/v1/payment/user/<userId>`
+- gateway route: `GET http://localhost:8000/payment/v1/payment/concert/<concertId>`
 
 ## Database
 
@@ -279,7 +362,7 @@ Stores:
 - Stripe payment intent ID
 - Stripe refund ID
 - original payment linkage for refunds
-- resale payout linkage through `originalPaymentId`
+- optional backward-compatible resale payout linkage through `originalPaymentId`
 
 ## Payment Types and Reasons
 
@@ -297,8 +380,9 @@ Common `reason` values:
 Interpretation:
 
 - `PURCHASE` = primary sale buyer charge
-- `RESALE_PURCHASE` = resale buyer charge
-- `REFUND` + `RESALE_PAYOUT` = seller payout record in the current demo model
+- `RESALE_PURCHASE` = resale buyer charge, with Stripe Connect routing in sandbox when seller mapping is configured
+- `REFUND` + `CONCERT_CANCELLED` = buyer refund record
+- `REFUND` + `RESALE_PAYOUT` = backward-compatible internal seller payout record
 
 ## API Usage by Other Services
 
@@ -307,7 +391,7 @@ Current internal usage:
 - `purchase_window` calls `POST /payment/v1/payment` for primary ticket purchases
 - `concert_cancellation` calls `POST /payment/v1/payment/refund` for concert refunds
 - `resale_purchase` calls `POST /payment/v1/payment` for the buyer charge
-- `resale_purchase` then calls `POST /payment/v1/payment/resale-payout` for seller settlement
+- `resale_purchase` still calls `POST /payment/v1/payment/resale-payout`, but Stripe Connect routing now occurs during the `RESALE_PURCHASE` payment itself
 
 ## Secret Key vs Publishable Key
 

@@ -371,12 +371,12 @@
     <p class="hero-desc">The ultimate alignment of star power and true value. Your gateway to Singapore’s greatest performances, day or night. REST-assured, your next big moment is written in the stars.</p>
     <div class="hero-meta">
       <div class="hero-stat">
-        <div class="hero-count" id="hero-concert-count">05</div>
+        <div class="hero-count" id="hero-concert-count">0</div>
         <div class="hero-count-label">Concerts</div>
       </div>
       <div class="hero-stat-sep"></div>
       <div class="hero-stat">
-        <div class="hero-count" style="color:var(--blue)">30K</div>
+        <div class="hero-count" id="hero-ticket-count" style="color:var(--blue)">0</div>
         <div class="hero-count-label">Tickets Available</div>
       </div>
       <div class="hero-stat-sep"></div>
@@ -476,6 +476,22 @@ let isLoadingConcerts = true;
 let midnightRefreshTimeout = null;
 const PAGE_SIZE = 6;
 let currentPage = 1;
+
+function formatTicketCountK(totalAvailable){
+  const total = Number(totalAvailable || 0);
+  if(!Number.isFinite(total) || total <= 0) return '0';
+  return `${Math.ceil(total / 1000)}K`;
+}
+
+function updateHeroStats(){
+  document.getElementById('hero-concert-count').textContent = String(allConcerts.length);
+  const totalAvailableTickets = allConcerts.reduce((sum, concert) => {
+    const availableSeats = Number(concert?.availableSeats || 0);
+    return sum + (Number.isFinite(availableSeats) ? availableSeats : 0);
+  }, 0);
+  document.getElementById('hero-ticket-count').textContent = formatTicketCountK(totalAvailableTickets);
+}
+
 renderNav('concerts');
 const isAdmin = Auth.isAdmin();
 adjustFiltersForRole();
@@ -494,12 +510,14 @@ async function refreshConcerts(){
     const d = await API.concerts.list();
     const next = d.concerts || d || [];
     allConcerts = next;
-    document.getElementById('hero-concert-count').textContent = String(allConcerts.length).padStart(2,'0');
+    updateHeroStats();
     await refreshAvailabilityCounts(allConcerts);
+    updateHeroStats();
     await refreshCardBasePrices(allConcerts);
     await refreshFeaturedConcert();
   } catch {
     if(isLoadingConcerts) allConcerts = [];
+    updateHeroStats();
     renderFeaturedConcert(null);
   } finally {
     isLoadingConcerts = false;
