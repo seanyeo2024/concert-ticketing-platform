@@ -13,6 +13,7 @@ CORS(app)
 
 CONCERT_URL = os.environ.get("CONCERT_SERVICE_URL", "http://localhost:5000")
 
+# Open a MySQL connection to the pricing service database.
 def get_db():
     return mysql.connector.connect(
         host=os.environ.get("MYSQL_HOST", "localhost"),
@@ -22,11 +23,13 @@ def get_db():
         password=os.environ.get("MYSQL_PASSWORD", "ctms_pass"),
     )
 
+# Return a standardised JSON error payload for the pricing service.
 def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "pricing", "timestamp": datetime.utcnow().isoformat()}}), status
 
 
+# Create the pricing table if it does not already exist.
 def ensure_schema():
     db = get_db()
     cur = db.cursor()
@@ -53,6 +56,7 @@ def ensure_schema():
     db.close()
 
 
+# Fetch a seat category from the concert service for category validation.
 def fetch_seat_category(concert_id, category_id):
     try:
         res = requests.get(f"{CONCERT_URL}/concerts/{concert_id}/seats", timeout=5)
@@ -64,6 +68,7 @@ def fetch_seat_category(concert_id, category_id):
         return None
 
 
+# Normalise incoming datetime values into MySQL-compatible strings.
 def parse_mysql_datetime(value, field_name):
     if value in (None, ""):
         return None
@@ -103,6 +108,7 @@ def parse_mysql_datetime(value, field_name):
 ensure_schema()
 
 # GET /pricing/v1/concerts/<concertId>/prices
+# List all price rules configured for a concert.
 @app.route("/pricing/v1/concerts/<concert_id>/prices", methods=["GET"])
 def get_prices(concert_id):
     db = get_db(); cur = db.cursor(dictionary=True)
@@ -112,6 +118,7 @@ def get_prices(concert_id):
     return jsonify({"concertId": concert_id, "currency": currency, "prices": rows})
 
 # GET /pricing/v1/concerts/<concertId>/prices/<categoryId>
+# Fetch a single price rule for one concert category.
 @app.route("/pricing/v1/concerts/<concert_id>/prices/<category_id>", methods=["GET"])
 def get_price(concert_id, category_id):
     db = get_db(); cur = db.cursor(dictionary=True)
@@ -121,6 +128,7 @@ def get_price(concert_id, category_id):
     return jsonify(row)
 
 # GET /pricing/v1/concerts/<concertId>/prices/<categoryId>/ceiling
+# Return only the resale ceiling and currency for a category.
 @app.route("/pricing/v1/concerts/<concert_id>/prices/<category_id>/ceiling", methods=["GET"])
 def get_ceiling(concert_id, category_id):
     db = get_db(); cur = db.cursor(dictionary=True)
@@ -132,6 +140,7 @@ def get_ceiling(concert_id, category_id):
                     "resaleCeiling": row["resaleCeiling"], "currency": row["currency"]})
 
 # POST /pricing/v1/concerts/<concertId>/prices
+# Create a new pricing rule after validating price and category inputs.
 @app.route("/pricing/v1/concerts/<concert_id>/prices", methods=["POST"])
 def create_price(concert_id):
     data = request.get_json()
@@ -183,6 +192,7 @@ def create_price(concert_id):
     return jsonify({"priceRuleId": rule_id, "concertId": concert_id}), 201
 
 # PUT /pricing/v1/concerts/<concertId>/prices/<categoryId>
+# Update the active pricing rule for a concert category.
 @app.route("/pricing/v1/concerts/<concert_id>/prices/<category_id>", methods=["PUT"])
 def update_price(concert_id, category_id):
     data = request.get_json()
@@ -203,6 +213,7 @@ def update_price(concert_id, category_id):
     if affected == 0: return err("NOT_FOUND", "Price rule not found", 404)
     return jsonify({"updated": True})
 
+# Expose a simple health endpoint for container checks.
 @app.route("/health")
 def health(): return jsonify({"status": "ok", "service": "pricing"})
 

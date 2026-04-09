@@ -1,5 +1,7 @@
 services:
 
+  # API gateway for the frontend and external clients.
+  # Kong routes incoming traffic to the appropriate internal service.
   kong:
     image: kong:3.7
     container_name: ctms_kong
@@ -29,14 +31,18 @@ services:
       - concert_cancellation
     restart: unless-stopped
 
-  # ── Infrastructure ──────────────────────────────────────────────────────────
+  # ---------------------------------------------------------------------------
+  # Shared infrastructure services
+  # ---------------------------------------------------------------------------
 
+  # RabbitMQ provides asynchronous messaging between services.
+  # Used for notifications and event-driven orchestration flows.
   rabbitmq:
     image: rabbitmq:3.12-management
     container_name: ctms_rabbitmq
     ports:
-      - "${RABBITMQ_AMQP_HOST_PORT}:5672"       # AMQP
-      - "${RABBITMQ_MANAGEMENT_HOST_PORT}:15672"     # Management UI
+      - "${RABBITMQ_AMQP_HOST_PORT}:5672" # AMQP port for service-to-service messaging
+      - "${RABBITMQ_MANAGEMENT_HOST_PORT}:15672" # Management UI for inspection/debugging
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
@@ -49,6 +55,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis stores fast-changing queue/session state for the waiting room flow.
   redis:
     image: redis:7-alpine
     container_name: ctms_redis
@@ -61,8 +68,12 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Databases ───────────────────────────────────────────────────────────────
+  # ---------------------------------------------------------------------------
+  # Per-service MySQL databases
+  # Each atomic service owns its own schema to stay loosely coupled.
+  # ---------------------------------------------------------------------------
 
+  # Database for pricing rules and resale ceiling policies.
   mysql_pricing:
     image: mysql:8.0
     container_name: ctms_mysql_pricing
@@ -82,6 +93,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # Database for queue entries and purchase window metadata.
   mysql_queue:
     image: mysql:8.0
     container_name: ctms_mysql_queue
@@ -101,6 +113,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # Database for ticket inventory, ownership, and status transitions.
   mysql_ticket_inventory:
     image: mysql:8.0
     container_name: ctms_mysql_ticket
@@ -120,6 +133,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # Database for payment, refund, and resale payout records.
   mysql_payment:
     image: mysql:8.0
     container_name: ctms_mysql_payment
@@ -139,6 +153,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # Database for generated QR data and QR validity state.
   mysql_qr:
     image: mysql:8.0
     container_name: ctms_mysql_qr
@@ -158,6 +173,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # Database for user notification preferences and notification history.
   mysql_notification:
     image: mysql:8.0
     container_name: ctms_mysql_notification
@@ -177,8 +193,12 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Atomic Services ─────────────────────────────────────────────────────────
+  # ---------------------------------------------------------------------------
+  # Atomic services
+  # Each service owns a focused business capability.
+  # ---------------------------------------------------------------------------
 
+  # Pricing service manages base prices and resale ceiling validation.
   pricing:
     build: ./services/pricing
     container_name: ctms_pricing
@@ -196,6 +216,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Queue service handles the virtual waiting room and purchase window limits.
   queue:
     build: ./services/queue
     container_name: ctms_queue
@@ -220,6 +241,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Ticket inventory service manages ticket records, owners, and resale states.
   ticket_inventory:
     build: ./services/ticket_inventory
     container_name: ctms_ticket_inventory
@@ -236,6 +258,8 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Payment service records charges, refunds, and payout information.
+  # Stripe-related variables support the demo payment integration.
   payment:
     build: ./services/payment
     container_name: ctms_payment
@@ -256,6 +280,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # QR service generates, validates, and invalidates ticket QR codes.
   qr:
     build: ./services/qr
     container_name: ctms_qr
@@ -275,6 +300,8 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Notification service handles contact preferences and outbound alerts.
+  # It relies on RabbitMQ for event consumption and provider credentials for delivery.
   notification:
     build: ./services/notification
     container_name: ctms_notification
@@ -314,8 +341,12 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # ── Composite Services ──────────────────────────────────────────────────────
+  # ---------------------------------------------------------------------------
+  # Composite/orchestrator services
+  # These combine several atomic services into business workflows.
+  # ---------------------------------------------------------------------------
 
+  # Handles the primary purchase flow from queue admission to payment and QR creation.
   purchase_window:
     build: ./services/purchase_window
     container_name: ctms_purchase_window
@@ -342,6 +373,7 @@ services:
       - rabbitmq
     restart: unless-stopped
 
+  # Coordinates the resale checkout flow across ticket, pricing, payment, and QR services.
   resale_purchase:
     build: ./services/resale_purchase
     container_name: ctms_resale_purchase
@@ -365,6 +397,8 @@ services:
       - rabbitmq
     restart: unless-stopped
 
+  # Frontend-facing resale marketplace gateway.
+  # Keeps browse/list/unlist/purchase operations under one service entry point.
   resale_ticket:
     build: ./services/resale_ticket
     container_name: ctms_resale_ticket
@@ -380,6 +414,7 @@ services:
       - resale_purchase
     restart: unless-stopped
 
+  # Coordinates concert cancellation, refunds, QR invalidation, and notification events.
   concert_cancellation:
     build: ./services/concert_cancellation
     container_name: ctms_concert_cancellation
@@ -402,6 +437,7 @@ services:
       - rabbitmq
     restart: unless-stopped
 
+# Named volumes preserve MySQL data across container recreations.
 volumes:
   mysql_pricing_data:
   mysql_queue_data:

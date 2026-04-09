@@ -21,6 +21,7 @@ from importlib import import_module
 app = Flask(__name__)
 CORS(app)
 
+# Open a MySQL connection to the notification service database.
 def get_db():
     return mysql.connector.connect(
         host=os.environ.get("MYSQL_HOST", "localhost"),
@@ -30,6 +31,7 @@ def get_db():
         password=os.environ.get("MYSQL_PASSWORD", "ctms_pass"),
     )
 
+# Return a standardised JSON error payload for the notification service.
 def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "notification", "timestamp": datetime.utcnow().isoformat()}}), status
@@ -42,10 +44,12 @@ SMS_MAX_LENGTH = 1200
 FRONTEND_PAGES_BASE_URL = os.environ.get("FRONTEND_PAGES_BASE_URL", "http://localhost:8080/pages")
 
 
+# Validate that a phone number is in E.164 format.
 def is_e164_phone_number(value):
     return isinstance(value, str) and bool(E164_PATTERN.fullmatch(value.strip().replace(" ", "")))
 
 
+# Normalise and validate a phone number before sending.
 def normalize_phone(value):
     if not isinstance(value, str):
         return None
@@ -53,6 +57,7 @@ def normalize_phone(value):
     return cleaned if is_e164_phone_number(cleaned) else None
 
 
+# Read a boolean-like environment variable safely.
 def _env_bool(name, default=False):
     value = os.environ.get(name)
     if value is None:
@@ -60,6 +65,7 @@ def _env_bool(name, default=False):
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
+# Mask secrets before returning config details in APIs.
 def _mask_value(value, visible_start=4, visible_end=2):
     if not value:
         return None
@@ -69,6 +75,7 @@ def _mask_value(value, visible_start=4, visible_end=2):
     return f"{text[:visible_start]}...{text[-visible_end:]}"
 
 
+# Fetch a user's saved notification contact details.
 def get_user_contact(user_id):
     db = get_db()
     cur = db.cursor(dictionary=True)
@@ -83,6 +90,7 @@ def get_user_contact(user_id):
         db.close()
 
 
+# Fetch concert metadata used to enrich notifications.
 def fetch_concert_meta(concert_id):
     concert_name = concert_id or "N/A"
     concert_dt = None
@@ -107,6 +115,7 @@ def fetch_concert_meta(concert_id):
     return {"concertName": concert_name, "concertDateTime": concert_dt}
 
 
+# Resolve the phone number to use for SMS or WhatsApp delivery.
 def resolve_sms_recipient(payload, data, user_id):
     for candidate in (
         payload.get("phoneNumber"),
@@ -134,10 +143,12 @@ def resolve_sms_recipient(payload, data, user_id):
     return normalized
 
 
+# Validate that a string looks like an email address.
 def is_valid_email(value):
     return isinstance(value, str) and bool(EMAIL_PATTERN.fullmatch(value.strip()))
 
 
+# Resolve the email address to use for notification delivery.
 def resolve_email_recipient(payload, data, user_id):
     for candidate in (
         payload.get("toEmail"),
@@ -157,6 +168,7 @@ def resolve_email_recipient(payload, data, user_id):
     raise ValueError(f"No valid email found for user {user_id}")
 
 
+# Persist first-seen contact hints when the profile store has no record yet.
 def persist_contact_hints(payload, data, user_id):
     if not user_id or user_id == "UNKNOWN":
         return
@@ -222,6 +234,7 @@ def persist_contact_hints(payload, data, user_id):
         db.close()
 
 
+# Create the notification tables and indexes if they do not exist.
 def ensure_schema():
     db = get_db()
     cur = db.cursor()
@@ -262,6 +275,7 @@ def ensure_schema():
     db.close()
 
 
+# Summarise configured notification providers and delivery settings.
 def get_notification_config():
     provider = (os.environ.get("EMAIL_PROVIDER") or "sendgrid").strip().lower()
     smtp_username = (os.environ.get("SMTP_USERNAME") or "").strip()
@@ -295,6 +309,7 @@ def get_notification_config():
         },
     }
 
+# Send an email through SMTP, SendGrid, or demo stub mode.
 def send_email(to_email, subject, body):
     """Send an email via configured provider (Gmail SMTP or SendGrid), else demo stub."""
     provider = (os.environ.get("EMAIL_PROVIDER") or "sendgrid").strip().lower()
@@ -362,6 +377,7 @@ def send_email(to_email, subject, body):
     print("[NOTIFICATION] Email send failed and stub mode disabled")
     return "email_send_failed", False
 
+# Send an SMS via Twilio with a small retry loop for transient errors.
 def send_sms(to_number, body):
     """Send an SMS via Twilio."""
     account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
@@ -394,6 +410,7 @@ def send_sms(to_number, body):
             time.sleep(0.6 * (attempt + 1))
 
 
+# Send a WhatsApp message via Twilio.
 def send_whatsapp(to_number, body):
     """Send a WhatsApp message via Twilio sandbox/number."""
     account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
@@ -429,6 +446,7 @@ TEMPLATES = {
 }
 
 
+# Read a display-friendly field value with fallback handling.
 def _value(data, key, fallback="N/A"):
     raw = data.get(key)
     if raw is None:
@@ -437,6 +455,7 @@ def _value(data, key, fallback="N/A"):
     return text if text else fallback
 
 
+# Format money values consistently for notification content.
 def _money(data, primary_key="amount", fallback_key="resalePrice"):
     amount = data.get(primary_key)
     if amount in (None, ""):
@@ -450,14 +469,17 @@ def _money(data, primary_key="amount", fallback_key="resalePrice"):
         return f"{currency} {amount}"
 
 
+# Check whether a notification field is effectively blank.
 def _is_blank(value):
     return value is None or str(value).strip() in ("", "N/A")
 
 
+# Detect placeholder-like concert names that still look like raw ids.
 def _looks_like_concert_id(value):
     return isinstance(value, str) and bool(CONCERT_ID_PATTERN.fullmatch(value.strip()))
 
 
+# Derive the queue window duration in minutes from available payload fields.
 def _resolve_window_minutes(payload, data):
     for candidate in (
         data.get("windowDurationMinutes"),
@@ -498,6 +520,7 @@ def _resolve_window_minutes(payload, data):
     return max(1, math.ceil(int(os.environ.get("PURCHASE_WINDOW_SECONDS", "600")) / 60))
 
 
+# Fill in missing concert name/date fields before composing messages.
 def enrich_concert_fields(payload, data):
     concert_id = data.get("concertId") or payload.get("concertId")
     if not concert_id:
@@ -515,6 +538,7 @@ def enrich_concert_fields(payload, data):
         data["concertDateTime"] = meta.get("concertDateTime")
 
 
+# Build a frontend link that brings the user to the correct ticket page.
 def _qr_link(data):
     owner_id = _value(data, "userId", _value(data, "buyerId", _value(data, "ownerId", "")))
 
@@ -543,6 +567,7 @@ def _qr_link(data):
     return f"{FRONTEND_PAGES_BASE_URL}/login.html"
 
 
+# Build the long-form email/body content for a notification event.
 def compose_message(event_type, data):
     if event_type == "ticket.purchased":
         purchase_type = str(data.get("purchaseType", "PRIMARY")).upper()
@@ -655,6 +680,7 @@ def compose_message(event_type, data):
     return subject, body
 
 
+# Build a shorter SMS-friendly version of the notification content.
 def compose_sms_message(event_type, data):
     footer = "Check your gmail inbox for more details."
     purchase_type = str(data.get("purchaseType", "PRIMARY")).upper()
@@ -759,6 +785,7 @@ def compose_sms_message(event_type, data):
     )
 
 
+# Persist a delivery attempt to the notification log.
 def log_notification(user_id, event_type, channel, subject, body, status, ref_id, external_msg_id, ok):
     notif_id = f"NOTIF-{uuid.uuid4().hex[:8].upper()}"
     db = get_db()
@@ -775,6 +802,7 @@ def log_notification(user_id, event_type, channel, subject, body, status, ref_id
         db.close()
 
 
+# Resolve recipient, send email, and log the outcome.
 def deliver_email(event_type, payload, data, user_id, subject, body):
     try:
         recipient_email = resolve_email_recipient(payload, data, user_id)
@@ -798,6 +826,7 @@ def deliver_email(event_type, payload, data, user_id, subject, body):
     return {"channel": "EMAIL", "recipient": recipient_email, "ok": ok, "status": status, "externalMsgId": ext_id}
 
 
+# Resolve recipient, send SMS or WhatsApp, and log the outcome.
 def deliver_sms(event_type, payload, data, user_id, subject, body, prefer_whatsapp_override=None):
     prefer_whatsapp = _env_bool("USE_WHATSAPP_SANDBOX_FOR_SMS", False) if prefer_whatsapp_override is None else bool(prefer_whatsapp_override)
     try:
@@ -836,6 +865,7 @@ def deliver_sms(event_type, payload, data, user_id, subject, body, prefer_whatsa
     )
     return {"channel": channel, "recipient": recipient_phone, "ok": ok, "status": status, "externalMsgId": ext_id}
 
+# Enrich, compose, and fan out one inbound event to notification channels.
 def handle_event(event_type, payload):
     data = payload.get("data", payload)
     if isinstance(data, dict) and "timestamp" not in data and payload.get("timestamp"):
@@ -856,6 +886,7 @@ def handle_event(event_type, payload):
 
 ensure_schema()
 
+# Consume RabbitMQ events in a background loop with reconnect handling.
 def start_consumer():
     """Background thread: consumes all messages from ctms_topic and reconnects on failure."""
     creds = pika.PlainCredentials(
@@ -903,6 +934,7 @@ def start_consumer():
                 pass
 
 # REST endpoints (admin/monitoring)
+# Fetch one notification log entry for debugging or admin use.
 @app.route("/notification/v1/notification/<notif_id>", methods=["GET"])
 def get_notification(notif_id):
     db = get_db(); cur = db.cursor(dictionary=True)
@@ -911,6 +943,7 @@ def get_notification(notif_id):
     if not row: return err("NOT_FOUND", "Notification not found", 404)
     return jsonify(row)
 
+# List notification history for a single user.
 @app.route("/notification/v1/notification/user/<user_id>", methods=["GET"])
 def get_by_user(user_id):
     db = get_db(); cur = db.cursor(dictionary=True)
@@ -919,6 +952,7 @@ def get_by_user(user_id):
     return jsonify({"userId": user_id, "notifications": rows})
 
 
+# Fetch the saved contact preferences for a user.
 @app.route("/notification/v1/contact/<user_id>", methods=["GET"])
 def get_contact(user_id):
     contact = get_user_contact(user_id)
@@ -932,6 +966,7 @@ def get_contact(user_id):
     })
 
 
+# Create or update the saved contact preferences for a user.
 @app.route("/notification/v1/contact/<user_id>", methods=["PUT"])
 def upsert_contact(user_id):
     payload = request.get_json(silent=True) or {}
@@ -967,11 +1002,13 @@ def upsert_contact(user_id):
     return jsonify({"userId": user_id, "email": email, "phoneNumber": phone, "smsOptIn": sms_opt_in})
 
 
+# Expose the current notification provider configuration summary.
 @app.route("/notification/v1/config", methods=["GET"])
 def config():
     return jsonify(get_notification_config())
 
 
+# Trigger a manual notification smoke test across selected channels.
 @app.route("/notification/v1/test", methods=["POST"])
 def test_delivery():
     payload = request.get_json(silent=True) or {}
@@ -1017,6 +1054,7 @@ def test_delivery():
         "config": get_notification_config(),
     })
 
+# Expose a simple health endpoint for container checks.
 @app.route("/health")
 def health(): return jsonify({"status": "ok", "service": "notification"})
 

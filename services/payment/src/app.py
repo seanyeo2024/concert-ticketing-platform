@@ -37,10 +37,12 @@ TEST_PAYMENT_METHOD_MAP = {
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 
 
+# Return the current UTC timestamp as an ISO string.
 def utcnow_iso():
     return datetime.utcnow().isoformat()
 
 
+# Return a standardised JSON error payload for the payment service.
 def err(code, message, status=400, **details):
     payload = {
         "error": {
@@ -55,6 +57,7 @@ def err(code, message, status=400, **details):
     return jsonify(payload), status
 
 
+# Open a MySQL connection to the payment service database.
 def get_db():
     return mysql.connector.connect(
         host=os.environ.get("MYSQL_HOST", "localhost"),
@@ -65,6 +68,7 @@ def get_db():
     )
 
 
+# Create the payment table and indexes if they do not already exist.
 def ensure_schema():
     db = get_db()
     cur = db.cursor()
@@ -95,6 +99,7 @@ def ensure_schema():
     db.close()
 
 
+# Parse and validate money amounts using Decimal precision.
 def parse_amount(value):
     try:
         amount = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -107,10 +112,12 @@ def parse_amount(value):
     return amount
 
 
+# Convert a Decimal amount into smallest currency units for Stripe.
 def to_minor_units(amount):
     return int((amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+# Validate and normalise a submitted currency code.
 def normalize_currency(value):
     currency = str(value or "").strip().upper()
     if not currency:
@@ -120,6 +127,7 @@ def normalize_currency(value):
     return currency
 
 
+# Resolve the Stripe payment method id from accepted frontend aliases.
 def resolve_payment_method(payload):
     candidate = (
         payload.get("stripePaymentMethodId")
@@ -133,6 +141,7 @@ def resolve_payment_method(payload):
     return TEST_PAYMENT_METHOD_MAP.get(candidate, candidate)
 
 
+# Load seller-to-connected-account mappings from environment variables.
 def load_connect_account_map():
     raw = (os.environ.get("STRIPE_CONNECT_ACCOUNT_MAP_JSON") or "").strip()
     mapping = {}
@@ -156,12 +165,14 @@ CONNECT_ACCOUNT_MAP = load_connect_account_map()
 PLATFORM_FEE_PERCENT = Decimal(str(os.environ.get("STRIPE_PLATFORM_FEE_PERCENT", "0") or "0"))
 
 
+# Resolve a seller's Stripe connected account id from the loaded mapping.
 def resolve_connected_account(user_id):
     if not user_id:
         return None
     return CONNECT_ACCOUNT_MAP.get(str(user_id))
 
 
+# Compute the Stripe application fee amount for connected-account charges.
 def compute_application_fee_amount(amount):
     if PLATFORM_FEE_PERCENT <= 0:
         return None
@@ -173,6 +184,7 @@ def compute_application_fee_amount(amount):
     return to_minor_units(fee)
 
 
+# Create and confirm a Stripe PaymentIntent for a buyer charge.
 def stripe_charge(amount, currency, payment_method_id, metadata, connected_account_id=None):
     if not stripe.api_key:
         return None, False, "Stripe is not configured. Missing STRIPE_SECRET_KEY."
@@ -207,6 +219,7 @@ def stripe_charge(amount, currency, payment_method_id, metadata, connected_accou
     return intent, succeeded, message
 
 
+# Create a Stripe refund against an earlier payment intent.
 def stripe_refund(intent_id, amount, metadata, reverse_transfer=False, refund_application_fee=False):
     if not stripe.api_key:
         return None, False, "Stripe is not configured. Missing STRIPE_SECRET_KEY."
@@ -234,6 +247,7 @@ def stripe_refund(intent_id, amount, metadata, reverse_transfer=False, refund_ap
     return refund, succeeded, message
 
 
+# Insert a payment, refund, or payout row into MySQL.
 def insert_payment_record(
     payment_id,
     user_id,
@@ -277,6 +291,7 @@ def insert_payment_record(
     db.close()
 
 
+# Fetch a single payment record by internal payment id.
 def fetch_payment(payment_id):
     db = get_db()
     cur = db.cursor(dictionary=True)
@@ -290,6 +305,7 @@ def fetch_payment(payment_id):
 ensure_schema()
 
 
+# Expose payment-service configuration and test-mode capabilities.
 @app.route("/payment/v1/config", methods=["GET"])
 def payment_config():
     return jsonify(
@@ -303,6 +319,7 @@ def payment_config():
     )
 
 
+# Charge a buyer for a primary or resale ticket purchase.
 @app.route("/payment/v1/payment", methods=["POST"])
 def create_payment():
     data = request.get_json() or {}
@@ -392,6 +409,7 @@ def create_payment():
     )
 
 
+# Refund a previously successful payment.
 @app.route("/payment/v1/payment/refund", methods=["POST"])
 def create_refund():
     data = request.get_json() or {}
@@ -487,6 +505,7 @@ def create_refund():
     )
 
 
+# Record the seller-side payout for a resale purchase.
 @app.route("/payment/v1/payment/resale-payout", methods=["POST"])
 def create_resale_payout():
     data = request.get_json() or {}
@@ -558,6 +577,7 @@ def create_resale_payout():
     )
 
 
+# Fetch a single payment record for debugging or orchestration.
 @app.route("/payment/v1/payment/<payment_id>", methods=["GET"])
 def get_payment(payment_id):
     row = fetch_payment(payment_id)
@@ -566,6 +586,7 @@ def get_payment(payment_id):
     return jsonify(row)
 
 
+# List all payment records belonging to one user.
 @app.route("/payment/v1/payment/user/<user_id>", methods=["GET"])
 def get_by_user(user_id):
     db = get_db()
@@ -577,6 +598,7 @@ def get_by_user(user_id):
     return jsonify({"userId": user_id, "payments": rows})
 
 
+# List concert payments relevant to refund and audit workflows.
 @app.route("/payment/v1/payment/concert/<concert_id>", methods=["GET"])
 def get_by_concert(concert_id):
     db = get_db()
@@ -591,6 +613,7 @@ def get_by_concert(concert_id):
     return jsonify({"concertId": concert_id, "payments": rows})
 
 
+# Expose a simple health endpoint for container checks.
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify(

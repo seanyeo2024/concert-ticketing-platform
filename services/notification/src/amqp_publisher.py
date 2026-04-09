@@ -8,6 +8,7 @@ import os
 import pika
 
 
+# Open a RabbitMQ connection using shared environment configuration.
 def get_connection():
     credentials = pika.PlainCredentials(
         os.environ.get("RABBITMQ_USER", "ctms"),
@@ -23,6 +24,7 @@ def get_connection():
     return pika.BlockingConnection(params)
 
 
+# Publish one JSON message to the configured topic exchange.
 def publish(routing_key: str, payload: dict) -> None:
     """
     Publish a JSON message to ctms_topic with the given routing_key.

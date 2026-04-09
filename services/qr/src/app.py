@@ -19,6 +19,7 @@ TICKET_URL = os.environ.get("TICKET_INVENTORY_SERVICE_URL", "http://localhost:50
 CONCERT_URL = os.environ.get("CONCERT_SERVICE_URL", "http://localhost:5000").rstrip("/")
 HTTP_TIMEOUT = float(os.environ.get("QR_SCAN_HTTP_TIMEOUT", "5"))
 
+# Open a MySQL connection to the QR service database.
 def get_db():
     return mysql.connector.connect(
         host=os.environ.get("MYSQL_HOST", "localhost"),
@@ -28,11 +29,13 @@ def get_db():
         password=os.environ.get("MYSQL_PASSWORD", "ctms_pass"),
     )
 
+# Return a standardised JSON error payload for the QR service.
 def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "qr", "timestamp": datetime.utcnow().isoformat()}}), status
 
 
+# Safely decode JSON bodies from upstream HTTP responses.
 def safe_json(response):
     try:
         return response.json()
@@ -40,6 +43,7 @@ def safe_json(response):
         return {"raw": response.text}
 
 
+# Create the QR record table and indexes if they do not exist.
 def ensure_schema():
     db = get_db()
     cur = db.cursor()
@@ -69,12 +73,14 @@ def ensure_schema():
 ensure_schema()
 
 
+# Build a signed QR payload string for a ticket holder.
 def make_qr_data(ticket_id, user_id, concert_id):
     payload = f"CTMS|{ticket_id}|{user_id}|{concert_id}"
     sig = hmac.new(HMAC_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:8]
     return f"{payload}|{sig}"
 
 
+# Render QR payload text into a base64 PNG data URL.
 def generate_qr_base64(qr_data):
     """Generate a QR code image and return it as a base64 data URL."""
     qr = qrcode.QRCode(
@@ -93,6 +99,7 @@ def generate_qr_base64(qr_data):
     return f"data:image/png;base64,{b64}"
 
 
+# Validate and decode the signed QR payload string.
 def decode_qr_payload(qr_data):
     if not isinstance(qr_data, str) or not qr_data.strip():
         raise ValueError("QR data is required")
@@ -112,6 +119,7 @@ def decode_qr_payload(qr_data):
     }
 
 
+# Parse concert event times from the different formats returned upstream.
 def parse_event_datetime(value):
     if not value:
         return None
@@ -137,6 +145,7 @@ def parse_event_datetime(value):
         return None
 
 
+# Fetch the current ticket snapshot from ticket inventory.
 def fetch_ticket(concert_id, ticket_id):
     response = requests.get(
         f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/{ticket_id}",
@@ -145,6 +154,7 @@ def fetch_ticket(concert_id, ticket_id):
     return response.status_code, safe_json(response)
 
 
+# Update ticket status through ticket inventory during scan flows.
 def update_ticket_status(concert_id, ticket_id, version, status):
     response = requests.put(
         f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/{ticket_id}",
@@ -154,11 +164,13 @@ def update_ticket_status(concert_id, ticket_id, version, status):
     return response.status_code, safe_json(response)
 
 
+# Fetch concert metadata used during gate validation.
 def fetch_concert(concert_id):
     response = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=HTTP_TIMEOUT)
     return response.status_code, safe_json(response)
 
 
+# Map QR invalidation reasons into user-friendly scan responses.
 def invalid_reason_response(reason):
     reason_key = str(reason or "INVALIDATED").upper()
     mapping = {
@@ -172,6 +184,7 @@ def invalid_reason_response(reason):
 
 
 # POST /qr/v1/qr  — generate
+# Generate a fresh QR code for a ticket and invalidate any older QR first.
 @app.route("/qr/v1/qr", methods=["POST"])
 def generate_qr():
     data = request.get_json()
@@ -199,6 +212,7 @@ def generate_qr():
                     "isValid": True, "generatedAt": datetime.utcnow().isoformat()}), 201
 
 # GET /qr/v1/qr/<ticketId>
+# Fetch the latest valid QR record for a ticket.
 @app.route("/qr/v1/qr/<ticket_id>", methods=["GET"])
 def get_qr(ticket_id):
     db = get_db(); cur = db.cursor(dictionary=True)
@@ -208,6 +222,7 @@ def get_qr(ticket_id):
     return jsonify(row)
 
 # GET /qr/v1/qr/<ticketId>/validate  — gate scan
+# Check whether a ticket currently has a valid QR.
 @app.route("/qr/v1/qr/<ticket_id>/validate", methods=["GET"])
 def validate_qr(ticket_id):
     db = get_db(); cur = db.cursor(dictionary=True)
@@ -219,6 +234,7 @@ def validate_qr(ticket_id):
 
 
 # POST /qr/v1/scan  — gate scan + consume
+# Validate and optionally consume a QR during gate entry.
 @app.route("/qr/v1/scan", methods=["POST"])
 def scan_qr():
     data = request.get_json() or {}
@@ -342,6 +358,7 @@ def scan_qr():
     }), 200
 
 # PUT /qr/v1/qr/<ticketId>/invalidate
+# Invalidate the current QR for one ticket.
 @app.route("/qr/v1/qr/<ticket_id>/invalidate", methods=["PUT"])
 def invalidate_qr(ticket_id):
     data = request.get_json() or {}
@@ -354,6 +371,7 @@ def invalidate_qr(ticket_id):
     return jsonify({"invalidated": True, "ticketId": ticket_id, "reason": reason})
 
 # PUT /qr/v1/qr/concert/<concertId>/invalidate-all  — S3 bulk
+# Invalidate all active QRs for a cancelled concert.
 @app.route("/qr/v1/qr/concert/<concert_id>/invalidate-all", methods=["PUT"])
 def invalidate_all(concert_id):
     db = get_db(); cur = db.cursor()
@@ -363,6 +381,7 @@ def invalidate_all(concert_id):
     return jsonify({"concertId": concert_id, "qrsInvalidated": affected,
                     "updatedAt": datetime.utcnow().isoformat()})
 
+# Expose a simple health endpoint for container checks.
 @app.route("/health")
 def health(): return jsonify({"status": "ok", "service": "qr"})
 

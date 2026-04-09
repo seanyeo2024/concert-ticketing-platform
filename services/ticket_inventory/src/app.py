@@ -12,6 +12,7 @@ from datetime import datetime
 app = Flask(__name__)
 CORS(app)
 
+# Open a MySQL connection to the ticket inventory database.
 def get_db():
     return mysql.connector.connect(
         host=os.environ.get("MYSQL_HOST", "localhost"),
@@ -21,6 +22,7 @@ def get_db():
         password=os.environ.get("MYSQL_PASSWORD", "ctms_pass"),
     )
 
+# Return a standardised JSON error payload for the inventory service.
 def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "ticket_inventory", "timestamp": datetime.utcnow().isoformat()}}), status
@@ -37,6 +39,7 @@ VALID_TRANSITIONS = {
 }
 
 
+# Create the ticket table and indexes if they do not already exist.
 def ensure_schema():
     db = get_db()
     cur = db.cursor()
@@ -71,6 +74,7 @@ def ensure_schema():
 ensure_schema()
 
 # GET /tickets/v1/tickets/<concertId>
+# List tickets for a concert, optionally filtered by status.
 @app.route("/tickets/v1/tickets/<concert_id>", methods=["GET"])
 def list_tickets(concert_id):
     status_filter = request.args.get("status", "AVAILABLE")
@@ -84,6 +88,7 @@ def list_tickets(concert_id):
     return jsonify({"concertId": concert_id, "tickets": rows, "count": len(rows)})
 
 # GET /tickets/v1/tickets/<concertId>/resale
+# List tickets that are currently on the resale marketplace.
 @app.route("/tickets/v1/tickets/<concert_id>/resale", methods=["GET"])
 def list_resale(concert_id):
     db = get_db(); cur = db.cursor(dictionary=True)
@@ -93,6 +98,7 @@ def list_resale(concert_id):
     return jsonify({"concertId": concert_id, "listings": rows, "count": len(rows)})
 
 # GET /tickets/v1/tickets/<concertId>/<ticketId>
+# Fetch a specific ticket by concert and ticket id.
 @app.route("/tickets/v1/tickets/<concert_id>/<ticket_id>", methods=["GET"])
 def get_ticket(concert_id, ticket_id):
     db = get_db(); cur = db.cursor(dictionary=True)
@@ -102,6 +108,7 @@ def get_ticket(concert_id, ticket_id):
     return jsonify(row)
 
 # POST /tickets/v1/tickets  — bulk create (admin)
+# Bulk-create ticket inventory rows during concert setup.
 @app.route("/tickets/v1/tickets", methods=["POST"])
 def create_tickets():
     data = request.get_json() or {}
@@ -119,6 +126,7 @@ def create_tickets():
     return jsonify({"created": len(created), "ticketIds": created}), 201
 
 # PUT /tickets/v1/tickets/<concertId>/<ticketId>  — update with optimistic lock
+# Update ticket state and ownership using optimistic locking.
 @app.route("/tickets/v1/tickets/<concert_id>/<ticket_id>", methods=["PUT"])
 def update_ticket(concert_id, ticket_id):
     data = request.get_json()
@@ -176,6 +184,7 @@ def update_ticket(concert_id, ticket_id):
     return jsonify({"updated": True, "ticketId": ticket_id})
 
 # PUT /tickets/v1/tickets/<concertId>/cancel-all  — S3 bulk refund
+# Mark all active tickets for a concert as pending refund processing.
 @app.route("/tickets/v1/tickets/<concert_id>/cancel-all", methods=["PUT"])
 def cancel_all(concert_id):
     data = request.get_json() or {}
@@ -193,6 +202,7 @@ def cancel_all(concert_id):
                     "reason": reason, "updatedAt": datetime.utcnow().isoformat()})
 
 
+# Finalise a batch of pending tickets as refunded.
 @app.route("/tickets/v1/tickets/<concert_id>/refund-batch", methods=["PUT"])
 def refund_batch(concert_id):
     data = request.get_json() or {}
@@ -217,6 +227,7 @@ def refund_batch(concert_id):
         "updatedAt": datetime.utcnow().isoformat(),
     })
 
+# Expose a simple health endpoint for container checks.
 @app.route("/health")
 def health(): return jsonify({"status": "ok", "service": "ticket_inventory"})
 

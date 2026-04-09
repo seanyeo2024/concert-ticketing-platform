@@ -67,6 +67,7 @@ const API = (() => {
     cancellation: `${GATEWAY}/cancellation/v1`,
   };
 
+  // Check whether a concert date already includes an explicit time component.
   function hasExplicitTime(eventDate) {
     if (!eventDate) return false;
     if (typeof eventDate === 'number' || eventDate instanceof Date) return true;
@@ -74,6 +75,7 @@ const API = (() => {
     return /(\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?)/i.test(eventDate);
   }
 
+  // Normalise datetime-local input values into a consistent seconds-included format.
   function normalizeLocalDateTimeInput(value) {
     if (typeof value !== 'string') return value;
     const raw = value.trim();
@@ -83,6 +85,7 @@ const API = (() => {
     return raw;
   }
 
+  // Read locally remembered concert time overrides from localStorage.
   function readScheduleOverrides() {
     try {
       return JSON.parse(localStorage.getItem(CONCERT_SCHEDULE_KEY) || '{}') || {};
@@ -91,12 +94,14 @@ const API = (() => {
     }
   }
 
+  // Persist locally remembered concert time overrides to localStorage.
   function writeScheduleOverrides(map) {
     try {
       localStorage.setItem(CONCERT_SCHEDULE_KEY, JSON.stringify(map || {}));
     } catch {}
   }
 
+  // Cache a concert's explicit event time so later fetches can stay time-aware.
   function rememberConcertSchedule(concertId, eventDate) {
     if (!concertId || !eventDate || !hasExplicitTime(eventDate)) return;
     const map = readScheduleOverrides();
@@ -104,6 +109,7 @@ const API = (() => {
     writeScheduleOverrides(map);
   }
 
+  // Merge stored schedule overrides into one concert payload.
   function hydrateConcertSchedule(concert) {
     if (!concert || !concert.concertId) return concert;
     if (hasExplicitTime(concert.eventDate)) {
@@ -118,12 +124,14 @@ const API = (() => {
     return concert;
   }
 
+  // Apply schedule hydration across either array or object-based concert payloads.
   function hydrateConcertListPayload(data) {
     const rows = Array.isArray(data) ? data : (data?.concerts || []);
     const hydrated = rows.map(hydrateConcertSchedule);
     return Array.isArray(data) ? hydrated : { ...(data || {}), concerts: hydrated };
   }
 
+  // Perform a JSON HTTP request with timeout and normalised error handling.
   async function req(url, method='GET', body=null, timeoutMs=10000) {
     const opts = { method, headers:{'Content-Type':'application/json'} };
     if (body) opts.body = JSON.stringify(body);
@@ -141,6 +149,7 @@ const API = (() => {
 
   return {
     concerts: {
+      // Fetch all concerts, falling back to seed data when the service is unavailable.
       list: async () => {
         try {
           const d = await req(`${BASE.concert}/concerts`);
@@ -149,10 +158,12 @@ const API = (() => {
           return { concerts: (SEED.concerts || []).map(hydrateConcertSchedule) };
         }
       },
+      // Fetch all concerts without any seed-data fallback.
       listStrict: async () => {
         const d = await req(`${BASE.concert}/concerts`);
         return hydrateConcertListPayload(Array.isArray(d) ? { concerts: d } : d);
       },
+      // Fetch one concert, with seed-data fallback for demos.
       get:  async id  => {
         try {
           const c = await req(`${BASE.concert}/concerts/${id}`);
@@ -161,16 +172,23 @@ const API = (() => {
           return hydrateConcertSchedule(SEED.concerts.find(c=>c.concertId===id) || null);
         }
       },
+      // Fetch one concert without fallback.
       getStrict: async id => hydrateConcertSchedule(await req(`${BASE.concert}/concerts/${id}`)),
+      // Fetch a concert's seat categories, with empty fallback for demos.
       seats:async id  => { try { return await req(`${BASE.concert}/concerts/${id}/seats`); } catch { return { categories: [] }; } },
+      // Fetch a concert's seat categories without fallback.
       seatsStrict: async id => req(`${BASE.concert}/concerts/${id}/seats`),
+      // Create seat categories for a concert.
       createSeats: (id,p) => req(`${BASE.concert}/concerts/${id}/seats`, 'POST', p),
+      // Update one seat category for a concert.
       updateSeat: (id,categoryId,p) => req(`${BASE.concert}/concerts/${id}/seats/${categoryId}`, 'PUT', p),
+      // Update concert metadata and remember explicit schedule changes locally.
       update: async (id,p)  => {
         const updated = await req(`${BASE.concert}/concerts/${id}`, 'PUT', p);
         rememberConcertSchedule(id, p?.eventDate);
         return hydrateConcertSchedule(updated);
       },
+      // Create a new concert and cache any explicit event time locally.
       create: async p => {
         const created = await req(`${BASE.concert}/concerts`, 'POST', p);
         rememberConcertSchedule(created?.concertId || p?.concertId, p?.eventDate);
@@ -178,28 +196,47 @@ const API = (() => {
       },
     },
     pricing: {
+      // Fetch all pricing rules for one concert, with seed-data fallback.
       list:    async (cid)      => { try { return await req(`${BASE.pricing}/concerts/${cid}/prices`); } catch { return { prices: SEED.prices[cid]||[] }; } },
+      // Fetch all pricing rules for one concert without fallback.
       listStrict: async cid => req(`${BASE.pricing}/concerts/${cid}/prices`),
+      // Fetch one concert/category pricing rule, with fallback.
       get:     async (cid,cat)  => { try { return await req(`${BASE.pricing}/concerts/${cid}/prices/${cat}`); } catch { return (SEED.prices[cid]||[]).find(p=>p.categoryId===cat)||{}; } },
+      // Fetch the resale ceiling for a category, with fallback.
       ceiling: async (cid,cat)  => { try { return await req(`${BASE.pricing}/concerts/${cid}/prices/${cat}/ceiling`); } catch { const p=(SEED.prices[cid]||[]).find(p=>p.categoryId===cat)||{}; return {resaleCeiling:p.resaleCeiling,currency:'SGD'}; } },
+      // Create a new pricing rule.
       create: (cid,p)           => req(`${BASE.pricing}/concerts/${cid}/prices`, 'POST', p),
+      // Update an existing pricing rule.
       update: (cid,cat,p)       => req(`${BASE.pricing}/concerts/${cid}/prices/${cat}`, 'PUT', p),
     },
     queue: {
+      // Join a concert's virtual waiting room.
       join:   (cid,p)          => req(`${BASE.queue}/queue/${cid}`,'POST',p),
+      // Read the current queue status for one user.
       status: (cid,uid)        => req(`${BASE.queue}/queue/${cid}/${uid}`),
+      // Fetch aggregate queue depth information for a concert.
       depth:  cid              => req(`${BASE.queue}/queue/${cid}`),
+      // Keep an active queue window alive during checkout.
       heartbeat: p             => req(`${BASE.queue}/session/heartbeat`,'POST',p),
+      // Update a queue entry while tolerating failures in demo mode.
       update: (cid,uid,p)      => req(`${BASE.queue}/queue/${cid}/${uid}`,'PUT',p).catch(()=>{}),
+      // Leave the queue while tolerating failures in demo mode.
       leave:  (cid,uid)        => req(`${BASE.queue}/queue/${cid}/${uid}`,'DELETE').catch(()=>{}),
     },
     tickets: {
+      // Fetch tickets for a concert, optionally filtered by status.
       list:      async (cid,st) => { try { return await req(`${BASE.tickets}/tickets/${cid}?status=${st||'AVAILABLE'}`); } catch { return { tickets: SEED.tickets.filter(t=>t.concertId===cid&&(!st||st==='ALL'||t.status===st)) }; } },
+      // Fetch resale listings from ticket inventory, with fallback.
       resale:    async cid      => { try { return await req(`${BASE.tickets}/tickets/${cid}/resale`); } catch { return { listings: SEED.resaleListings.filter(t=>t.concertId===cid) }; } },
+      // Fetch one ticket by id, with fallback.
       get:       async (cid,id) => { try { return await req(`${BASE.tickets}/tickets/${cid}/${id}`); } catch { return SEED.tickets.find(t=>t.ticketId===id)||null; } },
+      // Bulk-create ticket inventory rows.
       create:    p              => req(`${BASE.tickets}/tickets`, 'POST', p),
+      // Update one ticket while tolerating demo-mode failures.
       update:    (cid,id,p)     => req(`${BASE.tickets}/tickets/${cid}/${id}`,'PUT',p).catch(()=>({ updated:true })),
+      // Bulk-mark concert tickets for cancellation/refund flow.
       cancelAll: (cid,p)        => req(`${BASE.tickets}/tickets/${cid}/cancel-all`,'PUT',p).catch(()=>({ ticketsRefunded:0 })),
+      // Compute client-side summary counts grouped by category and status.
       summary: async cid => {
         const result = await API.tickets.list(cid, 'ALL');
         const tickets = result?.tickets || [];
@@ -225,21 +262,33 @@ const API = (() => {
       },
     },
     payment: {
+      // Fetch payment-service config, with demo fallback.
       config:   async () => { try { return await req(`${BASE.payment}/config`); } catch { return { stripeConfigured:false, frontendMode:'demo-fallback' }; } },
+      // Charge a buyer, with demo success fallback.
       charge:   async p  => { try { return await req(`${BASE.payment}/payment`,'POST',p); } catch { return { paymentId:`PAY-${Math.random().toString(36).slice(2,8).toUpperCase()}`, status:'SUCCESS', amount:p.amount, currency:p.currency }; } },
+      // Refund a payment, with demo success fallback.
       refund:   async p  => { try { return await req(`${BASE.payment}/payment/refund`,'POST',p); } catch { return { paymentId:`PAY-REFUND`, type:'REFUND', status:'SUCCESS' }; } },
+      // Fetch payment history for one user.
       byUser:   async id => { try { return await req(`${BASE.payment}/payment/user/${id}`); } catch { return { payments: SEED.payments.filter(p=>p.userId===id) }; } },
+      // Fetch payment history for one concert.
       byConcert:async id => { try { return await req(`${BASE.payment}/payment/concert/${id}`); } catch { return { payments: SEED.payments.filter(p=>p.concertId===id) }; } },
     },
     qr: {
+      // Generate a QR for a ticket, with demo fallback.
       generate:     async p  => { try { return await req(`${BASE.qr}/qr`,'POST',p); } catch { return { qrId:`QR-DEMO`, qrData:`Soltistix|${p.ticketId}|${p.userId}|${p.concertId}|demo1234`, isValid:true }; } },
+      // Fetch the latest QR for a ticket, with demo fallback.
       get:          async id => { try { return await req(`${BASE.qr}/qr/${id}`); } catch { return { qrData:`Soltistix|${id}|DEMO|CONC|demo1234`, isValid:true }; } },
+      // Submit a QR scan request.
       scan:         p        => req(`${BASE.qr}/scan`,'POST',p),
+      // Invalidate a single QR while tolerating demo-mode failures.
       invalidate:   (id,p)   => req(`${BASE.qr}/qr/${id}/invalidate`,'PUT',p).catch(()=>{}),
+      // Invalidate all QRs for a concert while tolerating failures.
       invalidateAll:cid      => req(`${BASE.qr}/qr/concert/${cid}/invalidate-all`,'PUT',{}).catch(()=>{}),
     },
     notification: {
+      // Fetch notification history for a user, with fallback.
       byUser: async id => { try { return await req(`${BASE.notification}/notification/user/${id}`); } catch { return { notifications: SEED.notifications.filter(n=>n.userId===id) }; } },
+      // Fetch saved contact details for a user, with local fallback.
       contact: async id => {
         try {
           return await req(`${BASE.notification}/contact/${id}`);
@@ -251,6 +300,7 @@ const API = (() => {
           }
         }
       },
+      // Save contact details remotely, with local fallback for demo mode.
       saveContact: async (id, payload) => {
         try {
           return await req(`${BASE.notification}/contact/${id}`, 'PUT', payload);
@@ -269,37 +319,49 @@ const API = (() => {
       },
     },
     purchase: {
+      // Complete the primary purchase flow for one concert window.
       complete: (cid,p) => req(`${BASE.purchase}/window/${cid}`,'POST',p,30000),
     },
     resaleTicket: {
+      // Fetch resale marketplace listings for a concert.
       listings: async cid => {
         return req(`${BASE.resaleTicket}/listings/${cid}`);
       },
+      // List a ticket for resale through the marketplace gateway.
       list: async p => {
         return await req(`${BASE.resaleTicket}/list`, 'POST', p);
       },
+      // Remove a ticket from the resale marketplace.
       unlist: async p => {
         return await req(`${BASE.resaleTicket}/unlist`, 'PUT', p);
       },
+      // Purchase a resale ticket through the marketplace gateway.
       purchase: async p => {
         return await req(`${BASE.resaleTicket}/purchase`, 'POST', p);
       },
     },
     resale: {
+      // Backward-compatible alias for listing a resale ticket.
       list: async p => API.resaleTicket.list(p),
+      // Backward-compatible alias for buying a resale ticket.
       buy:  async p => API.resaleTicket.purchase(p),
+      // Backward-compatible alias for unlisting a resale ticket.
       unlist: async p => API.resaleTicket.unlist(p),
+      // Backward-compatible alias for fetching resale listings.
       listings: async cid => API.resaleTicket.listings(cid),
     },
     cancellation: {
+      // Trigger concert cancellation and refund flow, with demo fallback.
       cancel: async (cid,p) => { try { return await req(`${BASE.cancellation}/${cid}`,'POST',p); } catch { return { success:true, ticketsRefunded:37570, paymentsRefunded:37570 }; } },
     },
   };
 })();
 
 const ContactProfile = (() => {
+  // Build the localStorage key used for cached contact profiles.
   function keyFor(userId){ return `ctms_contact_${userId}`; }
 
+  // Read a cached contact profile from localStorage.
   function readCached(userId){
     try {
       return JSON.parse(localStorage.getItem(keyFor(userId)) || 'null');
@@ -308,6 +370,7 @@ const ContactProfile = (() => {
     }
   }
 
+  // Persist a contact profile cache and keep the logged-in user snapshot in sync.
   function writeCached(userId, contact){
     if(!userId || !contact) return;
     try { localStorage.setItem(keyFor(userId), JSON.stringify(contact)); } catch {}
@@ -320,6 +383,7 @@ const ContactProfile = (() => {
     }
   }
 
+  // Fetch and normalise the current user's contact profile.
   async function fetch(user){
     if(!user?.userId) return { email:'', phoneNumber:'' };
     const remote = await API.notification.contact(user.userId);
@@ -333,6 +397,7 @@ const ContactProfile = (() => {
     return normalized;
   }
 
+  // Save and normalise the current user's contact profile.
   async function save(user, payload){
     if(!user?.userId) throw new Error('Missing user context');
     const saved = await API.notification.saveContact(user.userId, payload);
@@ -357,6 +422,7 @@ const Auth = (() => {
     { userId:'USR-9001', name:'Admin',      email:'admin@demo.com', password:'admin123', role:'admin'    },
   ];
   return {
+    // Validate demo credentials and persist the logged-in user locally.
     login(email, pw) {
       const u = USERS.find(u=>u.email===email&&u.password===pw);
       if (!u) throw new Error('INVALID_CREDENTIALS');
@@ -365,17 +431,25 @@ const Auth = (() => {
       localStorage.setItem('ctms_token', `tok_${safe.userId}`);
       return safe;
     },
+    // Clear local auth state and redirect back to login.
     logout() { localStorage.removeItem('ctms_user'); localStorage.removeItem('ctms_token'); window.location.href='login.html'; },
+    // Read the logged-in user snapshot from localStorage.
     getUser()    { try { return JSON.parse(localStorage.getItem('ctms_user')); } catch { return null; } },
+    // Check whether a demo auth token exists.
     isLoggedIn() { return !!localStorage.getItem('ctms_token'); },
+    // Check whether the current user has the admin role.
     isAdmin()    { return this.getUser()?.role==='admin'; },
+    // Return the correct home page for the current role.
     homePage()   { return this.isAdmin() ? 'admin.html' : 'index.html'; },
+    // Enforce login and redirect anonymous users to the login page.
     require()    { if (!this.isLoggedIn()) { window.location.href='login.html'; return null; } return this.getUser(); },
+    // Enforce admin access and redirect non-admin users away.
     requireAdmin(){ const u=this.require(); if(u?.role!=='admin') { window.location.href='index.html'; return null; } return u; },
   };
 })();
 
 /* ── Toast ──────────────────────────────────────────────────── */
+// Render a transient toast notification in the current page.
 function toast(msg, type='info', duration=3200) {
   let c = document.getElementById('toast-container');
   if (!c) { c = document.createElement('div'); c.id='toast-container'; document.body.appendChild(c); }
@@ -388,6 +462,7 @@ function toast(msg, type='info', duration=3200) {
 }
 
 /* ── Navbar ─────────────────────────────────────────────────── */
+// Render the shared navbar, including desktop and mobile variants.
 function renderNav(active='') {
   const user = Auth.getUser();
   const homeHref = Auth.homePage();
@@ -452,6 +527,7 @@ function renderNav(active='') {
 
 /* ── Utilities ──────────────────────────────────────────────── */
 const Util = {
+  // Parse a date value from the various formats used across the frontend.
   parseDateParts(dt) {
     if (!dt) return null;
     if (dt instanceof Date) {
@@ -511,6 +587,7 @@ const Util = {
     const hasTime = /(\d{1,2}:\d{2})/.test(raw);
     return { date: parsed, hasTime };
   },
+  // Format a date for detailed display with weekday and time when available.
   formatDate(dt) {
     const parsed = this.parseDateParts(dt);
     if (!parsed) return '—';
@@ -519,11 +596,13 @@ const Util = {
     }
     return parsed.date.toLocaleString('en-SG', { weekday:'short', day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true, timeZone:'Asia/Singapore' });
   },
+  // Format a date for compact card/list displays.
   formatDateShort(dt) {
     const parsed = this.parseDateParts(dt);
     if (!parsed) return '—';
     return parsed.date.toLocaleDateString('en-SG', { day:'numeric', month:'short', year:'numeric' });
   },
+  // Format a concert date while keeping a friendly "time not set" fallback.
   formatConcertDateTime(dt) {
     const parsed = this.parseDateParts(dt);
     if (!parsed) return '—';
@@ -532,16 +611,21 @@ const Util = {
     }
     return parsed.date.toLocaleString('en-SG', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true, timeZone:'Asia/Singapore' });
   },
+  // Extract the display year from a date value.
   dateYear(dt) {
     const parsed = this.parseDateParts(dt);
     return parsed ? String(parsed.date.getFullYear()) : '—';
   },
+  // Format a numeric amount as a currency string.
   formatPrice(a, cur='SGD') { return `${cur} ${Number(a).toFixed(2)}`; },
+  // Render a styled status tag for ticket and concert states.
   tag(status) {
     const map = { ACTIVE:'tag-active', SOLD_OUT:'tag-sold-out', CANCELLED:'tag-cancelled', POSTPONED:'tag-postponed', AVAILABLE:'tag-active', CONFIRMED:'tag-confirmed', PENDING:'tag-pending', RESALE_LISTED:'tag-resale', RESALE_PENDING:'tag-pending', USED:'tag-used', REFUNDED:'tag-refunded' };
     return `<span class="tag ${map[status]||'tag-pending'}">${status.replace(/_/g,' ')}</span>`;
   },
+  // Read a query-string parameter from the current page URL.
   getParam(k) { return new URLSearchParams(window.location.search).get(k); },
+  // Pick a themed background gradient based on concert name.
   concertBg(name='') {
     const n=name.toLowerCase();
     if(n.includes('taylor')||n.includes('swift')) return 'linear-gradient(135deg,#ff6eb4,#ff3cac)';
@@ -559,6 +643,7 @@ const LiveSync = (() => {
   const CHANNEL = 'ctms-live-sync';
   const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(CHANNEL) : null;
 
+  // Broadcast a lightweight cross-tab sync event.
   function emit(type, payload = {}) {
     const evt = {
       type,
@@ -575,6 +660,7 @@ const LiveSync = (() => {
     return evt;
   }
 
+  // Subscribe to cross-tab sync events and return an unsubscribe handler.
   function on(handler) {
     const handleStorage = e => {
       if (e.key !== KEY || !e.newValue) return;
@@ -599,7 +685,9 @@ const LiveSync = (() => {
 })();
 
 /* ── Modal helpers ──────────────────────────────────────────── */
+// Open a modal overlay by id.
 function openModal(id)  { document.getElementById(id)?.classList.add('open'); }
+// Close a modal overlay by id.
 function closeModal(id) { document.getElementById(id)?.classList.remove('open'); }
 document.addEventListener('click', e => {
   if (e.target.classList.contains('modal-overlay')) e.target.classList.remove('open');
