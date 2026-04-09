@@ -403,6 +403,27 @@ function resolveCategoryPrice(cat) {
   return Number.isFinite(amount) && amount > 0 ? amount : null;
 }
 
+function buildInventoryDrivenCategories(seatRes, inventorySummary){
+  const seatCategories = seatRes?.categories || [];
+  const seatMap = Object.fromEntries(seatCategories.map(cat => [cat.categoryId, cat]));
+  const byCategory = inventorySummary?.byCategory || {};
+  const categoryIds = Object.keys(byCategory);
+
+  return categoryIds.map(categoryId => {
+    const counts = byCategory[categoryId] || {};
+    const seatCategory = seatMap[categoryId] || {};
+    return {
+      ...seatCategory,
+      categoryId,
+      categoryName: seatCategory.categoryName || categoryId,
+      totalSeats: Number(counts.total || 0),
+      availableSeats: Number(counts.available || 0),
+      inventoryReady: Number(counts.total || 0) > 0,
+      basePrice: Number(seatCategory.basePrice ?? 0),
+    };
+  });
+}
+
 async function init() {
   concertId = Util.getParam('id');
   if (!concertId) {
@@ -440,16 +461,7 @@ async function init() {
       console.error('Failed loading categories/prices:', e);
     }
 
-    categories = (catRes.categories || []).map(cat => {
-      const counts = inventorySummary?.byCategory?.[cat.categoryId] || {};
-      return {
-        ...cat,
-        totalSeats: Number(counts.total || 0),
-        availableSeats: Number(counts.available || 0),
-        inventoryReady: Number(counts.total || 0) > 0,
-        basePrice: Number(cat.basePrice ?? 0),
-      };
-    });
+    categories = buildInventoryDrivenCategories(catRes, inventorySummary);
 
     prices = priceRes.prices || [];
     concert.totalSeats = Number(inventorySummary?.totalSeats || 0);
