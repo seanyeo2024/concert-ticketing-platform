@@ -14,6 +14,7 @@ import re
 import time
 import smtplib
 import math
+import html
 from urllib.parse import parse_qs, quote, urlparse
 from email.message import EmailMessage
 from importlib import import_module
@@ -295,7 +296,7 @@ def get_notification_config():
         },
     }
 
-def send_email(to_email, subject, body):
+def send_email(to_email, subject, body, html_body=None):
     """Send an email via configured provider (Gmail SMTP or SendGrid), else demo stub."""
     provider = (os.environ.get("EMAIL_PROVIDER") or "sendgrid").strip().lower()
     allow_stub = (os.environ.get("EMAIL_ALLOW_STUB") or "false").strip().lower() in ("1", "true", "yes")
@@ -325,6 +326,8 @@ def send_email(to_email, subject, body):
             msg["To"] = to_email
             msg["Subject"] = subject
             msg.set_content(body)
+            if html_body:
+                msg.add_alternative(html_body, subtype="html")
 
             with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
                 server.ehlo()
@@ -347,6 +350,7 @@ def send_email(to_email, subject, body):
                 to_emails=to_email,
                 subject=subject,
                 plain_text_content=body,
+                html_content=html_body or body,
             )
             resp = sg_mod.SendGridAPIClient(api_key).send(msg)
             if 200 <= int(getattr(resp, "status_code", 0)) < 300:
@@ -541,6 +545,82 @@ def _qr_link(data):
     if ticket_id and concert_id:
         return _build_login_ticket_link(ticket_id, concert_id, owner_id)
     return f"{FRONTEND_PAGES_BASE_URL}/login.html"
+
+
+def _resolve_ticket_qr(data):
+    ticket_id = _value(data, "ticketId", "")
+    qr_data = (data.get("qrData") or "").strip()
+    qr_image_url = (data.get("qrImageUrl") or "").strip()
+    qr_id = (data.get("qrId") or "").strip()
+
+    # Fetch the currently active QR for this ticket as a fallback.
+    if ticket_id and (not qr_data or not qr_image_url):
+        base_urls = [
+            (os.environ.get("QR_SERVICE_URL") or "").rstrip("/"),
+            "http://qr:5005",
+            "http://kong:8000",
+            "http://localhost:5005",
+            "http://localhost:8000",
+        ]
+        seen = set()
+        for base in base_urls:
+            if not base or base in seen:
+                continue
+            seen.add(base)
+            try:
+                endpoint = f"{base}/qr/v1/qr/{ticket_id}"
+                resp = import_module("requests").get(endpoint, timeout=5)
+                if resp.status_code != 200:
+                    continue
+                payload = resp.json() if isinstance(resp.json(), dict) else {}
+                qr_data = qr_data or (payload.get("qrData") or "").strip()
+                qr_image_url = qr_image_url or (payload.get("qrImageUrl") or "").strip()
+                qr_id = qr_id or (payload.get("qrId") or "").strip()
+                if qr_data and qr_image_url:
+                    break
+            except Exception:
+                continue
+
+    return {
+        "qrId": qr_id or None,
+        "qrData": qr_data or None,
+        "qrImageUrl": qr_image_url or None,
+    }
+
+
+def _build_ticket_qr_email_html(data, subject, body):
+    qr = _resolve_ticket_qr(data)
+    if not qr.get("qrData") or not qr.get("qrImageUrl"):
+        return None
+
+    concert_name = _value(data, "concertName")
+    seat_number = _value(data, "seatNumber")
+    ticket_id = _value(data, "ticketId")
+    qr_link = _qr_link(data)
+
+    return f"""
+<html>
+  <body style=\"margin:0;padding:24px;background:#f5f5f5;font-family:Arial,sans-serif;color:#111;\">
+    <div style=\"max-width:640px;margin:0 auto;background:#ffffff;border-radius:16px;border:1px solid #e6e6e6;padding:24px;\">
+      <h1 style=\"margin:0 0 8px 0;font-size:28px;line-height:1.2;\">{html.escape(subject or 'Your ticket is confirmed!')}</h1>
+      <p style=\"margin:0 0 18px 0;font-size:16px;line-height:1.6;color:#333;\">{html.escape(body or '')}</p>
+
+      <div style=\"background:#f7f7f7;border:1px solid #e8e8e8;border-radius:14px;padding:16px;text-align:center;\">
+        <div style=\"font-size:18px;font-weight:700;margin-bottom:6px;\">Your Ticket QR</div>
+        <div style=\"font-size:13px;color:#666;margin-bottom:14px;\">{html.escape(concert_name)} · Seat {html.escape(seat_number)}</div>
+        <img src=\"{html.escape(qr['qrImageUrl'])}\" alt=\"Ticket QR\" style=\"width:180px;height:180px;border-radius:12px;border:2px solid rgba(17,17,17,0.08);background:#fff;\" />
+        <div style=\"margin-top:12px;font-size:12px;line-height:1.5;word-break:break-all;color:#333;\">{html.escape(qr['qrData'])}</div>
+      </div>
+
+      <div style=\"margin-top:16px;font-size:13px;line-height:1.6;color:#444;\">
+        Ticket ID: <strong>{html.escape(ticket_id)}</strong><br/>
+        QR ID: <strong>{html.escape(qr.get('qrId') or 'N/A')}</strong><br/>
+        Open your ticket anytime: <a href=\"{html.escape(qr_link)}\" style=\"color:#111;\">View in My Tickets</a>
+      </div>
+    </div>
+  </body>
+</html>
+""".strip()
 
 
 def compose_message(event_type, data):
@@ -782,7 +862,8 @@ def deliver_email(event_type, payload, data, user_id, subject, body):
         print(f"[NOTIFICATION] Email recipient unavailable for {event_type}: {e}")
         return None
 
-    ext_id, ok = send_email(recipient_email, subject, body)
+    html_body = _build_ticket_qr_email_html(data, subject, body) if event_type == "ticket.purchased" else None
+    ext_id, ok = send_email(recipient_email, subject, body, html_body=html_body)
     status = "SENT_EMAIL" if ok else "FAILED"
     log_notification(
         user_id,
