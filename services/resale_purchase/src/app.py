@@ -208,6 +208,7 @@ def purchase_resale():
                         json={"userId": data["buyerId"], "ticketId": data["ticketId"],
                               "concertId": data["concertId"], "amount": resale_price,
                               "currency": "SGD", "type": "RESALE_PURCHASE",
+                              "sellerId": seller_id,
                               "stripeToken": data["stripeToken"]}, timeout=10)
     if pay.status_code != 201:
         requests.put(f"{TICKET_URL}/tickets/v1/tickets/{data['concertId']}/{data['ticketId']}",

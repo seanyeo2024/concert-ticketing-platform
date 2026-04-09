@@ -7,6 +7,7 @@ Handles: PURCHASE, RESALE_PURCHASE, REFUND
 """
 from datetime import datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import json
 import os
 import uuid
 
@@ -132,18 +133,68 @@ def resolve_payment_method(payload):
     return TEST_PAYMENT_METHOD_MAP.get(candidate, candidate)
 
 
-def stripe_charge(amount, currency, payment_method_id, metadata):
+def load_connect_account_map():
+    raw = (os.environ.get("STRIPE_CONNECT_ACCOUNT_MAP_JSON") or "").strip()
+    mapping = {}
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                mapping.update({str(k): str(v) for k, v in parsed.items() if v})
+        except json.JSONDecodeError:
+            pass
+
+    for key, value in os.environ.items():
+        if key.startswith("STRIPE_CONNECT_ACCOUNT_") and value:
+            user_key = key.removeprefix("STRIPE_CONNECT_ACCOUNT_")
+            mapping[user_key] = str(value).strip()
+            mapping[user_key.replace("_", "-")] = str(value).strip()
+    return mapping
+
+
+CONNECT_ACCOUNT_MAP = load_connect_account_map()
+PLATFORM_FEE_PERCENT = Decimal(str(os.environ.get("STRIPE_PLATFORM_FEE_PERCENT", "0") or "0"))
+
+
+def resolve_connected_account(user_id):
+    if not user_id:
+        return None
+    return CONNECT_ACCOUNT_MAP.get(str(user_id))
+
+
+def compute_application_fee_amount(amount):
+    if PLATFORM_FEE_PERCENT <= 0:
+        return None
+    fee = (amount * PLATFORM_FEE_PERCENT / Decimal("100")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    if fee <= 0:
+        return None
+    return to_minor_units(fee)
+
+
+def stripe_charge(amount, currency, payment_method_id, metadata, connected_account_id=None):
     if not stripe.api_key:
         return None, False, "Stripe is not configured. Missing STRIPE_SECRET_KEY."
 
     try:
+        intent_payload = {
+            "amount": to_minor_units(amount),
+            "currency": currency.lower(),
+            "payment_method": payment_method_id,
+            "confirm": True,
+            "payment_method_types": ["card"],
+            "metadata": metadata,
+        }
+        if connected_account_id:
+            intent_payload["transfer_data"] = {"destination": connected_account_id}
+            intent_payload["on_behalf_of"] = connected_account_id
+            application_fee_amount = compute_application_fee_amount(amount)
+            if application_fee_amount is not None:
+                intent_payload["application_fee_amount"] = application_fee_amount
+
         intent = stripe.PaymentIntent.create(
-            amount=to_minor_units(amount),
-            currency=currency.lower(),
-            payment_method=payment_method_id,
-            confirm=True,
-            payment_method_types=["card"],
-            metadata=metadata,
+            **intent_payload,
         )
     except stripe.error.CardError as exc:
         return None, False, exc.user_message or str(exc)
@@ -156,18 +207,24 @@ def stripe_charge(amount, currency, payment_method_id, metadata):
     return intent, succeeded, message
 
 
-def stripe_refund(intent_id, amount, metadata):
+def stripe_refund(intent_id, amount, metadata, reverse_transfer=False, refund_application_fee=False):
     if not stripe.api_key:
         return None, False, "Stripe is not configured. Missing STRIPE_SECRET_KEY."
     if not intent_id:
         return None, False, "Original Stripe payment intent is missing"
 
     try:
-        refund = stripe.Refund.create(
-            payment_intent=intent_id,
-            amount=to_minor_units(amount),
-            metadata=metadata,
-        )
+        refund_payload = {
+            "payment_intent": intent_id,
+            "amount": to_minor_units(amount),
+            "metadata": metadata,
+        }
+        if reverse_transfer:
+            refund_payload["reverse_transfer"] = True
+        if refund_application_fee:
+            refund_payload["refund_application_fee"] = True
+
+        refund = stripe.Refund.create(**refund_payload)
     except stripe.error.StripeError as exc:
         return None, False, str(exc)
 
@@ -272,8 +329,28 @@ def create_payment():
         "concertId": str(data.get("concertId", "")),
         "type": payment_type,
     }
+    connected_account_id = None
+    if payment_type == "RESALE_PURCHASE":
+        seller_id = data.get("sellerId")
+        if not seller_id:
+            return err("MISSING_SELLER_ID", "sellerId is required for RESALE_PURCHASE", 400)
+        connected_account_id = resolve_connected_account(seller_id)
+        if not connected_account_id:
+            return err(
+                "SELLER_ACCOUNT_NOT_CONFIGURED",
+                f"No Stripe connected account is configured for seller {seller_id}",
+                409,
+            )
+        metadata["sellerId"] = str(seller_id)
+        metadata["connectedAccountId"] = connected_account_id
 
-    intent, ok, failure_message = stripe_charge(amount, currency, payment_method_id, metadata)
+    intent, ok, failure_message = stripe_charge(
+        amount,
+        currency,
+        payment_method_id,
+        metadata,
+        connected_account_id=connected_account_id,
+    )
     status = "SUCCESS" if ok else "FAILED"
     intent_id = getattr(intent, "id", None) if intent else None
 
@@ -307,6 +384,7 @@ def create_payment():
                 "amount": str(amount),
                 "currency": currency,
                 "paymentMethodId": payment_method_id,
+                "sellerConnectedAccountId": connected_account_id,
                 "createdAt": utcnow_iso(),
             }
         ),
@@ -345,6 +423,7 @@ def create_refund():
         return err("REFUND_EXISTS", "Refund already issued for this payment and reason", 409)
 
     refund_record_id = f"PAY-{uuid.uuid4().hex[:8].upper()}"
+    original_type = str(original.get("type", "")).upper()
     refund, ok, failure_message = stripe_refund(
         original["stripePaymentIntentId"],
         amount,
@@ -353,6 +432,8 @@ def create_refund():
             "originalPaymentId": str(data["paymentId"]),
             "reason": str(data.get("reason", "")),
         },
+        reverse_transfer=(original_type == "RESALE_PURCHASE"),
+        refund_application_fee=(original_type == "RESALE_PURCHASE" and PLATFORM_FEE_PERCENT > 0),
     )
     refund_id = getattr(refund, "id", None) if refund else None
     status = "SUCCESS" if ok else "FAILED"
