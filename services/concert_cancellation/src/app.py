@@ -24,11 +24,13 @@ TICKET_URL  = os.environ.get("TICKET_INVENTORY_SERVICE_URL", "http://localhost:5
 PAYMENT_URL = os.environ.get("PAYMENT_SERVICE_URL",          "http://localhost:5004")
 QR_URL      = os.environ.get("QR_SERVICE_URL",               "http://localhost:5005")
 
+# Return a standardised JSON error payload for the cancellation orchestrator.
 def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "concert_cancellation", "timestamp": datetime.utcnow().isoformat()}}), status
 
 
+# Select the latest successful purchase per ticket for refunding.
 def choose_refundable_payments(payments):
     latest_by_ticket = {}
     for payment in payments:
@@ -46,6 +48,7 @@ def choose_refundable_payments(payments):
     return list(latest_by_ticket.values())
 
 
+# Fetch ticket details used in cancellation notifications.
 def fetch_ticket_snapshot(concert_id, ticket_id):
     try:
         response = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/{ticket_id}", timeout=6)
@@ -56,6 +59,7 @@ def fetch_ticket_snapshot(concert_id, ticket_id):
     return {}
 
 
+# Fetch concert details used in cancellation notifications.
 def fetch_concert_snapshot(concert_id):
     try:
         response = requests.get(f"{CONCERT_URL}/concerts/{concert_id}", timeout=6)
@@ -66,6 +70,7 @@ def fetch_concert_snapshot(concert_id):
     return {}
 
 # POST /cancellation/v1/<concertId>
+# Orchestrate concert cancellation, refunds, QR invalidation, and notifications.
 @app.route("/cancellation/v1/<concert_id>", methods=["POST"])
 def cancel_concert(concert_id):
     data = request.get_json() or {}
@@ -176,6 +181,7 @@ def cancel_concert(concert_id):
                     "paymentRefundFailures": refund_failures,
                     "completedAt": cancelled_at})
 
+# Expose a simple health endpoint for container checks.
 @app.route("/health")
 def health(): return jsonify({"status": "ok", "service": "concert_cancellation"})
 

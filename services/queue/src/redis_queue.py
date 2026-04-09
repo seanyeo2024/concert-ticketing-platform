@@ -38,7 +38,7 @@ redis_client = redis.Redis(
     socket_connect_timeout=5,
 )
 
-
+# Return a standardised JSON error payload for the Redis queue service.
 def err(code, message, status=400):
     return (
         jsonify(
@@ -55,14 +55,17 @@ def err(code, message, status=400):
     )
 
 
+# Return the current UTC timestamp as an ISO string.
 def now_iso():
     return datetime.utcnow().isoformat()
 
 
+# Return the current UTC timestamp as Unix epoch seconds.
 def now_epoch():
     return time.time()
 
 
+# Parse an integer safely with a default fallback.
 def parse_int(value, default=0):
     try:
         return int(value)
@@ -70,6 +73,7 @@ def parse_int(value, default=0):
         return default
 
 
+# Fetch concert display metadata for queue notifications.
 def fetch_concert_meta(concert_id):
     base_urls = [(CONCERT_URL or "").rstrip("/"), "http://concert:5000", "http://kong:8000", "http://localhost:5000"]
     tried = set()
@@ -90,6 +94,7 @@ def fetch_concert_meta(concert_id):
     return {"concertName": concert_id, "concertDateTime": None}
 
 
+# Convert stored ISO timestamps into epoch seconds for Redis sorting.
 def iso_to_epoch(value):
     if not value:
         return now_epoch()
@@ -99,30 +104,37 @@ def iso_to_epoch(value):
         return now_epoch()
 
 
+# Build the Redis hash key for a single user queue entry.
 def entry_key(concert_id, user_id):
     return f"queue:{concert_id}:entry:{user_id}"
 
 
+# Build the Redis sorted-set key for waiting users.
 def waiting_key(concert_id):
     return f"queue:{concert_id}:waiting"
 
 
+# Build the Redis sorted-set key for granted windows.
 def granted_key(concert_id):
     return f"queue:{concert_id}:granted"
 
 
+# Build the Redis set key for a specific queue status bucket.
 def status_key(concert_id, status):
     return f"queue:{concert_id}:status:{status}"
 
 
+# Build the Redis distributed lock key for a concert queue.
 def lock_key(concert_id):
     return f"queue:{concert_id}:lock"
 
 
+# Create a Redis lock object to serialise queue updates per concert.
 def queue_lock(concert_id):
     return redis_client.lock(lock_key(concert_id), timeout=10, blocking_timeout=5)
 
 
+# Read and normalise a user queue entry from Redis.
 def get_entry(concert_id, user_id):
     row = redis_client.hgetall(entry_key(concert_id, user_id))
     if not row:
@@ -141,6 +153,7 @@ def get_entry(concert_id, user_id):
     }
 
 
+# Persist a queue entry and keep its status membership sets in sync.
 def save_entry(row):
     pipe = redis_client.pipeline()
     pipe.hset(
@@ -164,6 +177,7 @@ def save_entry(row):
     pipe.execute()
 
 
+# Remove a queue entry from Redis and all associated indexes.
 def delete_entry(concert_id, user_id):
     pipe = redis_client.pipeline()
     pipe.delete(entry_key(concert_id, user_id))
@@ -174,6 +188,7 @@ def delete_entry(concert_id, user_id):
     pipe.execute()
 
 
+# Compute a user's current queue position from Redis sorted sets.
 def compute_position(concert_id, row):
     if row["status"] == "WAITING":
         rank = redis_client.zrank(waiting_key(concert_id), row["userId"])
@@ -183,12 +198,14 @@ def compute_position(concert_id, row):
     return 0
 
 
+# Add derived fields such as queue position before returning a row.
 def format_row(concert_id, row):
     payload = dict(row)
     payload["position"] = compute_position(concert_id, row)
     return payload
 
 
+# Build the response payload for queue session validation calls.
 def token_response(row):
     return {
         "valid": True,
@@ -200,6 +217,7 @@ def token_response(row):
     }
 
 
+# Detect whether a granted session has gone stale due to missed heartbeats.
 def is_heartbeat_stale(row):
     if row.get("status") != "WINDOW_GRANTED":
         return False
@@ -209,6 +227,7 @@ def is_heartbeat_stale(row):
     return now_epoch() - updated_at_epoch > HEARTBEAT_TIMEOUT_SECONDS
 
 
+# Publish an event when a granted purchase window expires.
 def publish_window_expired(row):
     try:
         concert_meta = fetch_concert_meta(row["concertId"])
@@ -231,6 +250,7 @@ def publish_window_expired(row):
         pass
 
 
+# Publish an event when a user receives a purchase window.
 def publish_window_granted(user_id, concert_id, expires_at):
     try:
         concert_meta = fetch_concert_meta(concert_id)
@@ -255,6 +275,7 @@ def publish_window_granted(user_id, concert_id, expires_at):
         pass
 
 
+# Publish an event when a user enters the waiting room.
 def publish_waiting_room_entered(user_id, concert_id, queue_id, queue_position):
     try:
         concert_meta = fetch_concert_meta(concert_id)
@@ -282,6 +303,7 @@ def publish_waiting_room_entered(user_id, concert_id, queue_id, queue_position):
         pass
 
 
+# Publish an event when a waiting-room session expires.
 def publish_waiting_room_session_expired(row):
     try:
         concert_meta = fetch_concert_meta(row["concertId"])
@@ -308,6 +330,7 @@ def publish_waiting_room_session_expired(row):
         pass
 
 
+# Ask ticket inventory how many tickets remain available.
 def fetch_available_seats(concert_id):
     try:
         res = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}?status=AVAILABLE", timeout=5)
@@ -318,6 +341,7 @@ def fetch_available_seats(concert_id):
         return 0
 
 
+# Reconcile Redis sorted sets with the canonical entry hashes.
 def reconcile_queue_state_locked(concert_id):
     waiting_members = redis_client.zrange(waiting_key(concert_id), 0, -1)
     granted_members = redis_client.zrange(granted_key(concert_id), 0, -1)
@@ -337,6 +361,7 @@ def reconcile_queue_state_locked(concert_id):
         redis_client.zadd(granted_key(concert_id), {user_id: iso_to_epoch(row.get("windowExpiresAt"))})
 
 
+# Expire stale granted windows while the queue lock is held.
 def expire_granted_windows_locked(concert_id):
     reconcile_queue_state_locked(concert_id)
     granted_users = redis_client.zrange(granted_key(concert_id), 0, -1)
@@ -369,6 +394,7 @@ def expire_granted_windows_locked(concert_id):
         publish_window_expired(row)
 
 
+# Promote waiting users into purchase windows while the queue lock is held.
 def grant_windows_if_needed_locked(concert_id):
     reconcile_queue_state_locked(concert_id)
     expire_granted_windows_locked(concert_id)
@@ -407,6 +433,7 @@ def grant_windows_if_needed_locked(concert_id):
     pipe.execute()
 
 
+# Return per-status counts for the current queue state.
 def get_breakdown(concert_id):
     rows = []
     for status in QUEUE_STATUSES:
@@ -416,6 +443,7 @@ def get_breakdown(concert_id):
     return rows
 
 
+# Create a new waiting-room entry in Redis for a user.
 @app.route("/queue/v1/queue/<concert_id>", methods=["POST"])
 def join_queue(concert_id):
     data = request.get_json() or {}
@@ -454,6 +482,7 @@ def join_queue(concert_id):
     return jsonify(format_row(concert_id, latest)), 201
 
 
+# Return the latest queue status and position for a user.
 @app.route("/queue/v1/queue/<concert_id>/<user_id>", methods=["GET"])
 def get_position(concert_id, user_id):
     with queue_lock(concert_id):
@@ -478,6 +507,7 @@ def get_position(concert_id, user_id):
     return jsonify(payload)
 
 
+# Return queue breakdown statistics for a concert.
 @app.route("/queue/v1/queue/<concert_id>", methods=["GET"])
 def queue_depth(concert_id):
     with queue_lock(concert_id):
@@ -488,6 +518,7 @@ def queue_depth(concert_id):
     return jsonify({"concertId": concert_id, "breakdown": rows})
 
 
+# Update a queue entry status and related session/window fields.
 @app.route("/queue/v1/queue/<concert_id>/<user_id>", methods=["PUT"])
 def update_entry(concert_id, user_id):
     data = request.get_json() or {}
@@ -545,6 +576,7 @@ def update_entry(concert_id, user_id):
     return jsonify({"updated": True, "status": new_status})
 
 
+# Remove a user from the Redis-backed queue.
 @app.route("/queue/v1/queue/<concert_id>/<user_id>", methods=["DELETE"])
 def leave_queue(concert_id, user_id):
     with queue_lock(concert_id):
@@ -557,12 +589,14 @@ def leave_queue(concert_id, user_id):
     return jsonify({"deleted": True})
 
 
+# Expose a health endpoint and verify Redis connectivity.
 @app.route("/health")
 def health():
     redis_client.ping()
     return jsonify({"status": "ok", "service": "queue", "backend": "redis"})
 
 
+# Validate that a queue session token is still active and usable.
 @app.route("/queue/v1/session/validate", methods=["POST"])
 def validate_session():
     data = request.get_json() or {}
@@ -602,6 +636,7 @@ def validate_session():
         return jsonify(token_response(row))
 
 
+# Refresh a granted queue session so it is not treated as abandoned.
 @app.route("/queue/v1/session/heartbeat", methods=["POST"])
 def heartbeat_session():
     data = request.get_json() or {}
@@ -634,6 +669,7 @@ def heartbeat_session():
         return jsonify(token_response(row))
 
 
+# Consume a granted queue session after a successful purchase.
 @app.route("/queue/v1/session/consume", methods=["POST"])
 def consume_session():
     data = request.get_json() or {}

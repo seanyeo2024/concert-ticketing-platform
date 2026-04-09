@@ -28,17 +28,20 @@ PAYMENT_URL  = os.environ.get("PAYMENT_SERVICE_URL",          "http://localhost:
 QR_URL       = os.environ.get("QR_SERVICE_URL",               "http://localhost:5005")
 FRONTEND_PAGES_BASE_URL = os.environ.get("FRONTEND_PAGES_BASE_URL", "http://localhost:8080/pages")
 
+# Return a standardised JSON error payload for the purchase orchestrator.
 def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "purchase_window", "timestamp": datetime.utcnow().isoformat()}}), status
 
 
+# Safely decode JSON bodies from upstream service responses.
 def safe_json(response):
     try:
         return response.json()
     except Exception:
         return {"raw": response.text}
 
+# Release a previously locked ticket if checkout fails mid-flow.
 def rollback_ticket(concert_id, ticket_id, version):
     try:
         requests.put(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/{ticket_id}",
@@ -46,6 +49,7 @@ def rollback_ticket(concert_id, ticket_id, version):
     except Exception: pass
 
 
+# Resolve the intended ticket, with seat-number fallback if the id changed.
 def resolve_ticket(concert_id, ticket_id, seat_number):
     ticket_res = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/{ticket_id}", timeout=5)
     if ticket_res.status_code == 200:
@@ -66,6 +70,7 @@ def resolve_ticket(concert_id, ticket_id, seat_number):
     return fallback, f"Recovered ticket by seat number {seat_number}"
 
 
+# Fetch concert display metadata for notifications and response payloads.
 def fetch_concert_meta(concert_id):
     base_urls = [(CONCERT_URL or "").rstrip("/"), "http://concert:5000", "http://kong:8000", "http://localhost:5000"]
     tried = set()
@@ -86,6 +91,7 @@ def fetch_concert_meta(concert_id):
     return {"concertName": concert_id, "concertDateTime": None}
 
 # POST /purchase/v1/window/<concertId>
+# Orchestrate the full primary purchase flow for one ticket.
 @app.route("/purchase/v1/window/<concert_id>", methods=["POST"])
 def purchase(concert_id):
     data = request.get_json() or {}
@@ -260,6 +266,7 @@ def purchase(concert_id):
                     "resolutionNote": resolution_note,
                     "message": "Ticket purchased successfully!"}), 201
 
+# Expose a simple health endpoint for container checks.
 @app.route("/health")
 def health(): return jsonify({"status": "ok", "service": "purchase_window"})
 

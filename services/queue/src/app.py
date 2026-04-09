@@ -23,6 +23,7 @@ max_windows_str = os.environ.get("MAX_ACTIVE_WINDOWS", "5").strip()
 MAX_ACTIVE_WINDOWS = int(max_windows_str) if max_windows_str else 5
 TICKET_URL = os.environ.get("TICKET_INVENTORY_SERVICE_URL", "http://localhost:5003")
 
+# Open a MySQL connection to the queue database.
 def get_db():
     return mysql.connector.connect(
         host=os.environ.get("MYSQL_HOST", "localhost"),
@@ -32,11 +33,13 @@ def get_db():
         password=os.environ.get("MYSQL_PASSWORD", "ctms_pass"),
     )
 
+# Return a standardised JSON error payload for the queue service.
 def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "queue", "timestamp": datetime.utcnow().isoformat()}}), status
 
 
+# Fetch concert display metadata for queue-related notifications.
 def fetch_concert_meta(concert_id):
     base_urls = [(CONCERT_URL or "").rstrip("/"), "http://concert:5000", "http://localhost:5000"]
     tried = set()
@@ -57,10 +60,12 @@ def fetch_concert_meta(concert_id):
     return {"concertName": concert_id, "concertDateTime": None}
 
 
+# Identify lock wait and deadlock errors that are safe to retry.
 def is_retryable_db_error(exc):
     return getattr(exc, "errno", None) in {1205, 1213}
 
 
+# Create the queue table and supporting indexes if they do not exist.
 def ensure_schema():
     db = get_db()
     cur = db.cursor()
@@ -86,6 +91,7 @@ def ensure_schema():
     db.close()
 
 
+# Publish an event when a granted purchase window expires.
 def publish_window_expired(row):
     try:
         concert_meta = fetch_concert_meta(row["concertId"])
@@ -105,6 +111,7 @@ def publish_window_expired(row):
         pass
 
 
+# Publish an event when a waiting user receives a purchase window.
 def publish_window_granted(user_id, concert_id, expires_at):
     try:
         concert_meta = fetch_concert_meta(concert_id)
@@ -126,6 +133,7 @@ def publish_window_granted(user_id, concert_id, expires_at):
         pass
 
 
+# Publish an event when a user first enters the waiting room.
 def publish_waiting_room_entered(user_id, concert_id, queue_id, position):
     try:
         concert_meta = fetch_concert_meta(concert_id)
@@ -150,6 +158,7 @@ def publish_waiting_room_entered(user_id, concert_id, queue_id, position):
         pass
 
 
+# Publish an event when a waiting-room session expires before window grant.
 def publish_waiting_room_session_expired(user_id, concert_id, queue_id=None, position=None):
     try:
         concert_meta = fetch_concert_meta(concert_id)
@@ -171,6 +180,7 @@ def publish_waiting_room_session_expired(user_id, concert_id, queue_id=None, pos
         pass
 
 
+# Ask ticket inventory how many tickets are still available for sale.
 def fetch_available_seats(concert_id):
     try:
         res = requests.get(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}?status=AVAILABLE", timeout=5)
@@ -182,6 +192,7 @@ def fetch_available_seats(concert_id):
         return 0
 
 
+# Recalculate contiguous queue positions for all waiting users.
 def rebalance_waiting_positions(concert_id):
     db = get_db()
     cur = db.cursor(dictionary=True)
@@ -207,6 +218,7 @@ def rebalance_waiting_positions(concert_id):
     db.close()
 
 
+# Expire any granted windows that have passed their deadline.
 def expire_granted_windows(concert_id):
     db = get_db()
     cur = db.cursor(dictionary=True)
@@ -236,6 +248,7 @@ def expire_granted_windows(concert_id):
     db.close()
 
 
+# Grant new purchase windows up to the configured active limit.
 def grant_windows_if_needed(concert_id):
     expire_granted_windows(concert_id)
     rebalance_waiting_positions(concert_id)
@@ -298,6 +311,7 @@ def grant_windows_if_needed(concert_id):
     rebalance_waiting_positions(concert_id)
 
 
+# Retry window-grant logic safely when transient DB lock errors occur.
 def safe_grant_windows_if_needed(concert_id):
     try:
         grant_windows_if_needed(concert_id)
@@ -307,6 +321,7 @@ def safe_grant_windows_if_needed(concert_id):
         print(f"[QUEUE] Skipping grant_windows_if_needed for {concert_id} due to retryable DB lock error: {exc}")
 
 
+# Expire a single queue row on read if its granted window is already stale.
 def expire_if_needed(row):
     expires_at = row.get("windowExpiresAt")
     if row.get("status") == "WINDOW_GRANTED" and expires_at and datetime.utcnow() > expires_at:
@@ -332,6 +347,7 @@ def expire_if_needed(row):
 ensure_schema()
 
 # POST /queue/v1/queue/<concertId>  — join queue
+# Create a new waiting-room entry for a user.
 @app.route("/queue/v1/queue/<concert_id>", methods=["POST"])
 def join_queue(concert_id):
     data = request.get_json() or {}
@@ -379,6 +395,7 @@ def join_queue(concert_id):
     return jsonify(row), 201
 
 # GET /queue/v1/queue/<concertId>/<userId>
+# Return the latest queue position and status for a user.
 @app.route("/queue/v1/queue/<concert_id>/<user_id>", methods=["GET"])
 def get_position(concert_id, user_id):
     db = get_db(); cur = db.cursor(dictionary=True)
@@ -400,6 +417,7 @@ def get_position(concert_id, user_id):
     return jsonify(row)
 
 # GET /queue/v1/queue/<concertId>  — queue depth
+# Return queue depth statistics grouped by status.
 @app.route("/queue/v1/queue/<concert_id>", methods=["GET"])
 def queue_depth(concert_id):
     db = get_db(); cur = db.cursor(dictionary=True)
@@ -417,6 +435,7 @@ def queue_depth(concert_id):
     })
 
 # PUT /queue/v1/queue/<concertId>/<userId>  — update status
+# Update a queue entry status and publish matching lifecycle events.
 @app.route("/queue/v1/queue/<concert_id>/<user_id>", methods=["PUT"])
 def update_entry(concert_id, user_id):
     data = request.get_json() or {}
@@ -466,6 +485,7 @@ def update_entry(concert_id, user_id):
     return jsonify({"updated": True, "status": new_status})
 
 # DELETE /queue/v1/queue/<concertId>/<userId>
+# Remove a user from the queue and free space for others.
 @app.route("/queue/v1/queue/<concert_id>/<user_id>", methods=["DELETE"])
 def leave_queue(concert_id, user_id):
     db = get_db(); cur = db.cursor()
@@ -475,6 +495,7 @@ def leave_queue(concert_id, user_id):
     safe_grant_windows_if_needed(concert_id)
     return jsonify({"deleted": True})
 
+# Expose a simple health endpoint for container checks.
 @app.route("/health")
 def health(): return jsonify({"status": "ok", "service": "queue"})
 

@@ -26,6 +26,7 @@ PRICING_URL = os.environ.get("PRICING_SERVICE_URL", "http://localhost:5001")
 RESALE_PURCHASE_URL = os.environ.get("RESALE_PURCHASE_SERVICE_URL", "http://localhost:5011")
 
 
+# Return a standardised JSON error payload for the resale gateway.
 def err(code, message, status=400):
     return (
         jsonify(
@@ -42,6 +43,7 @@ def err(code, message, status=400):
     )
 
 
+# Safely decode JSON bodies from upstream service responses.
 def safe_json(resp):
     try:
         return resp.json()
@@ -49,6 +51,7 @@ def safe_json(resp):
         return {"raw": resp.text}
 
 
+# Aggregate resale listings and enrich them with pricing ceiling data.
 @app.route("/resale-ticket/v1/listings/<concert_id>", methods=["GET"])
 def list_marketplace(concert_id):
     try:
@@ -88,6 +91,7 @@ def list_marketplace(concert_id):
         return err("MARKETPLACE_ERROR", "Marketplace request failed", 503)
 
 
+# Forward seller listing requests to the resale purchase orchestrator.
 @app.route("/resale-ticket/v1/list", methods=["POST"])
 def seller_list():
     payload = request.get_json() or {}
@@ -114,6 +118,7 @@ def seller_list():
         return err("RESALE_COMPOSITE_ERROR", "Could not list resale ticket", 503)
 
 
+# Remove a listed ticket from the marketplace and restore confirmed status.
 @app.route("/resale-ticket/v1/unlist", methods=["PUT"])
 def seller_unlist():
     data = request.get_json() or {}
@@ -162,6 +167,7 @@ def seller_unlist():
         return err("UNLIST_ERROR", "Could not unlist ticket", 503)
 
 
+# Forward a buyer resale checkout request to the resale orchestrator.
 @app.route("/resale-ticket/v1/purchase", methods=["POST"])
 def buyer_purchase():
     data = request.get_json() or {}
@@ -179,6 +185,7 @@ def buyer_purchase():
         return err("PURCHASE_ERROR", "Could not process resale purchase", 503)
 
 
+# Expose a simple health endpoint for container checks.
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "service": "resale_ticket"})

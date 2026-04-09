@@ -29,11 +29,13 @@ CONCERT_URL = os.environ.get("CONCERT_SERVICE_URL",          "https://personal-c
 FRONTEND_PAGES_BASE_URL = os.environ.get("FRONTEND_PAGES_BASE_URL", "http://localhost:8080/pages")
 EMAIL_PATTERN = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 
+# Return a standardised JSON error payload for the resale orchestrator.
 def err(code, message, status=400):
     return jsonify({"error": {"code": code, "message": message,
                               "service": "resale_purchase", "timestamp": datetime.utcnow().isoformat()}}), status
 
 
+# Issue a new buyer QR, retrying briefly if the QR service is flaky.
 def issue_buyer_qr(ticket_id, buyer_id, concert_id, retries=3):
     last_error = None
     for _ in range(retries):
@@ -51,6 +53,7 @@ def issue_buyer_qr(ticket_id, buyer_id, concert_id, retries=3):
     return {"error": last_error or "QR generation failed"}
 
 
+# Fetch concert display metadata for notifications and receipts.
 def fetch_concert_meta(concert_id):
     base_urls = [(CONCERT_URL or "").rstrip("/"), "http://concert:5000", "http://kong:8000", "http://localhost:5000"]
     tried = set()
@@ -72,6 +75,7 @@ def fetch_concert_meta(concert_id):
 
 # ── S2a: Seller lists ticket ──────────────────────────────────────────────────
 # POST /resale/v1/list
+# Validate and list a confirmed ticket on the resale marketplace.
 @app.route("/resale/v1/list", methods=["POST"])
 def list_ticket():
     data = request.get_json()
@@ -158,6 +162,7 @@ def list_ticket():
 
 # ── S2b: Buyer purchases resale ticket ────────────────────────────────────────
 # POST /resale/v1/purchase
+# Orchestrate a resale purchase from payment to ownership transfer.
 @app.route("/resale/v1/purchase", methods=["POST"])
 def purchase_resale():
     data = request.get_json()
@@ -377,6 +382,7 @@ def purchase_resale():
                     "qrImageUrl": qr_data.get("qrImageUrl"),
                     "message": "Resale ticket purchased successfully!"}), 201
 
+# Expose a simple health endpoint for container checks.
 @app.route("/health")
 def health(): return jsonify({"status": "ok", "service": "resale_purchase"})
 
