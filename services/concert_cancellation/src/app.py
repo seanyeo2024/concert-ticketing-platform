@@ -115,6 +115,7 @@ def cancel_concert(concert_id):
     cancelled_at = datetime.utcnow().isoformat()
 
     # Step 1 — mark concert as CANCELLED (via OutSystems Concert Service)
+    # Step 1 - mark concert as CANCELLED in the concert service
     c = requests.put(f"{CONCERT_URL}/concerts/{concert_id}",
                      json={"status": "CANCELLED", "cancellationReason": reason}, timeout=10)
     if c.status_code not in (200, 201):
@@ -137,20 +138,22 @@ def cancel_concert(concert_id):
     if not concert_snapshot:
         concert_snapshot = fetch_concert_snapshot(concert_id)
 
-    # Step 2+3 — bulk update all confirmed tickets to REFUNDED
+    # Step 2+3 - queue concert tickets for refund handling in ticket inventory
     bulk = requests.put(f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/cancel-all",
                         json={"reason": reason}, timeout=30)
     tickets_queued = 0
     if bulk.status_code == 200:
         tickets_queued = bulk.json().get("ticketsQueuedForRefund", 0)
 
-    # Step 4 — bulk invalidate all QRs
+
+    # Step 4 - bulk invalidate all QR codes for the concert
     try:
         requests.put(f"{QR_URL}/qr/v1/qr/concert/{concert_id}/invalidate-all", timeout=30)
     except Exception as e:
         print(f"[S3] QR bulk invalidate failed (non-critical): {e}")
 
-    # Step 5 — refund only the latest effective purchase per ticket
+
+    # Step 5 - refund the payments selected by the cancellation unwind rules
     refund_count = 0; refund_failures = 0
     refunded_ticket_ids = set()
     try:
