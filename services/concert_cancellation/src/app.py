@@ -30,9 +30,20 @@ def err(code, message, status=400):
                               "service": "concert_cancellation", "timestamp": datetime.utcnow().isoformat()}}), status
 
 
-# Select the latest successful purchase per ticket for refunding.
+# Select the payments that must be unwound for each ticket on cancellation.
+#
+# Normal ticket:
+# - refund the original PURCHASE once.
+#
+# Resold ticket:
+# - refund the latest RESALE_PURCHASE to return money to the final holder
+# - refund the original PURCHASE so the original owner is not stranded after the
+#   resale transfer is reversed
 def choose_refundable_payments(payments):
-    latest_by_ticket = {}
+    payments_by_ticket = {}
+    refundable = []
+    seen_payment_ids = set()
+
     for payment in payments:
         if str(payment.get("status", "")).upper() != "SUCCESS":
             continue
@@ -41,11 +52,36 @@ def choose_refundable_payments(payments):
         ticket_id = payment.get("ticketId")
         if not ticket_id:
             continue
-        created_at = payment.get("createdAt") or ""
-        existing = latest_by_ticket.get(ticket_id)
-        if not existing or created_at > (existing.get("createdAt") or ""):
-            latest_by_ticket[ticket_id] = payment
-    return list(latest_by_ticket.values())
+        payments_by_ticket.setdefault(ticket_id, []).append(payment)
+
+    for ticket_id, ticket_payments in payments_by_ticket.items():
+        purchases = [
+            payment for payment in ticket_payments
+            if str(payment.get("type", "")).upper() == "PURCHASE"
+        ]
+        resale_purchases = [
+            payment for payment in ticket_payments
+            if str(payment.get("type", "")).upper() == "RESALE_PURCHASE"
+        ]
+
+        purchases.sort(key=lambda payment: payment.get("createdAt") or "")
+        resale_purchases.sort(key=lambda payment: payment.get("createdAt") or "")
+
+        if resale_purchases:
+            candidates = []
+            if purchases:
+                candidates.append(purchases[0])
+            candidates.append(resale_purchases[-1])
+        else:
+            candidates = [purchases[-1]] if purchases else []
+
+        for payment in candidates:
+            payment_id = payment.get("paymentId")
+            if payment_id and payment_id not in seen_payment_ids:
+                seen_payment_ids.add(payment_id)
+                refundable.append(payment)
+
+    return refundable
 
 
 # Fetch ticket details used in cancellation notifications.
@@ -116,7 +152,7 @@ def cancel_concert(concert_id):
 
     # Step 5 — refund only the latest effective purchase per ticket
     refund_count = 0; refund_failures = 0
-    refunded_ticket_ids = []
+    refunded_ticket_ids = set()
     try:
         pays = requests.get(f"{PAYMENT_URL}/payment/v1/payment/concert/{concert_id}", timeout=10)
         if pays.status_code == 200:
@@ -129,7 +165,7 @@ def cancel_concert(concert_id):
                                             "reason": "CONCERT_CANCELLED"}, timeout=10)
                     if r.status_code == 201:
                         refund_count += 1
-                        refunded_ticket_ids.append(payment["ticketId"])
+                        refunded_ticket_ids.add(payment["ticketId"])
                         try:
                             ticket_snapshot = fetch_ticket_snapshot(concert_id, payment["ticketId"])
                             mq_publish("concert.cancelled", {
@@ -166,7 +202,7 @@ def cancel_concert(concert_id):
         try:
             finalize = requests.put(
                 f"{TICKET_URL}/tickets/v1/tickets/{concert_id}/refund-batch",
-                json={"ticketIds": refunded_ticket_ids},
+                json={"ticketIds": list(refunded_ticket_ids)},
                 timeout=30,
             )
             if finalize.status_code == 200:
